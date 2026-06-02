@@ -1,17 +1,20 @@
 package org.jason.siph.ui.coupling
 
-
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
-import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -33,17 +36,18 @@ fun CouplingConfigPanel(
         modifier = modifier.fillMaxWidth()
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text(
-                text = "Coupling Config",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
+            PanelHeader(
+                title = "Coupling Config",
+                caption = if (enabled) "Ready to run" else "Running"
             )
 
+            SectionLabel("Optical Setup")
+
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 NumberField(
                     label = "Wavelength nm",
@@ -66,44 +70,40 @@ fun CouplingConfigPanel(
                 )
             }
 
-            Text(
-                text = "Spiral Plane",
-                style = MaterialTheme.typography.labelLarge
-            )
+            HorizontalDivider()
+
+            SectionLabel("Search Plane")
 
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 CouplingPlane.entries.forEach { plane ->
-                    if (state.plane == plane) {
-                        Button(
-                            onClick = {
-                                onConfigChange(state.copy(plane = plane))
-                            },
-                            enabled = enabled,
-                            modifier = Modifier.weight(1f)
-                        ) {
+                    FilterChip(
+                        selected = state.plane == plane,
+                        onClick = {
+                            onConfigChange(state.copy(plane = plane))
+                        },
+                        enabled = enabled,
+                        label = {
                             Text(plane.text)
-                        }
-                    } else {
-                        OutlinedButton(
-                            onClick = {
-                                onConfigChange(state.copy(plane = plane))
-                            },
-                            enabled = enabled,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(plane.text)
-                        }
-                    }
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 42.dp)
+                    )
                 }
             }
 
+            HorizontalDivider()
+
+            SectionLabel("Power Targets")
+
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 NumberField(
-                    label = "First Light dBm",
+                    label = "First light dBm",
                     value = state.firstLightThresholdDbm,
                     enabled = enabled,
                     onValueChange = {
@@ -123,11 +123,13 @@ fun CouplingConfigPanel(
                 )
             }
 
+            SectionLabel("Search Window")
+
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 NumberField(
-                    label = "Spiral Step μm",
+                    label = "Spiral step μm",
                     value = state.spiralStepUm,
                     enabled = enabled,
                     onValueChange = {
@@ -137,7 +139,7 @@ fun CouplingConfigPanel(
                 )
 
                 NumberField(
-                    label = "Max Radius μm",
+                    label = "Max radius μm",
                     value = state.maxRadiusUm,
                     enabled = enabled,
                     onValueChange = {
@@ -148,7 +150,7 @@ fun CouplingConfigPanel(
             }
 
             LongField(
-                label = "Settle Delay ms",
+                label = "Settle delay ms",
                 value = state.settleDelayMs,
                 enabled = enabled,
                 onValueChange = {
@@ -156,56 +158,125 @@ fun CouplingConfigPanel(
                 }
             )
 
-            Row {
-                Checkbox(
-                    checked = state.enableFineXyz,
-                    enabled = enabled,
-                    onCheckedChange = {
-                        onConfigChange(state.copy(enableFineXyz = it))
-                    }
-                )
+            HorizontalDivider()
 
-                Text(
-                    text = "Enable Fine XYZ",
-                    modifier = Modifier.padding(top = 12.dp)
-                )
-            }
+            ToggleRow(
+                title = "Fine XYZ",
+                caption = "Refine around first light",
+                checked = state.enableFineXyz,
+                enabled = enabled,
+                onCheckedChange = {
+                    onConfigChange(state.copy(enableFineXyz = it))
+                }
+            )
 
-            Row {
-                Checkbox(
-                    checked = state.enableAngleOptimization,
-                    enabled = enabled,
-                    onCheckedChange = {
-                        onConfigChange(state.copy(enableAngleOptimization = it))
-                    }
-                )
-
-                Text(
-                    text = "Enable U/V/W Angle Optimization",
-                    modifier = Modifier.padding(top = 12.dp)
-                )
-            }
+            ToggleRow(
+                title = "U/V/W angle optimization",
+                caption = "Run after XYZ refinement",
+                checked = state.enableAngleOptimization,
+                enabled = enabled,
+                onCheckedChange = {
+                    onConfigChange(state.copy(enableAngleOptimization = it))
+                }
+            )
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Button(
                     onClick = onStartCoupling,
                     enabled = enabled,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 46.dp)
                 ) {
                     Text("Start Coupling")
                 }
 
                 OutlinedButton(
                     onClick = onStopCoupling,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 46.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
                 ) {
                     Text("Stop")
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PanelHeader(
+    title: String,
+    caption: String
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+
+        Text(
+            text = caption,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun SectionLabel(
+    text: String
+) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.SemiBold
+    )
+}
+
+@Composable
+private fun ToggleRow(
+    title: String,
+    caption: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            Text(
+                text = caption,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Switch(
+            checked = checked,
+            enabled = enabled,
+            onCheckedChange = onCheckedChange
+        )
     }
 }
 
