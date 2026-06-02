@@ -1,6 +1,7 @@
 package org.jason.siph.ui.positioner
 
 
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,9 +16,15 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.jason.siph.domain.positioner.OpticalDelta
 
 @Composable
@@ -151,29 +158,81 @@ private fun JogAxisCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                OutlinedButton(
-                    onClick = onMinus,
+                HoldJogButton(
+                    text = "-",
                     enabled = enabled,
+                    onJog = onMinus,
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 36.dp),
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
-                ) {
-                    Text("-")
-                }
+                )
 
-                OutlinedButton(
-                    onClick = onPlus,
+                HoldJogButton(
+                    text = "+",
                     enabled = enabled,
+                    onJog = onPlus,
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 36.dp),
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
-                ) {
-                    Text("+")
-                }
+                )
             }
         }
+    }
+}
+
+@Composable
+private fun HoldJogButton(
+    text: String,
+    enabled: Boolean,
+    onJog: () -> Unit,
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 8.dp)
+) {
+    val currentOnJog by rememberUpdatedState(onJog)
+
+    OutlinedButton(
+        onClick = {},
+        enabled = enabled,
+        modifier = modifier.pointerInput(enabled) {
+            if (!enabled) {
+                return@pointerInput
+            }
+
+            while (true) {
+                awaitPointerEventScope {
+                    awaitFirstDown(requireUnconsumed = false)
+                }
+
+                currentOnJog()
+
+                var pressed = true
+
+                coroutineScope {
+                    val repeatJob = launch {
+                        delay(280L)
+
+                        while (pressed) {
+                            currentOnJog()
+                            delay(90L)
+                        }
+                    }
+
+                    awaitPointerEventScope {
+                        while (pressed) {
+                            val event = awaitPointerEvent()
+                            pressed = event.changes.any { it.pressed }
+                        }
+                    }
+
+                    repeatJob.cancel()
+                }
+            }
+        },
+        contentPadding = contentPadding
+    ) {
+        Text(text)
     }
 }
 
