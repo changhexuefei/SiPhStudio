@@ -9,6 +9,7 @@ plugins {
 
 kotlin {
     jvm()
+    jvmToolchain(21)
 
     js {
         browser()

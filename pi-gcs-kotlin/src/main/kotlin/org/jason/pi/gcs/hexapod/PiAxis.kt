@@ -16,6 +16,12 @@ enum class PiAxis(
     V("V"),
     W("W");
 
+    val isLinear: Boolean
+        get() = this == X || this == Y || this == Z
+
+    val isAngular: Boolean
+        get() = this == U || this == V || this == W
+
     companion object {
 
         val HEXAPOD_AXES: List<PiAxis> =

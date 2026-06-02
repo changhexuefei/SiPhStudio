@@ -1,6 +1,12 @@
 package org.jason.pi.gcs.pitools
 
+import kotlinx.coroutines.delay
 import org.jason.pi.gcs.core.GcsDevice
+import org.jason.pi.gcs.core.PiGcsTimeoutException
+import org.jason.pi.gcs.hexapod.PiAxis
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * 类似 PIPython pitools 的 Kotlin 工具类。

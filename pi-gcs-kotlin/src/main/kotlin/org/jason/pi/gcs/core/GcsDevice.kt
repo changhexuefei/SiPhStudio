@@ -1,7 +1,6 @@
 package org.jason.pi.gcs.core
 
 import org.jason.pi.gcs.hexapod.PiAxis
-import java.util.Locale
 
 /**
  * PI GCS 命令封装。
@@ -213,10 +212,6 @@ class GcsDevice(
     override fun close() {
         client.close()
     }
-}
-
-private fun Double.toGcsNumber(): String {
-    return String.format(Locale.US, "%.9f", this)
 }
 
 /**
