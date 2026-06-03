@@ -11,11 +11,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import org.jason.siph.ui.model.SiPhStatusState
+import org.jason.siph.ui.model.CouplingToolStatusState
 
 @Composable
-fun SiPhStatusBar(
-    state: SiPhStatusState,
+fun CouplingToolStatusBar(
+    state: CouplingToolStatusState,
     modifier: Modifier = Modifier
 ) {
     Surface(

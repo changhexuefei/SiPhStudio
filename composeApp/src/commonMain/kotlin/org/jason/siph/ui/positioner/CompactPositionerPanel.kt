@@ -18,13 +18,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.jason.siph.domain.positioner.OpticalPose
 import org.jason.siph.ui.model.PositionerUiState
-import org.jason.siph.ui.model.SiPhToolsAction
+import org.jason.siph.ui.model.CouplingToolAction
 import kotlin.math.abs
 
 @Composable
 fun CompactPositionerPanel(
     state: PositionerUiState,
-    onAction: (SiPhToolsAction) -> Unit,
+    onAction: (CouplingToolAction) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -73,13 +73,13 @@ fun CompactPositionerPanel(
                 angleStepDeg = state.angleStepDeg,
                 enabled = state.connected && !state.isMoving,
                 onLinearStepChange = {
-                    onAction(SiPhToolsAction.UpdateLinearStep(it))
+                    onAction(CouplingToolAction.UpdateLinearStep(it))
                 },
                 onAngleStepChange = {
-                    onAction(SiPhToolsAction.UpdateAngleStep(it))
+                    onAction(CouplingToolAction.UpdateAngleStep(it))
                 },
                 onJog = {
-                    onAction(SiPhToolsAction.JogPositioner(it))
+                    onAction(CouplingToolAction.JogPositioner(it))
                 }
             )
 
@@ -88,7 +88,7 @@ fun CompactPositionerPanel(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Button(
-                    onClick = { onAction(SiPhToolsAction.ConnectPositioner) },
+                    onClick = { onAction(CouplingToolAction.ConnectPositioner) },
                     enabled = !state.connected,
                     modifier = Modifier.weight(1f)
                 ) {
@@ -96,7 +96,7 @@ fun CompactPositionerPanel(
                 }
 
                 OutlinedButton(
-                    onClick = { onAction(SiPhToolsAction.ReadPose) },
+                    onClick = { onAction(CouplingToolAction.ReadPose) },
                     enabled = state.connected,
                     modifier = Modifier.weight(1f)
                 ) {
@@ -104,7 +104,7 @@ fun CompactPositionerPanel(
                 }
 
                 Button(
-                    onClick = { onAction(SiPhToolsAction.MoveSafe) },
+                    onClick = { onAction(CouplingToolAction.MoveSafe) },
                     enabled = state.connected && !state.isMoving,
                     modifier = Modifier.weight(1f)
                 ) {
@@ -112,7 +112,7 @@ fun CompactPositionerPanel(
                 }
 
                 OutlinedButton(
-                    onClick = { onAction(SiPhToolsAction.StopPositioner) },
+                    onClick = { onAction(CouplingToolAction.StopPositioner) },
                     enabled = state.connected,
                     modifier = Modifier.weight(1f)
                 ) {
@@ -181,11 +181,11 @@ private fun PoseMiniMetric(
 }
 
 private fun formatUm(value: Double): String {
-    return "${formatNumber(value)} μm"
+    return "${formatNumber(value)} um"
 }
 
 private fun formatDeg(value: Double): String {
-    return "${formatNumber(value)}°"
+    return "${formatNumber(value)} deg"
 }
 
 private fun formatNumber(value: Double): String {

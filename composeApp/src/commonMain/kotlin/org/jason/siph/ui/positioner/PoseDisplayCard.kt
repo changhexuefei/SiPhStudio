@@ -88,11 +88,11 @@ private fun PoseMetric(
 }
 
 private fun formatUm(value: Double): String {
-    return "${formatNumber(value)} μm"
+    return "${formatNumber(value)} um"
 }
 
 private fun formatDeg(value: Double): String {
-    return "${formatNumber(value)}°"
+    return "${formatNumber(value)} deg"
 }
 
 private fun formatNumber(value: Double): String {

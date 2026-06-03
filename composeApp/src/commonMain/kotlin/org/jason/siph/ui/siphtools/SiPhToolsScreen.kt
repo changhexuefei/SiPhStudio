@@ -14,32 +14,29 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.Divider
-import androidx.compose.material3.DividerDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import org.jason.siph.ui.coupling.CouplingConfigPanel
-import org.jason.siph.ui.coupling.CouplingResultPanel
 import org.jason.siph.ui.coupling.CouplingWorkspace
-import org.jason.siph.ui.model.SiPhPage
-import org.jason.siph.ui.model.SiPhRunState
-import org.jason.siph.ui.model.SiPhToolsAction
-import org.jason.siph.ui.model.SiPhToolsUiState
+import org.jason.siph.ui.coupling.PivotSetupPanel
+import org.jason.siph.ui.model.CouplingToolAction
+import org.jason.siph.ui.model.CouplingToolPage
+import org.jason.siph.ui.model.CouplingToolRunState
+import org.jason.siph.ui.model.CouplingToolUiState
 import org.jason.siph.ui.positioner.PositionerControlPanel
 
 @Composable
-fun SiPhToolsScreen(
-    state: SiPhToolsUiState,
-    onAction: (SiPhToolsAction) -> Unit,
+fun CouplingToolScreen(
+    state: CouplingToolUiState,
+    onAction: (CouplingToolAction) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -47,12 +44,12 @@ fun SiPhToolsScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
     ) {
-        SiPhTopBar(
+        CouplingToolTopBar(
             state = state,
             onAction = onAction
         )
 
-        Divider()
+        HorizontalDivider()
 
         Row(
             modifier = Modifier
@@ -63,10 +60,10 @@ fun SiPhToolsScreen(
                 tonalElevation = 1.dp,
                 color = MaterialTheme.colorScheme.surface
             ) {
-                SiPhNavigationPanel(
+                CouplingToolNavigationPanel(
                     selectedPage = state.selectedPage,
                     onSelectPage = {
-                        onAction(SiPhToolsAction.SelectPage(it))
+                        onAction(CouplingToolAction.SelectPage(it))
                     },
                     modifier = Modifier
                         .width(224.dp)
@@ -74,10 +71,9 @@ fun SiPhToolsScreen(
                 )
             }
 
-            Divider(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .width(1.dp)
+            VerticalDivider(
+                modifier = Modifier.fillMaxHeight(),
+                thickness = 1.dp
             )
 
             Box(
@@ -89,7 +85,23 @@ fun SiPhToolsScreen(
                 contentAlignment = Alignment.TopCenter
             ) {
                 when (state.selectedPage) {
-                    SiPhPage.Positioner -> {
+                    CouplingToolPage.Coupling -> {
+                        CouplingWorkspace(
+                            state = state,
+                            onAction = onAction,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+
+                    CouplingToolPage.PivotSetup -> {
+                        PivotSetupPanel(
+                            state = state,
+                            onAction = onAction,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    CouplingToolPage.ManualControl -> {
                         PositionerControlPanel(
                             state = state.positioner,
                             onAction = onAction,
@@ -98,25 +110,13 @@ fun SiPhToolsScreen(
                                 .fillMaxWidth()
                         )
                     }
-
-                    SiPhPage.Coupling -> {
-                        CouplingWorkspace(
-                            state = state,
-                            onAction = onAction,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-
-                    else -> {
-                        PlaceholderPage(state.selectedPage.title)
-                    }
                 }
             }
         }
 
-        Divider()
+        HorizontalDivider()
 
-        SiPhStatusBar(
+        CouplingToolStatusBar(
             state = state.status,
             modifier = Modifier.fillMaxWidth()
         )
@@ -124,9 +124,9 @@ fun SiPhToolsScreen(
 }
 
 @Composable
-private fun SiPhTopBar(
-    state: SiPhToolsUiState,
-    onAction: (SiPhToolsAction) -> Unit
+private fun CouplingToolTopBar(
+    state: CouplingToolUiState,
+    onAction: (CouplingToolAction) -> Unit
 ) {
     Surface(
         tonalElevation = 2.dp,
@@ -140,13 +140,13 @@ private fun SiPhTopBar(
         ) {
             Column {
                 Text(
-                    text = "SiPhTools",
+                    text = "SiPh Coupling Tool",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
 
                 Text(
-                    text = "Silicon Photonics Test Client",
+                    text = "Optical Coupling Alignment Tool",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -162,48 +162,19 @@ private fun SiPhTopBar(
             )
 
             Button(
-                onClick = { onAction(SiPhToolsAction.Start) },
-                enabled = state.runState != SiPhRunState.Running
+                onClick = { onAction(CouplingToolAction.StartCoupling) },
+                enabled = state.runState != CouplingToolRunState.Running
             ) {
-                Text("Run")
+                Text("Start Coupling")
             }
 
             Spacer(modifier = Modifier.width(8.dp))
 
             OutlinedButton(
-                onClick = { onAction(SiPhToolsAction.Stop) }
+                onClick = { onAction(CouplingToolAction.StopCoupling) }
             ) {
                 Text("Stop")
             }
         }
     }
 }
-
-@Composable
-private fun PlaceholderPage(
-    title: String
-) {
-    Card(
-        modifier = Modifier
-            .widthIn(max = 960.dp)
-            .fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(24.dp)
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
-
-            Text(
-                text = "该页面入口已预留，后续可以继续实现。",
-                modifier = Modifier.padding(top = 8.dp),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-

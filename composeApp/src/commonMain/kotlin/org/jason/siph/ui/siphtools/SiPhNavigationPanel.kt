@@ -16,12 +16,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import org.jason.siph.ui.model.SiPhPage
+import org.jason.siph.ui.model.CouplingToolPage
 
 @Composable
-fun SiPhNavigationPanel(
-    selectedPage: SiPhPage,
-    onSelectPage: (SiPhPage) -> Unit,
+fun CouplingToolNavigationPanel(
+    selectedPage: CouplingToolPage,
+    onSelectPage: (CouplingToolPage) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -31,13 +31,13 @@ fun SiPhNavigationPanel(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(
-            text = "SiPh Tools",
+            text = "Coupling Tool",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
-        SiPhPage.entries.forEach { page ->
+        CouplingToolPage.entries.forEach { page ->
             val selected = page == selectedPage
 
             if (selected) {
@@ -48,7 +48,7 @@ fun SiPhNavigationPanel(
                         containerColor = MaterialTheme.colorScheme.primary
                     )
                 ) {
-                    Text(page.title)
+                    NavigationItemContent(page)
                 }
             } else {
                 OutlinedButton(
@@ -58,9 +58,32 @@ fun SiPhNavigationPanel(
                         contentColor = MaterialTheme.colorScheme.onSurface
                     )
                 ) {
-                    Text(page.title)
+                    NavigationItemContent(page)
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun NavigationItemContent(
+    page: CouplingToolPage
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            text = page.title,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold
+        )
+
+        Text(
+            text = page.caption,
+            style = MaterialTheme.typography.labelSmall
+        )
     }
 }

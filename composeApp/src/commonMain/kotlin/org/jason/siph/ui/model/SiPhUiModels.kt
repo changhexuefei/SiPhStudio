@@ -2,39 +2,44 @@ package org.jason.siph.ui.model
 
 import org.jason.siph.domain.positioner.OpticalDelta
 import org.jason.siph.domain.positioner.OpticalPose
+import org.jason.siph.domain.positioner.VirtualPivotPoint
 
-enum class SiPhPage(
-    val title: String
+enum class CouplingToolPage(
+    val title: String,
+    val caption: String
 ) {
-    Dashboard("Dashboard"),
-    Devices("Devices"),
-    Positioner("Positioner"),
-    Coupling("Coupling"),
-    Scan("Scan"),
-    Calibration("Calibration"),
-    Measurement("Measurement"),
-    Data("Data")
+    Coupling(
+        title = "Auto Coupling",
+        caption = "Search and optimize power"
+    ),
+    PivotSetup(
+        title = "Pivot Setup",
+        caption = "Set rotation center"
+    ),
+    ManualControl(
+        title = "Manual Control",
+        caption = "Jog positioner axes"
+    )
 }
 
-enum class SiPhRunState(
+enum class CouplingToolRunState(
     val text: String
 ) {
     Idle("Idle"),
     Running("Running"),
-    Paused("Paused"),
     Stopped("Stopped"),
     Error("Error")
 }
 
-data class SiPhToolsUiState(
-    val selectedPage: SiPhPage = SiPhPage.Coupling,
-    val runState: SiPhRunState = SiPhRunState.Idle,
+data class CouplingToolUiState(
+    val selectedPage: CouplingToolPage = CouplingToolPage.Coupling,
+    val runState: CouplingToolRunState = CouplingToolRunState.Idle,
     val positioner: PositionerUiState = PositionerUiState(),
     val coupling: CouplingUiState = CouplingUiState(),
-    val status: SiPhStatusState = SiPhStatusState()
+    val status: CouplingToolStatusState = CouplingToolStatusState()
 )
 
-data class SiPhStatusState(
+data class CouplingToolStatusState(
     val deviceText: String = "PI: Disconnected | Laser: Disconnected | PowerMeter: Disconnected",
     val powerText: String = "Power: -- dBm",
     val stateText: String = "State: Idle",
@@ -83,7 +88,9 @@ data class CouplingConfigUiState(
     val maxRadiusUm: Double = 50.0,
     val settleDelayMs: Long = 50L,
     val enableFineXyz: Boolean = true,
-    val enableAngleOptimization: Boolean = false
+    val enableAngleOptimization: Boolean = false,
+    val virtualPivotPoint: VirtualPivotPoint = VirtualPivotPoint.Disabled,
+    val enableSoftwarePivotCompensation: Boolean = false
 )
 
 enum class CouplingStageUi(
@@ -117,47 +124,51 @@ data class CouplingUiState(
     val message: String? = null
 )
 
-sealed interface SiPhToolsAction {
+sealed interface CouplingToolAction {
 
     data class SelectPage(
-        val page: SiPhPage
-    ) : SiPhToolsAction
+        val page: CouplingToolPage
+    ) : CouplingToolAction
 
-    data object Start : SiPhToolsAction
+    data object ConnectPositioner : CouplingToolAction
 
-    data object Stop : SiPhToolsAction
+    data object DisconnectPositioner : CouplingToolAction
 
-    data object ConnectPositioner : SiPhToolsAction
+    data object ReadPose : CouplingToolAction
 
-    data object DisconnectPositioner : SiPhToolsAction
+    data object MoveSafe : CouplingToolAction
 
-    data object ReadPose : SiPhToolsAction
-
-    data object MoveSafe : SiPhToolsAction
-
-    data object StopPositioner : SiPhToolsAction
+    data object StopPositioner : CouplingToolAction
 
     data class JogPositioner(
         val delta: OpticalDelta
-    ) : SiPhToolsAction
+    ) : CouplingToolAction
 
     data class UpdateLinearStep(
         val valueUm: Double
-    ) : SiPhToolsAction
+    ) : CouplingToolAction
 
     data class UpdateAngleStep(
         val valueDeg: Double
-    ) : SiPhToolsAction
+    ) : CouplingToolAction
 
     data class UpdateCouplingConfig(
         val config: CouplingConfigUiState
-    ) : SiPhToolsAction
+    ) : CouplingToolAction
 
-    data object StartCoupling : SiPhToolsAction
+    data class UpdateVirtualPivot(
+        val pivot: VirtualPivotPoint
+    ) : CouplingToolAction
 
-    data object StopCoupling : SiPhToolsAction
+    data object CapturePivotFromCurrentPose : CouplingToolAction
 
-    data object ClearCouplingData : SiPhToolsAction
+    data object DisableVirtualPivot : CouplingToolAction
 
-    data object SaveBestPose : SiPhToolsAction
+    data object StartCoupling : CouplingToolAction
+
+    data object StopCoupling : CouplingToolAction
+
+    data object ClearCouplingData : CouplingToolAction
+
+    data object SaveBestPose : CouplingToolAction
 }

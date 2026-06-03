@@ -22,12 +22,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.jason.siph.domain.positioner.OpticalPose
 import org.jason.siph.ui.model.CouplingUiState
-import org.jason.siph.ui.model.SiPhToolsAction
+import org.jason.siph.ui.model.CouplingToolAction
 
 @Composable
 fun CouplingResultPanel(
     state: CouplingUiState,
-    onAction: (SiPhToolsAction) -> Unit,
+    onAction: (CouplingToolAction) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -95,7 +95,7 @@ fun CouplingResultPanel(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Button(
-                        onClick = { onAction(SiPhToolsAction.SaveBestPose) },
+                        onClick = { onAction(CouplingToolAction.SaveBestPose) },
                         enabled = state.bestPose != null,
                         modifier = Modifier
                             .weight(1f)
@@ -105,7 +105,7 @@ fun CouplingResultPanel(
                     }
 
                     OutlinedButton(
-                        onClick = { onAction(SiPhToolsAction.ClearCouplingData) },
+                        onClick = { onAction(CouplingToolAction.ClearCouplingData) },
                         modifier = Modifier
                             .weight(1f)
                             .heightIn(min = 44.dp),
@@ -204,12 +204,12 @@ private fun formatPower(value: Double?): String {
 }
 
 private fun formatPose(pose: OpticalPose): String {
-    return "X=${round3(pose.xUm)} μm, " +
-            "Y=${round3(pose.yUm)} μm, " +
-            "Z=${round3(pose.zUm)} μm, " +
-            "U=${round3(pose.uDeg)}°, " +
-            "V=${round3(pose.vDeg)}°, " +
-            "W=${round3(pose.wDeg)}°"
+    return "X=${round3(pose.xUm)} um, " +
+            "Y=${round3(pose.yUm)} um, " +
+            "Z=${round3(pose.zUm)} um, " +
+            "U=${round3(pose.uDeg)} deg, " +
+            "V=${round3(pose.vDeg)} deg, " +
+            "W=${round3(pose.wDeg)} deg"
 }
 
 private fun round3(value: Double): Double {

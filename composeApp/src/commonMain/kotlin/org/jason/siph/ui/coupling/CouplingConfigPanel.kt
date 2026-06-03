@@ -14,6 +14,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -129,7 +130,7 @@ fun CouplingConfigPanel(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 NumberField(
-                    label = "Spiral step μm",
+                    label = "Spiral step um",
                     value = state.spiralStepUm,
                     enabled = enabled,
                     onValueChange = {
@@ -139,7 +140,7 @@ fun CouplingConfigPanel(
                 )
 
                 NumberField(
-                    label = "Max radius μm",
+                    label = "Max radius um",
                     value = state.maxRadiusUm,
                     enabled = enabled,
                     onValueChange = {
@@ -172,13 +173,15 @@ fun CouplingConfigPanel(
 
             ToggleRow(
                 title = "U/V/W angle optimization",
-                caption = "Run after XYZ refinement",
+                caption = angleOptimizationCaption(state),
                 checked = state.enableAngleOptimization,
                 enabled = enabled,
                 onCheckedChange = {
                     onConfigChange(state.copy(enableAngleOptimization = it))
                 }
             )
+
+            PivotStatusRow(state)
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -206,6 +209,43 @@ fun CouplingConfigPanel(
                     Text("Stop")
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PivotStatusRow(
+    state: CouplingConfigUiState
+) {
+    val pivot = state.virtualPivotPoint
+    val pivotEnabled = pivot.enabled && state.enableSoftwarePivotCompensation
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 1.dp,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = "Virtual pivot",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            Text(
+                text = if (pivotEnabled) {
+                    "${pivot.name}: X=${round3(pivot.xUm)} um, Y=${round3(pivot.yUm)} um, Z=${round3(pivot.zUm)} um (${pivot.frame.name})"
+                } else {
+                    "Disabled. Angle moves use the default mechanical rotation center."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -337,4 +377,18 @@ private fun LongField(
         singleLine = true,
         modifier = Modifier.fillMaxWidth()
     )
+}
+
+private fun angleOptimizationCaption(
+    state: CouplingConfigUiState
+): String {
+    return if (state.virtualPivotPoint.enabled && state.enableSoftwarePivotCompensation) {
+        "Run around configured virtual pivot"
+    } else {
+        "Run after XYZ refinement"
+    }
+}
+
+private fun round3(value: Double): Double {
+    return kotlin.math.round(value * 1000.0) / 1000.0
 }

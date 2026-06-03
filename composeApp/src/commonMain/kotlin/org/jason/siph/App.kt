@@ -1,24 +1,28 @@
 package org.jason.siph
 
-
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import org.jason.siph.domain.positioner.OpticalCoordinateFrame
 import org.jason.siph.domain.positioner.OpticalPose
+import org.jason.siph.domain.positioner.VirtualPivotPoint
 import org.jason.siph.domain.positioner.plus
+import org.jason.siph.ui.model.CouplingConfigUiState
 import org.jason.siph.ui.model.CouplingSampleUi
 import org.jason.siph.ui.model.CouplingStageUi
 import org.jason.siph.ui.model.CouplingState
+import org.jason.siph.ui.model.CouplingToolAction
+import org.jason.siph.ui.model.CouplingToolRunState
+import org.jason.siph.ui.model.CouplingToolStatusState
+import org.jason.siph.ui.model.CouplingToolUiState
 import org.jason.siph.ui.model.PositionerUiState
-import org.jason.siph.ui.model.SiPhRunState
-import org.jason.siph.ui.model.SiPhStatusState
-import org.jason.siph.ui.model.SiPhToolsAction
-import org.jason.siph.ui.model.SiPhToolsUiState
-import org.jason.siph.ui.siphtools.SiPhToolsScreen
-
-
+import org.jason.siph.ui.siphtools.CouplingToolScreen
 
 @Composable
 @androidx.compose.ui.tooling.preview.Preview
@@ -26,12 +30,12 @@ fun App() {
     MaterialTheme {
         var state by remember {
             mutableStateOf(
-                SiPhToolsUiState(
-                    status = SiPhStatusState(
+                CouplingToolUiState(
+                    status = CouplingToolStatusState(
                         deviceText = "PI: Disconnected | Laser: Demo | PowerMeter: Demo",
                         powerText = "Power: -- dBm",
                         stateText = "State: Idle",
-                        message = "SiPhTools-Kotlin Ready"
+                        message = "Coupling Tool Ready"
                     )
                 )
             )
@@ -41,10 +45,10 @@ fun App() {
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background
         ) {
-            SiPhToolsScreen(
+            CouplingToolScreen(
                 state = state,
                 onAction = { action ->
-                    state = reduceSiPhToolsAction(
+                    state = reduceCouplingToolAction(
                         state = state,
                         action = action
                     )
@@ -54,46 +58,21 @@ fun App() {
     }
 }
 
-private fun reduceSiPhToolsAction(
-    state: SiPhToolsUiState,
-    action: SiPhToolsAction
-): SiPhToolsUiState {
+private fun reduceCouplingToolAction(
+    state: CouplingToolUiState,
+    action: CouplingToolAction
+): CouplingToolUiState {
     return when (action) {
-        is SiPhToolsAction.SelectPage -> {
+        is CouplingToolAction.SelectPage -> {
             state.copy(
                 selectedPage = action.page,
                 status = state.status.copy(
-                    message = "切换到 ${action.page.title}"
+                    message = "Switched to ${action.page.title}"
                 )
             )
         }
 
-        SiPhToolsAction.Start -> {
-            state.copy(
-                runState = SiPhRunState.Running,
-                status = state.status.copy(
-                    stateText = "State: Running",
-                    message = "Run started"
-                )
-            )
-        }
-
-        SiPhToolsAction.Stop -> {
-            state.copy(
-                runState = SiPhRunState.Stopped,
-                coupling = state.coupling.copy(
-                    isRunning = false,
-                    state = CouplingState.Stopped,
-                    message = "用户停止运行"
-                ),
-                status = state.status.copy(
-                    stateText = "State: Stopped",
-                    message = "Run stopped"
-                )
-            )
-        }
-
-        SiPhToolsAction.ConnectPositioner -> {
+        CouplingToolAction.ConnectPositioner -> {
             state.copy(
                 positioner = state.positioner.copy(
                     connected = true,
@@ -102,31 +81,31 @@ private fun reduceSiPhToolsAction(
                 ),
                 status = state.status.copy(
                     deviceText = "PI: Connected | Laser: Demo | PowerMeter: Demo",
-                    message = "PI 光学定位器已连接"
+                    message = "Positioner connected"
                 )
             )
         }
 
-        SiPhToolsAction.DisconnectPositioner -> {
+        CouplingToolAction.DisconnectPositioner -> {
             state.copy(
                 positioner = PositionerUiState(),
                 status = state.status.copy(
                     deviceText = "PI: Disconnected | Laser: Demo | PowerMeter: Demo",
                     powerText = "Power: -- dBm",
-                    message = "PI 光学定位器已断开"
+                    message = "Positioner disconnected"
                 )
             )
         }
 
-        SiPhToolsAction.ReadPose -> {
+        CouplingToolAction.ReadPose -> {
             state.copy(
                 status = state.status.copy(
-                    message = "读取当前 Pose: ${formatPose(state.positioner.currentPose)}"
+                    message = "Current pose: ${formatPose(state.positioner.currentPose)}"
                 )
             )
         }
 
-        SiPhToolsAction.MoveSafe -> {
+        CouplingToolAction.MoveSafe -> {
             val safePose = state.positioner.safePose
 
             state.copy(
@@ -135,12 +114,12 @@ private fun reduceSiPhToolsAction(
                     isMoving = false
                 ),
                 status = state.status.copy(
-                    message = "已移动到安全位置"
+                    message = "Moved to safe pose"
                 )
             )
         }
 
-        SiPhToolsAction.StopPositioner -> {
+        CouplingToolAction.StopPositioner -> {
             state.copy(
                 positioner = state.positioner.copy(
                     isMoving = false
@@ -151,7 +130,7 @@ private fun reduceSiPhToolsAction(
             )
         }
 
-        is SiPhToolsAction.JogPositioner -> {
+        is CouplingToolAction.JogPositioner -> {
             val newPose = state.positioner.currentPose + action.delta
 
             state.copy(
@@ -164,7 +143,7 @@ private fun reduceSiPhToolsAction(
             )
         }
 
-        is SiPhToolsAction.UpdateLinearStep -> {
+        is CouplingToolAction.UpdateLinearStep -> {
             state.copy(
                 positioner = state.positioner.copy(
                     linearStepUm = action.valueUm
@@ -172,7 +151,7 @@ private fun reduceSiPhToolsAction(
             )
         }
 
-        is SiPhToolsAction.UpdateAngleStep -> {
+        is CouplingToolAction.UpdateAngleStep -> {
             state.copy(
                 positioner = state.positioner.copy(
                     angleStepDeg = action.valueDeg
@@ -180,7 +159,7 @@ private fun reduceSiPhToolsAction(
             )
         }
 
-        is SiPhToolsAction.UpdateCouplingConfig -> {
+        is CouplingToolAction.UpdateCouplingConfig -> {
             state.copy(
                 coupling = state.coupling.copy(
                     config = action.config
@@ -188,7 +167,42 @@ private fun reduceSiPhToolsAction(
             )
         }
 
-        SiPhToolsAction.StartCoupling -> {
+        is CouplingToolAction.UpdateVirtualPivot -> {
+            state.withVirtualPivot(
+                pivot = action.pivot,
+                message = if (action.pivot.enabled) {
+                    "Virtual pivot updated"
+                } else {
+                    "Virtual pivot disabled"
+                }
+            )
+        }
+
+        CouplingToolAction.CapturePivotFromCurrentPose -> {
+            val pose = state.positioner.currentPose
+            val pivot = VirtualPivotPoint(
+                xUm = pose.xUm,
+                yUm = pose.yUm,
+                zUm = pose.zUm,
+                frame = OpticalCoordinateFrame.Positioner,
+                enabled = true,
+                name = "Current optical point"
+            )
+
+            state.withVirtualPivot(
+                pivot = pivot,
+                message = "Captured current pose as virtual pivot"
+            )
+        }
+
+        CouplingToolAction.DisableVirtualPivot -> {
+            state.withVirtualPivot(
+                pivot = VirtualPivotPoint.Disabled,
+                message = "Virtual pivot disabled"
+            )
+        }
+
+        CouplingToolAction.StartCoupling -> {
             val demoSamples = buildDemoCouplingSamples(
                 centerPose = state.positioner.currentPose
             )
@@ -199,7 +213,7 @@ private fun reduceSiPhToolsAction(
             val currentPower = demoSamples.lastOrNull()?.powerDbm
 
             state.copy(
-                runState = SiPhRunState.Running,
+                runState = CouplingToolRunState.Idle,
                 coupling = state.coupling.copy(
                     state = CouplingState.Coupled,
                     isRunning = false,
@@ -207,14 +221,15 @@ private fun reduceSiPhToolsAction(
                     currentPowerDbm = currentPower,
                     bestPowerDbm = bestPower,
                     bestPose = bestPose,
-                    message = "Demo 耦光完成，找到最佳点",
+                    message = "Demo coupling finished; best point found",
                     logs = buildList {
                         add("Start spiral coupling search.")
                         add("Plane: ${state.coupling.config.plane.text}")
                         add("Wavelength: ${state.coupling.config.wavelengthNm} nm")
                         add("Samples: ${demoSamples.size}")
-                        add("Best power: ${bestPower ?: "--"} dBm")
+                        add("Best power: ${formatPower(bestPower)}")
                         add("Best pose: ${bestPose?.let { formatPose(it) } ?: "--"}")
+                        add("Pivot compensation: ${formatPivotConfig(state.coupling.config)}")
                     }
                 ),
                 positioner = if (bestPose != null) {
@@ -225,19 +240,20 @@ private fun reduceSiPhToolsAction(
                     state.positioner
                 },
                 status = state.status.copy(
-                    powerText = "Power: ${bestPower?.let { "${round3(it)} dBm" } ?: "-- dBm"}",
+                    powerText = "Power: ${formatPower(bestPower)}",
                     stateText = "State: Coupled",
                     message = "Demo coupling finished"
                 )
             )
         }
 
-        SiPhToolsAction.StopCoupling -> {
+        CouplingToolAction.StopCoupling -> {
             state.copy(
+                runState = CouplingToolRunState.Stopped,
                 coupling = state.coupling.copy(
                     isRunning = false,
                     state = CouplingState.Stopped,
-                    message = "耦光已停止"
+                    message = "Coupling stopped"
                 ),
                 status = state.status.copy(
                     stateText = "State: Stopped",
@@ -246,8 +262,9 @@ private fun reduceSiPhToolsAction(
             )
         }
 
-        SiPhToolsAction.ClearCouplingData -> {
+        CouplingToolAction.ClearCouplingData -> {
             state.copy(
+                runState = CouplingToolRunState.Idle,
                 coupling = state.coupling.copy(
                     samples = emptyList(),
                     logs = emptyList(),
@@ -265,20 +282,37 @@ private fun reduceSiPhToolsAction(
             )
         }
 
-        SiPhToolsAction.SaveBestPose -> {
+        CouplingToolAction.SaveBestPose -> {
             val bestPose = state.coupling.bestPose
 
             state.copy(
                 status = state.status.copy(
                     message = if (bestPose != null) {
-                        "保存 Best Pose: ${formatPose(bestPose)}"
+                        "Saved best pose: ${formatPose(bestPose)}"
                     } else {
-                        "没有可保存的 Best Pose"
+                        "No best pose to save"
                     }
                 )
             )
         }
     }
+}
+
+private fun CouplingToolUiState.withVirtualPivot(
+    pivot: VirtualPivotPoint,
+    message: String
+): CouplingToolUiState {
+    return copy(
+        coupling = coupling.copy(
+            config = coupling.config.copy(
+                virtualPivotPoint = pivot,
+                enableSoftwarePivotCompensation = pivot.enabled
+            )
+        ),
+        status = status.copy(
+            message = message
+        )
+    )
 }
 
 private fun buildDemoCouplingSamples(
@@ -319,9 +353,7 @@ private fun buildDemoCouplingSamples(
     return offsets.mapIndexed { index, offset ->
         val dx = offset.first
         val dy = offset.second
-
         val distance = kotlin.math.sqrt(dx * dx + dy * dy)
-
         val power = -8.0 - distance * 0.45
 
         CouplingSampleUi(
@@ -341,15 +373,28 @@ private fun buildDemoCouplingSamples(
     }
 }
 
+private fun formatPower(value: Double?): String {
+    return value?.let { "${round3(it)} dBm" } ?: "-- dBm"
+}
+
+private fun formatPivotConfig(config: CouplingConfigUiState): String {
+    val pivot = config.virtualPivotPoint
+    return if (pivot.enabled && config.enableSoftwarePivotCompensation) {
+        "${pivot.name} @ X=${round3(pivot.xUm)} um, Y=${round3(pivot.yUm)} um, Z=${round3(pivot.zUm)} um (${pivot.frame.name})"
+    } else {
+        "Disabled"
+    }
+}
+
 private fun formatPose(
     pose: OpticalPose
 ): String {
-    return "X=${round3(pose.xUm)} μm, " +
-            "Y=${round3(pose.yUm)} μm, " +
-            "Z=${round3(pose.zUm)} μm, " +
-            "U=${round3(pose.uDeg)}°, " +
-            "V=${round3(pose.vDeg)}°, " +
-            "W=${round3(pose.wDeg)}°"
+    return "X=${round3(pose.xUm)} um, " +
+            "Y=${round3(pose.yUm)} um, " +
+            "Z=${round3(pose.zUm)} um, " +
+            "U=${round3(pose.uDeg)} deg, " +
+            "V=${round3(pose.vDeg)} deg, " +
+            "W=${round3(pose.wDeg)} deg"
 }
 
 private fun round3(

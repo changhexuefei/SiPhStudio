@@ -55,14 +55,14 @@ fun JogControlPanel(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 NumberField(
-                    label = "Linear Step μm",
+                    label = "Linear Step um",
                     value = linearStepUm,
                     onValueChange = onLinearStepChange,
                     modifier = Modifier.weight(1f)
                 )
 
                 NumberField(
-                    label = "Angle Step °",
+                    label = "Angle Step deg",
                     value = angleStepDeg,
                     onValueChange = onAngleStepChange,
                     modifier = Modifier.weight(1f)

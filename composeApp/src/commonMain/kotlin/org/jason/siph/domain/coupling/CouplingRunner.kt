@@ -2,8 +2,10 @@ package org.jason.siph.domain.coupling
 
 import kotlinx.coroutines.delay
 import org.jason.siph.domain.optical.OpticalPowerMeterPort
+import org.jason.siph.domain.positioner.OpticalDelta
 import org.jason.siph.domain.positioner.OpticalPose
 import org.jason.siph.domain.positioner.OpticalPositionerPort
+import org.jason.siph.domain.positioner.PivotAwareOpticalPositionerPort
 import kotlin.math.ceil
 import kotlin.math.hypot
 
@@ -433,9 +435,18 @@ class SpiralCouplingRunner(
                         )
                     }
 
-                    positioner.moveTo(
-                        pose = pose,
-                        wait = true
+                    val deltaDeg = when (axis) {
+                        AngleAxis.U -> pose.uDeg - bestPose.uDeg
+                        AngleAxis.V -> pose.vDeg - bestPose.vDeg
+                        AngleAxis.W -> pose.wDeg - bestPose.wDeg
+                    }
+
+                    val samplePose = moveToAngleCandidate(
+                        bestPose = bestPose,
+                        candidatePose = pose,
+                        axis = axis,
+                        deltaDeg = deltaDeg,
+                        config = config
                     )
 
                     settle(config)
@@ -448,7 +459,7 @@ class SpiralCouplingRunner(
                         samples = samples,
                         sample = CouplingSample(
                             index = index++,
-                            pose = pose,
+                            pose = samplePose,
                             powerDbm = power,
                             stage = stage,
                             timestampMs = timeProvider()
@@ -458,7 +469,7 @@ class SpiralCouplingRunner(
 
                     if (power > bestPowerDbm + config.minImproveDb) {
                         bestPowerDbm = power
-                        bestPose = pose
+                        bestPose = samplePose
                         improved = true
                     }
                 }
@@ -473,6 +484,43 @@ class SpiralCouplingRunner(
             nextIndex = index,
             stopped = false
         )
+    }
+
+    private suspend fun moveToAngleCandidate(
+        bestPose: OpticalPose,
+        candidatePose: OpticalPose,
+        axis: AngleAxis,
+        deltaDeg: Double,
+        config: CouplingConfig
+    ): OpticalPose {
+        val pivotAwarePositioner = positioner as? PivotAwareOpticalPositionerPort
+        val pivot = config.virtualPivotPoint
+
+        if (
+            config.enableSoftwarePivotCompensation &&
+            pivot.enabled &&
+            pivotAwarePositioner != null
+        ) {
+            positioner.moveTo(
+                pose = bestPose,
+                wait = true
+            )
+
+            pivotAwarePositioner.moveByAroundPivot(
+                delta = angleDelta(axis, deltaDeg),
+                pivot = pivot,
+                wait = true
+            )
+
+            return positioner.currentPose()
+        }
+
+        positioner.moveTo(
+            pose = candidatePose,
+            wait = true
+        )
+
+        return candidatePose
     }
 
     private suspend fun addSample(
@@ -503,6 +551,25 @@ class SpiralCouplingRunner(
         U,
         V,
         W
+    }
+}
+
+private fun angleDelta(
+    axis: SpiralCouplingRunner.AngleAxis,
+    deltaDeg: Double
+): OpticalDelta {
+    return when (axis) {
+        SpiralCouplingRunner.AngleAxis.U -> {
+            OpticalDelta(duDeg = deltaDeg)
+        }
+
+        SpiralCouplingRunner.AngleAxis.V -> {
+            OpticalDelta(dvDeg = deltaDeg)
+        }
+
+        SpiralCouplingRunner.AngleAxis.W -> {
+            OpticalDelta(dwDeg = deltaDeg)
+        }
     }
 }
 

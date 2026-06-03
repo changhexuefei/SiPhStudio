@@ -18,12 +18,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.jason.siph.ui.model.PositionerUiState
-import org.jason.siph.ui.model.SiPhToolsAction
+import org.jason.siph.ui.model.CouplingToolAction
 
 @Composable
 fun PositionerControlPanel(
     state: PositionerUiState,
-    onAction: (SiPhToolsAction) -> Unit,
+    onAction: (CouplingToolAction) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
@@ -62,13 +62,13 @@ fun PositionerControlPanel(
                 angleStepDeg = state.angleStepDeg,
                 enabled = state.connected && !state.isMoving,
                 onLinearStepChange = {
-                    onAction(SiPhToolsAction.UpdateLinearStep(it))
+                    onAction(CouplingToolAction.UpdateLinearStep(it))
                 },
                 onAngleStepChange = {
-                    onAction(SiPhToolsAction.UpdateAngleStep(it))
+                    onAction(CouplingToolAction.UpdateAngleStep(it))
                 },
                 onJog = {
-                    onAction(SiPhToolsAction.JogPositioner(it))
+                    onAction(CouplingToolAction.JogPositioner(it))
                 },
                 modifier = Modifier.weight(1.15f)
             )
@@ -79,7 +79,7 @@ fun PositionerControlPanel(
 @Composable
 private fun PositionerHeaderCard(
     state: PositionerUiState,
-    onAction: (SiPhToolsAction) -> Unit
+    onAction: (CouplingToolAction) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth()
@@ -125,7 +125,7 @@ private fun PositionerHeaderCard(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Button(
-                    onClick = { onAction(SiPhToolsAction.ConnectPositioner) },
+                    onClick = { onAction(CouplingToolAction.ConnectPositioner) },
                     enabled = !state.connected,
                     modifier = Modifier.weight(1f)
                 ) {
@@ -133,7 +133,7 @@ private fun PositionerHeaderCard(
                 }
 
                 OutlinedButton(
-                    onClick = { onAction(SiPhToolsAction.DisconnectPositioner) },
+                    onClick = { onAction(CouplingToolAction.DisconnectPositioner) },
                     enabled = state.connected,
                     modifier = Modifier.weight(1f)
                 ) {
@@ -141,7 +141,7 @@ private fun PositionerHeaderCard(
                 }
 
                 OutlinedButton(
-                    onClick = { onAction(SiPhToolsAction.ReadPose) },
+                    onClick = { onAction(CouplingToolAction.ReadPose) },
                     enabled = state.connected,
                     modifier = Modifier.weight(1f)
                 ) {
@@ -155,7 +155,7 @@ private fun PositionerHeaderCard(
 @Composable
 private fun PositionerSafetyCard(
     state: PositionerUiState,
-    onAction: (SiPhToolsAction) -> Unit
+    onAction: (CouplingToolAction) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth()
@@ -181,7 +181,7 @@ private fun PositionerSafetyCard(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Button(
-                    onClick = { onAction(SiPhToolsAction.MoveSafe) },
+                    onClick = { onAction(CouplingToolAction.MoveSafe) },
                     enabled = state.connected && !state.isMoving,
                     modifier = Modifier.weight(1f)
                 ) {
@@ -189,7 +189,7 @@ private fun PositionerSafetyCard(
                 }
 
                 OutlinedButton(
-                    onClick = { onAction(SiPhToolsAction.StopPositioner) },
+                    onClick = { onAction(CouplingToolAction.StopPositioner) },
                     enabled = state.connected,
                     modifier = Modifier.weight(1f)
                 ) {

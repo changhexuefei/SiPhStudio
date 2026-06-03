@@ -14,24 +14,20 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import org.jason.siph.ui.model.SiPhToolsAction
-import org.jason.siph.ui.model.SiPhToolsUiState
+import org.jason.siph.ui.model.CouplingToolAction
+import org.jason.siph.ui.model.CouplingToolUiState
 import org.jason.siph.ui.positioner.CompactPositionerPanel
 
 /**
- * Coupling 页面工作区。
+ * Coupling workspace.
  *
- * 这个页面不要直接复用完整的 PositionerControlPanel，
- * 否则左侧内容会过重、过高，Coupling Config 容易显示不全。
- *
- * 布局：
- * - 宽屏：左侧 Positioner + Config，右侧 Result + Plot + Log
- * - 窄屏：单列纵向显示
+ * This page keeps positioner controls compact so coupling config,
+ * results, plot, and logs remain visible during alignment work.
  */
 @Composable
 fun CouplingWorkspace(
-    state: SiPhToolsUiState,
-    onAction: (SiPhToolsAction) -> Unit,
+    state: CouplingToolUiState,
+    onAction: (CouplingToolAction) -> Unit,
     modifier: Modifier = Modifier
 ) {
     BoxWithConstraints(
@@ -57,8 +53,8 @@ fun CouplingWorkspace(
 
 @Composable
 private fun CouplingWorkspaceTwoColumns(
-    state: SiPhToolsUiState,
-    onAction: (SiPhToolsAction) -> Unit,
+    state: CouplingToolUiState,
+    onAction: (CouplingToolAction) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -86,13 +82,13 @@ private fun CouplingWorkspaceTwoColumns(
                 state = state.coupling.config,
                 enabled = !state.coupling.isRunning,
                 onConfigChange = {
-                    onAction(SiPhToolsAction.UpdateCouplingConfig(it))
+                    onAction(CouplingToolAction.UpdateCouplingConfig(it))
                 },
                 onStartCoupling = {
-                    onAction(SiPhToolsAction.StartCoupling)
+                    onAction(CouplingToolAction.StartCoupling)
                 },
                 onStopCoupling = {
-                    onAction(SiPhToolsAction.StopCoupling)
+                    onAction(CouplingToolAction.StopCoupling)
                 },
                 modifier = Modifier.fillMaxWidth()
             )
@@ -110,8 +106,8 @@ private fun CouplingWorkspaceTwoColumns(
 
 @Composable
 private fun CouplingWorkspaceSingleColumn(
-    state: SiPhToolsUiState,
-    onAction: (SiPhToolsAction) -> Unit,
+    state: CouplingToolUiState,
+    onAction: (CouplingToolAction) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
@@ -133,13 +129,13 @@ private fun CouplingWorkspaceSingleColumn(
             state = state.coupling.config,
             enabled = !state.coupling.isRunning,
             onConfigChange = {
-                onAction(SiPhToolsAction.UpdateCouplingConfig(it))
+                onAction(CouplingToolAction.UpdateCouplingConfig(it))
             },
             onStartCoupling = {
-                onAction(SiPhToolsAction.StartCoupling)
+                onAction(CouplingToolAction.StartCoupling)
             },
             onStopCoupling = {
-                onAction(SiPhToolsAction.StopCoupling)
+                onAction(CouplingToolAction.StopCoupling)
             },
             modifier = Modifier.fillMaxWidth()
         )
