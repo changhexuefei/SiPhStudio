@@ -11,7 +11,11 @@ repositories {
 
 dependencies {
     testImplementation(kotlin("test"))
-    implementation(libs.kotlinx.coroutinesSwing)
+    // 引用 toml 中定义的 ktor-network
+    implementation(libs.ktor.network)
+
+    // 引用协程库
+    implementation(libs.kotlinx.coroutines.core)
 }
 
 kotlin {
