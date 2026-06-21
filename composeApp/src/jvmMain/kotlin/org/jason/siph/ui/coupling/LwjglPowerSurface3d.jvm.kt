@@ -51,6 +51,7 @@ import java.awt.event.MouseEvent
 import java.awt.event.MouseMotionAdapter
 import java.awt.event.MouseWheelEvent
 import java.awt.event.MouseWheelListener
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.BorderFactory
 import javax.swing.JLabel
 import javax.swing.JPanel
@@ -63,12 +64,10 @@ internal actual fun LwjglPowerSurface3d(
     modifier: Modifier
 ) {
     /*
-     * 关键点：
+     * 不要在 mesh == null 时直接 return Compose Placeholder。
      *
-     * 不要在 mesh == null 时 return Compose Placeholder。
-     * 否则 Compose 会把 SwingPanel / AWTGLCanvas 从树上移除，
-     * AWTGLCanvas.removeNotify() 会触发 lwjgl3-awt 的 dispose，
-     * 在 Windows + Hot Reload / Live Edit 下容易出现：
+     * 否则 Compose 会销毁 SwingPanel / AWTGLCanvas，
+     * 在 Windows + Compose Hot Reload / Live Edit 下容易触发：
      *
      * JAWTDrawingSurface ds is null
      */
@@ -84,29 +83,29 @@ internal actual fun LwjglPowerSurface3d(
 }
 
 /**
- * Swing 侧的稳定容器。
+ * Swing 侧稳定容器。
  *
- * Compose 只持有这个 JPanel。
- * mesh 为空时，只在 Swing 内部切换到 placeholder，
- * 不销毁 AWTGLCanvas。
+ * Compose 只管理这个 JPanel。
+ * mesh == null 时，只在 Swing 内部显示 placeholder。
+ * mesh != null 时，懒创建 LwjglSurfaceCanvas。
  */
 private class LwjglSurfacePanel : JPanel(BorderLayout()) {
 
     private val cardLayout = CardLayout()
 
-    private val canvas = LwjglSurfaceCanvas()
-
     private val placeholder = createPlaceholder()
+
+    private var canvas: LwjglSurfaceCanvas? = null
 
     private val cardPanel = JPanel(cardLayout).apply {
         add(placeholder, CARD_PLACEHOLDER)
-        add(canvas, CARD_CANVAS)
     }
 
     init {
         minimumSize = Dimension(64, 64)
         preferredSize = Dimension(720, 420)
         border = BorderFactory.createLineBorder(Color(210, 218, 230), 1)
+
         add(cardPanel, BorderLayout.CENTER)
 
         cardLayout.show(cardPanel, CARD_PLACEHOLDER)
@@ -115,16 +114,41 @@ private class LwjglSurfacePanel : JPanel(BorderLayout()) {
     fun setMesh(mesh: SurfaceMesh?) {
         runOnEdt {
             if (mesh == null) {
-                canvas.setMesh(null)
+                canvas?.setMesh(null)
+
                 cardLayout.show(cardPanel, CARD_PLACEHOLDER)
-            } else {
-                cardLayout.show(cardPanel, CARD_CANVAS)
-                canvas.setMesh(mesh)
+                revalidate()
+                repaint()
+
+                return@runOnEdt
             }
 
+            val activeCanvas = ensureCanvas()
+            activeCanvas.setMesh(mesh)
+
+            cardLayout.show(cardPanel, CARD_CANVAS)
             revalidate()
             repaint()
         }
+    }
+
+    private fun ensureCanvas(): LwjglSurfaceCanvas {
+        val existing = canvas
+
+        if (existing != null && !existing.isDisposed) {
+            return existing
+        }
+
+        if (existing != null) {
+            cardPanel.remove(existing)
+        }
+
+        val created = LwjglSurfaceCanvas()
+        canvas = created
+
+        cardPanel.add(created, CARD_CANVAS)
+
+        return created
     }
 
     companion object {
@@ -135,7 +159,7 @@ private class LwjglSurfacePanel : JPanel(BorderLayout()) {
             return JLabel(
                 """
                 <html>
-                    <div style='text-align:center; padding: 16px;'>
+                    <div style='text-align:center; padding: 18px;'>
                         <div style='font-size: 15px; font-weight: bold;'>LWJGL</div>
                         <div style='font-size: 11px; margin-top: 6px;'>
                             Need at least three non-collinear samples to build a surface.
@@ -157,23 +181,24 @@ private class LwjglSurfacePanel : JPanel(BorderLayout()) {
 /**
  * 真正的 OpenGL Canvas。
  *
- * 注意：
- * 1. 允许 mesh 为 null。
- * 2. 不在 paintGL 里手动重复 initGL。
- * 3. repaint 前判断 displayable / size。
- * 4. removeNotify 里兜底处理 lwjgl3-awt 在 Windows 下的 dispose NPE。
+ * 关键保护：
+ * 1. mesh 可为空。
+ * 2. repaint 前检查 displayable / size。
+ * 3. removeNotify 捕获 lwjgl3-awt 在 Windows 下偶发的 dispose NPE。
+ * 4. dispose NPE 只打印一次，避免控制台刷屏。
  */
 private class LwjglSurfaceCanvas : AWTGLCanvas(
     GLData().apply {
         /*
-         * 你当前使用的是固定管线：
+         * 当前代码使用固定管线：
          * glBegin / glMatrixMode / glFrustum / glShadeModel
          *
-         * 所以必须用兼容模式。
+         * 所以必须使用兼容模式。
          *
-         * 如果客户工控机显卡比较旧，可以考虑改成：
+         * 如果客户机器显卡较旧，可以尝试改成：
          * majorVersion = 2
          * minorVersion = 1
+         * profile 不设置
          */
         majorVersion = 3
         minorVersion = 2
@@ -191,6 +216,9 @@ private class LwjglSurfaceCanvas : AWTGLCanvas(
 
     @Volatile
     private var disposed = false
+
+    val isDisposed: Boolean
+        get() = disposed
 
     private var yaw = -34f
     private var pitch = 58f
@@ -277,6 +305,7 @@ private class LwjglSurfaceCanvas : AWTGLCanvas(
         glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
 
         val currentMesh = mesh
+
         if (currentMesh == null || currentMesh.points.isEmpty()) {
             swapBuffers()
             return
@@ -309,15 +338,11 @@ private class LwjglSurfaceCanvas : AWTGLCanvas(
         try {
             super.removeNotify()
         } catch (e: NullPointerException) {
-            /*
-             * lwjgl3-awt 在 Windows + Compose SwingPanel + Hot Reload/Live Edit
-             * 场景下，dispose 时 JAWTDrawingSurface 可能为 null。
-             *
-             * 这里兜底吞掉，避免页面切换 / 热重载 / 关闭窗口时崩溃。
-             */
-            System.err.println(
-                "Ignored LWJGL AWTGLCanvas dispose NPE: ${e.message}"
-            )
+            if (disposeWarningPrinted.compareAndSet(false, true)) {
+                System.err.println(
+                    "Ignored LWJGL AWTGLCanvas dispose NPE once: ${e.message}"
+                )
+            }
         }
     }
 
@@ -354,6 +379,10 @@ private class LwjglSurfaceCanvas : AWTGLCanvas(
             12.0
         )
     }
+
+    companion object {
+        private val disposeWarningPrinted = AtomicBoolean(false)
+    }
 }
 
 private fun drawSurface(
@@ -367,6 +396,7 @@ private fun drawSurface(
         ?: 1.0
 
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+
     glBegin(GL_TRIANGLES)
 
     for (yIndex in 0 until rows.lastIndex) {
@@ -409,9 +439,11 @@ private fun drawWireframe(
 
         if (index % 2 == 0 || index == rows.lastIndex) {
             glBegin(GL_LINE_STRIP)
+
             row.forEach { point ->
                 vertex(point)
             }
+
             glEnd()
         }
     }
@@ -446,9 +478,11 @@ private fun drawProjection(
             glColor3f(0.86f, 0.15f, 0.15f)
 
             glBegin(GL_LINE_STRIP)
+
             row.forEach { point ->
                 vertex(point, flattened = true)
             }
+
             glEnd()
         }
     }
@@ -481,10 +515,12 @@ private fun drawPlotBox() {
 
     fun boxLoop(y: Float) {
         glBegin(GL_LINE_LOOP)
+
         glVertex3f(min, y, min)
         glVertex3f(max, y, min)
         glVertex3f(max, y, max)
         glVertex3f(min, y, max)
+
         glEnd()
     }
 
@@ -542,11 +578,13 @@ private fun drawPeak(
     glColor3f(0.96f, 0.25f, 0.37f)
 
     glBegin(GL_POINTS)
+
     glVertex3f(
         coords[0],
         coords[1] + 0.035f,
         coords[2]
     )
+
     glEnd()
 }
 
@@ -625,6 +663,7 @@ private fun surfaceColor(
     val right = stops[rightIndex]
 
     val span = right.first - left.first
+
     val local = if (span.absoluteValue <= 1e-6f) {
         0f
     } else {
