@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -35,7 +36,10 @@ fun CouplingResultPanel(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Card(
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -76,12 +80,14 @@ fun CouplingResultPanel(
                     ResultMetric(
                         label = "Current",
                         value = formatPower(state.currentPowerDbm),
+                        emphasized = false,
                         modifier = Modifier.weight(1f)
                     )
 
                     ResultMetric(
                         label = "Best",
                         value = formatPower(state.bestPowerDbm),
+                        emphasized = state.bestPowerDbm != null,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -139,13 +145,23 @@ fun CouplingResultPanel(
 private fun ResultMetric(
     label: String,
     value: String,
+    emphasized: Boolean,
     modifier: Modifier = Modifier
 ) {
     Surface(
         modifier = modifier,
         tonalElevation = 1.dp,
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceVariant
+        color = if (emphasized) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f)
+        },
+        contentColor = if (emphasized) {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        }
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -154,7 +170,11 @@ private fun ResultMetric(
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (emphasized) {
+                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.74f)
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
             )
 
             Text(

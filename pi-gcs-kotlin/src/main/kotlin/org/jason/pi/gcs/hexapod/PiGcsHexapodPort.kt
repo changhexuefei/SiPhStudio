@@ -3,8 +3,6 @@ package org.jason.pi.gcs.hexapod
 
 import org.jason.pi.gcs.core.GcsDevice
 import org.jason.pi.gcs.pitools.PiTools
-import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.seconds
 
 /**
  * 基于 PI GCS 的六轴实现。
@@ -92,8 +90,8 @@ class PiGcsHexapodPort(
         PiTools.waitOnTarget(
             device = device,
             axes = axes,
-            timeout = timeoutMs.milliseconds,
-            pollInterval = 100.milliseconds
+            timeoutMs = timeoutMs,
+            pollDelayMs = 100L
         )
     }
 
@@ -121,7 +119,7 @@ class PiGcsHexapodPort(
         return PiTools.queryTravelRange(
             device = device,
             axes = axes
-        )
+        ).toClosedRangeMap()
     }
 
     override fun close() {

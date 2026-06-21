@@ -2,6 +2,7 @@ package org.jason.siph.ui.siphtools
 
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,10 +11,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -23,6 +26,7 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.jason.siph.ui.coupling.CouplingWorkspace
@@ -42,14 +46,12 @@ fun CouplingToolScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.background)
     ) {
         CouplingToolTopBar(
             state = state,
             onAction = onAction
         )
-
-        HorizontalDivider()
 
         Row(
             modifier = Modifier
@@ -57,7 +59,7 @@ fun CouplingToolScreen(
                 .fillMaxWidth()
         ) {
             Surface(
-                tonalElevation = 1.dp,
+                tonalElevation = 0.dp,
                 color = MaterialTheme.colorScheme.surface
             ) {
                 CouplingToolNavigationPanel(
@@ -66,7 +68,7 @@ fun CouplingToolScreen(
                         onAction(CouplingToolAction.SelectPage(it))
                     },
                     modifier = Modifier
-                        .width(224.dp)
+                        .width(236.dp)
                         .fillMaxHeight()
                 )
             }
@@ -80,8 +82,15 @@ fun CouplingToolScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
-                    .padding(20.dp),
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                MaterialTheme.colorScheme.background,
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+                            )
+                        )
+                    )
+                    .padding(horizontal = 22.dp, vertical = 18.dp),
                 contentAlignment = Alignment.TopCenter
             ) {
                 when (state.selectedPage) {
@@ -135,18 +144,18 @@ private fun CouplingToolTopBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 12.dp),
+                .padding(horizontal = 22.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column {
                 Text(
-                    text = "SiPh Coupling Tool",
+                    text = "SiPh Studio",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
 
                 Text(
-                    text = "Optical Coupling Alignment Tool",
+                    text = "Optical coupling alignment and PI hexapod control",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -154,16 +163,30 @@ private fun CouplingToolTopBar(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            Text(
-                text = state.runState.text,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(end = 16.dp)
-            )
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier
+                    .padding(end = 14.dp)
+                    .border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                        shape = MaterialTheme.shapes.medium
+                    )
+            ) {
+                Text(
+                    text = state.runState.text,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
 
             Button(
                 onClick = { onAction(CouplingToolAction.StartCoupling) },
-                enabled = state.runState != CouplingToolRunState.Running
+                enabled = state.runState != CouplingToolRunState.Running,
+                modifier = Modifier.heightIn(min = 40.dp)
             ) {
                 Text("Start Coupling")
             }
@@ -171,7 +194,11 @@ private fun CouplingToolTopBar(
             Spacer(modifier = Modifier.width(8.dp))
 
             OutlinedButton(
-                onClick = { onAction(CouplingToolAction.StopCoupling) }
+                onClick = { onAction(CouplingToolAction.StopCoupling) },
+                modifier = Modifier.heightIn(min = 40.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error
+                )
             ) {
                 Text("Stop")
             }

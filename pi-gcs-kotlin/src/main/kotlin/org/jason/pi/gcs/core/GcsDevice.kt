@@ -3,40 +3,62 @@ package org.jason.pi.gcs.core
 import org.jason.pi.gcs.hexapod.PiAxis
 
 /**
- * PI GCS 命令封装。
+ * Minimal typed PI GCS device facade.
  *
- * 类似 PIPython 里的 GCSDevice / GCSCommands 的最小 Kotlin 版本。
+ * The shape intentionally follows PIPython's GCSDevice/GCSCommands split:
+ * high-level methods build a typed command, GcsClient owns transport access and
+ * ERR? checking, and responses are parsed through GcsResponseParser.
  */
 class GcsDevice(
     private val client: GcsClient
 ) : AutoCloseable {
 
+    val isOpen: Boolean
+        get() = client.isOpen
+
     suspend fun connect() {
         client.connect()
     }
 
+    suspend fun execute(command: GcsCommand): String? {
+        return client.execute(command)
+    }
+
     suspend fun qIDN(): String {
-        return client.query("*IDN?")
+        return query(GcsCommand.qIDN())
     }
 
     suspend fun qVER(): String {
-        return client.query("VER?")
+        return query(GcsCommand.qVER())
     }
 
     suspend fun qERR(): Int {
         return client.qERR()
     }
 
+    suspend fun qAxes(): List<PiAxis> {
+        val response = query(GcsCommand.qAxes())
+        return GcsResponseParser.parseAxes(response)
+    }
+
     suspend fun stopAll() {
-        client.command("STP")
+        command(GcsCommand.stopAll())
     }
 
     suspend fun servoOn(axis: PiAxis) {
-        client.command("SVO ${axis.code} 1")
+        command(GcsCommand.servo(axis, enabled = true))
     }
 
     suspend fun servoOff(axis: PiAxis) {
-        client.command("SVO ${axis.code} 0")
+        command(GcsCommand.servo(axis, enabled = false))
+    }
+
+    suspend fun qServo(axis: PiAxis): Boolean {
+        val response = query(GcsCommand.qServo(axis))
+        return GcsResponseParser.parseAxisBoolean(
+            response = response,
+            expectedAxis = axis
+        )
     }
 
     suspend fun servoOnAll(
@@ -55,121 +77,90 @@ class GcsDevice(
         }
     }
 
-    /**
-     * 单轴绝对移动。
-     */
     suspend fun moveAbsolute(
         axis: PiAxis,
         target: Double
     ) {
-        client.command(
-            "MOV ${axis.code} ${target.toGcsNumber()}"
-        )
+        command(GcsCommand.moveAbsolute(axis, target))
     }
 
-    /**
-     * 多轴绝对移动。
-     *
-     * 对六轴来说，尽量用一次 MOV 下发多个轴，
-     * 比逐个轴移动更适合保持同步。
-     */
     suspend fun moveAbsolute(
         targets: Map<PiAxis, Double>
     ) {
         if (targets.isEmpty()) return
-
-        val body = targets.entries.joinToString(" ") { (axis, value) ->
-            "${axis.code} ${value.toGcsNumber()}"
-        }
-
-        client.command("MOV $body")
+        command(GcsCommand.moveAbsolute(targets))
     }
 
-    /**
-     * 单轴相对移动。
-     */
     suspend fun moveRelative(
         axis: PiAxis,
         delta: Double
     ) {
-        client.command(
-            "MVR ${axis.code} ${delta.toGcsNumber()}"
-        )
+        command(GcsCommand.moveRelative(axis, delta))
     }
 
-    /**
-     * 多轴相对移动。
-     */
     suspend fun moveRelative(
         deltas: Map<PiAxis, Double>
     ) {
         val nonZero = deltas.filterValues { it != 0.0 }
         if (nonZero.isEmpty()) return
-
-        val body = nonZero.entries.joinToString(" ") { (axis, value) ->
-            "${axis.code} ${value.toGcsNumber()}"
-        }
-
-        client.command("MVR $body")
+        command(GcsCommand.moveRelative(nonZero))
     }
 
-    suspend fun qPOS(
-        axis: PiAxis
-    ): Double {
-        val response = client.query("POS? ${axis.code}")
-        return parseAxisDouble(
+    suspend fun qPOS(axis: PiAxis): Double {
+        val response = query(GcsCommand.qPosition(axis))
+        return GcsResponseParser.parseAxisDouble(
             response = response,
             expectedAxis = axis
         )
     }
 
-    /**
-     * 查询多个轴位置。
-     *
-     * 为了兼容不同控制器响应格式，这里先逐轴查询。
-     * 后续如果确认控制器多轴响应格式稳定，可以优化成一次 POS? 多轴查询。
-     */
     suspend fun qPOS(
         axes: List<PiAxis> = PiAxis.HEXAPOD_AXES
     ): Map<PiAxis, Double> {
-        return axes.associateWith { axis ->
-            qPOS(axis)
+        require(axes.isNotEmpty()) {
+            "qPOS axes must not be empty"
         }
+
+        val response = query(GcsCommand.qPosition(axes))
+        return GcsResponseParser.parseAxisDoubleMap(
+            response = response,
+            expectedAxes = axes
+        )
     }
 
-    suspend fun qONT(
-        axis: PiAxis
-    ): Boolean {
-        val response = client.query("ONT? ${axis.code}")
-        return parseAxisInt(
+    suspend fun qONT(axis: PiAxis): Boolean {
+        val response = query(GcsCommand.qOnTarget(axis))
+        return GcsResponseParser.parseAxisBoolean(
             response = response,
             expectedAxis = axis
-        ) == 1
+        )
     }
 
     suspend fun qONT(
         axes: List<PiAxis> = PiAxis.HEXAPOD_AXES
     ): Map<PiAxis, Boolean> {
-        return axes.associateWith { axis ->
-            qONT(axis)
+        require(axes.isNotEmpty()) {
+            "qONT axes must not be empty"
         }
+
+        val response = query(GcsCommand.qOnTarget(axes))
+        return GcsResponseParser.parseAxisBooleanMap(
+            response = response,
+            expectedAxes = axes
+        )
     }
 
-    suspend fun qTMN(
-        axis: PiAxis
-    ): Double {
-        val response = client.query("TMN? ${axis.code}")
-        return parseAxisDouble(
+    suspend fun qTMN(axis: PiAxis): Double {
+        val response = query(GcsCommand.qTravelMin(axis))
+        return GcsResponseParser.parseAxisDouble(
             response = response,
             expectedAxis = axis
         )
     }
 
-    suspend fun qTMX(
-        axis: PiAxis
-    ): Double {
-        val response = client.query("TMX? ${axis.code}")
-        return parseAxisDouble(
+    suspend fun qTMX(axis: PiAxis): Double {
+        val response = query(GcsCommand.qTravelMax(axis))
+        return GcsResponseParser.parseAxisDouble(
             response = response,
             expectedAxis = axis
         )
@@ -178,27 +169,33 @@ class GcsDevice(
     suspend fun qTMN(
         axes: List<PiAxis> = PiAxis.HEXAPOD_AXES
     ): Map<PiAxis, Double> {
-        return axes.associateWith { axis ->
-            qTMN(axis)
+        require(axes.isNotEmpty()) {
+            "qTMN axes must not be empty"
         }
+
+        val response = query(GcsCommand.qTravelMin(axes))
+        return GcsResponseParser.parseAxisDoubleMap(
+            response = response,
+            expectedAxes = axes
+        )
     }
 
     suspend fun qTMX(
         axes: List<PiAxis> = PiAxis.HEXAPOD_AXES
     ): Map<PiAxis, Double> {
-        return axes.associateWith { axis ->
-            qTMX(axis)
+        require(axes.isNotEmpty()) {
+            "qTMX axes must not be empty"
         }
+
+        val response = query(GcsCommand.qTravelMax(axes))
+        return GcsResponseParser.parseAxisDoubleMap(
+            response = response,
+            expectedAxes = axes
+        )
     }
 
-    /**
-     * FRF 参考。
-     *
-     * 不是所有控制器 / 六轴都需要这样做。
-     * 实际是否使用，要根据 PI 控制器手册确认。
-     */
     suspend fun reference(axis: PiAxis) {
-        client.command("FRF ${axis.code}")
+        command(GcsCommand.reference(axis))
     }
 
     suspend fun referenceAll(
@@ -212,52 +209,18 @@ class GcsDevice(
     override fun close() {
         client.close()
     }
-}
 
-/**
- * 解析类似：
- * X=1.234
- * X 1.234
- * X\t1.234
- */
-private fun parseAxisDouble(
-    response: String,
-    expectedAxis: PiAxis
-): Double {
-    val tokens = response
-        .replace("=", " ")
-        .trim()
-        .split(Regex("\\s+"))
-        .filter { it.isNotBlank() }
-
-    if (tokens.size < 2) {
-        throw PiGcsParseException(
-            response = response,
-            message = "PI GCS 轴响应格式错误"
-        )
+    private suspend fun command(command: GcsCommand) {
+        check(command.isCommand) {
+            "Expected a PI GCS command: ${command.text}"
+        }
+        client.execute(command)
     }
 
-    val actualAxis = tokens[0].trim()
-    if (!actualAxis.equals(expectedAxis.code, ignoreCase = true)) {
-        throw PiGcsParseException(
-            response = response,
-            message = "PI GCS 响应轴不匹配，expected=${expectedAxis.code}, actual=$actualAxis"
-        )
+    private suspend fun query(command: GcsCommand): String {
+        check(command.isQuery) {
+            "Expected a PI GCS query: ${command.text}"
+        }
+        return client.execute(command) ?: ""
     }
-
-    return tokens[1].toDoubleOrNull()
-        ?: throw PiGcsParseException(
-            response = response,
-            message = "无法解析 PI GCS 数值"
-        )
-}
-
-private fun parseAxisInt(
-    response: String,
-    expectedAxis: PiAxis
-): Int {
-    return parseAxisDouble(
-        response = response,
-        expectedAxis = expectedAxis
-    ).toInt()
 }

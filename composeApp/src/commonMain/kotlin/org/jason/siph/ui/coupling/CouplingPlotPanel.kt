@@ -1,12 +1,13 @@
 package org.jason.siph.ui.coupling
 
-
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,7 +27,10 @@ fun CouplingPlotPanel(
     modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = modifier
+        modifier = modifier,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
     ) {
         Column(
             modifier = Modifier
@@ -42,6 +46,7 @@ fun CouplingPlotPanel(
             Text(
                 text = "Power vs Step",
                 style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp)
             )
 
@@ -55,6 +60,7 @@ fun CouplingPlotPanel(
             Text(
                 text = "XY Heatmap",
                 style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp)
             )
 
@@ -74,23 +80,29 @@ private fun PowerVsStepChart(
     modifier: Modifier = Modifier
 ) {
     val lineColor = MaterialTheme.colorScheme.primary
-    val axisColor = MaterialTheme.colorScheme.outline
-    val emptyTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val pointHaloColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.36f)
+    val axisColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.72f)
+    val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)
+    val surfaceColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
 
     Canvas(
-        modifier = modifier.fillMaxSize()
+        modifier = modifier
+            .fillMaxSize()
+            .background(surfaceColor, MaterialTheme.shapes.small)
     ) {
-        if (samples.isEmpty()) {
-            return@Canvas
-        }
-
         val padding = 12.dp.toPx()
         val width = size.width - padding * 2f
         val height = size.height - padding * 2f
 
-        val minPower = samples.minOf { it.powerDbm }
-        val maxPower = samples.maxOf { it.powerDbm }
-        val powerSpan = (maxPower - minPower).takeIf { it.absoluteValue > 1e-9 } ?: 1.0
+        repeat(4) { index ->
+            val y = padding + height * (index + 1) / 5f
+            drawLine(
+                color = gridColor,
+                start = Offset(padding, y),
+                end = Offset(padding + width, y),
+                strokeWidth = 1.dp.toPx()
+            )
+        }
 
         drawRect(
             color = axisColor,
@@ -98,6 +110,14 @@ private fun PowerVsStepChart(
             size = Size(width, height),
             style = Stroke(width = 1.dp.toPx())
         )
+
+        if (samples.isEmpty()) {
+            return@Canvas
+        }
+
+        val minPower = samples.minOf { it.powerDbm }
+        val maxPower = samples.maxOf { it.powerDbm }
+        val powerSpan = (maxPower - minPower).takeIf { it.absoluteValue > 1e-9 } ?: 1.0
 
         val points = samples.mapIndexed { index, sample ->
             val x = if (samples.size <= 1) {
@@ -123,8 +143,13 @@ private fun PowerVsStepChart(
 
         points.forEach {
             drawCircle(
+                color = pointHaloColor,
+                radius = 5.dp.toPx(),
+                center = it
+            )
+            drawCircle(
                 color = lineColor,
-                radius = 2.5.dp.toPx(),
+                radius = 2.8.dp.toPx(),
                 center = it
             )
         }
@@ -136,18 +161,28 @@ private fun XyHeatmap(
     samples: List<CouplingSampleUi>,
     modifier: Modifier = Modifier
 ) {
-    val borderColor = MaterialTheme.colorScheme.outline
+    val borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.72f)
+    val surfaceColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
 
     Canvas(
-        modifier = modifier.fillMaxSize()
+        modifier = modifier
+            .fillMaxSize()
+            .background(surfaceColor, MaterialTheme.shapes.small)
     ) {
-        if (samples.isEmpty()) {
-            return@Canvas
-        }
-
         val padding = 12.dp.toPx()
         val width = size.width - padding * 2f
         val height = size.height - padding * 2f
+
+        drawRect(
+            color = borderColor,
+            topLeft = Offset(padding, padding),
+            size = Size(width, height),
+            style = Stroke(width = 1.dp.toPx())
+        )
+
+        if (samples.isEmpty()) {
+            return@Canvas
+        }
 
         val xMin = samples.minOf { it.pose.xUm }
         val xMax = samples.maxOf { it.pose.xUm }
@@ -157,15 +192,7 @@ private fun XyHeatmap(
         val pMin = samples.minOf { it.powerDbm }
         val pMax = samples.maxOf { it.powerDbm }
         val pSpan = (pMax - pMin).takeIf { it.absoluteValue > 1e-9 } ?: 1.0
-
-        drawRect(
-            color = borderColor,
-            topLeft = Offset(padding, padding),
-            size = Size(width, height),
-            style = Stroke(width = 1.dp.toPx())
-        )
-
-        val pointSize = 6.dp.toPx()
+        val pointSize = 8.dp.toPx()
 
         samples.forEach { sample ->
             val xNorm = normalize(sample.pose.xUm, xMin, xMax)
@@ -205,11 +232,28 @@ private fun heatColor(
     value: Float
 ): Color {
     val t = value.coerceIn(0f, 1f)
+    val cold = Color(0xFF2563EB)
+    val mid = Color(0xFF0F766E)
+    val hot = Color(0xFFF59E0B)
+
+    return if (t < 0.5f) {
+        lerpColor(cold, mid, t * 2f)
+    } else {
+        lerpColor(mid, hot, (t - 0.5f) * 2f)
+    }.copy(alpha = 0.9f)
+}
+
+private fun lerpColor(
+    start: Color,
+    end: Color,
+    t: Float
+): Color {
+    val clamped = t.coerceIn(0f, 1f)
 
     return Color(
-        red = t,
-        green = 0.2f,
-        blue = 1f - t,
-        alpha = 0.9f
+        red = start.red + (end.red - start.red) * clamped,
+        green = start.green + (end.green - start.green) * clamped,
+        blue = start.blue + (end.blue - start.blue) * clamped,
+        alpha = start.alpha + (end.alpha - start.alpha) * clamped
     )
 }
