@@ -3,10 +3,12 @@ package org.jason.siph.ui.coupling
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -29,10 +31,18 @@ import org.jason.siph.ui.model.CouplingToolAction
 fun CouplingResultPanel(
     state: CouplingUiState,
     onAction: (CouplingToolAction) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    scrollable: Boolean = true
 ) {
+    val scrollState = rememberScrollState()
+    val contentModifier = if (scrollable) {
+        modifier.verticalScroll(scrollState)
+    } else {
+        modifier
+    }
+
     Column(
-        modifier = modifier.fillMaxHeight(),
+        modifier = contentModifier,
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Card(
@@ -129,14 +139,14 @@ fun CouplingResultPanel(
             samples = state.samples,
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1.45f)
+                .height(620.dp)
         )
 
         CouplingLogPanel(
             logs = state.logs,
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(0.55f)
+                .height(240.dp)
         )
     }
 }

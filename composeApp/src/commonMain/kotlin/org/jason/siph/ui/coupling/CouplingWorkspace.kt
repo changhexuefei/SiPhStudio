@@ -97,6 +97,7 @@ private fun CouplingWorkspaceTwoColumns(
         CouplingResultPanel(
             state = state.coupling,
             onAction = onAction,
+            scrollable = true,
             modifier = Modifier
                 .weight(1.05f)
                 .fillMaxHeight()
@@ -143,9 +144,10 @@ private fun CouplingWorkspaceSingleColumn(
         CouplingResultPanel(
             state = state.coupling,
             onAction = onAction,
+            scrollable = false,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 620.dp)
+                .heightIn(min = 1120.dp)
         )
     }
 }

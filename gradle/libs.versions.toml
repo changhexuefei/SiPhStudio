@@ -14,6 +14,7 @@ ktor = "3.0.0"
 lets-plot = "4.14.0"
 lets-plot-compose = "3.2.0"
 slf4j = "2.0.17"
+javafx = "21.0.5"
 
 [libraries]
 androidx-lifecycle-viewmodelCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "androidx-lifecycle" }
@@ -37,6 +38,10 @@ kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.
 lets-plot-kotlin = { module = "org.jetbrains.lets-plot:lets-plot-kotlin", version.ref = "lets-plot" }
 lets-plot-compose = { module = "org.jetbrains.lets-plot:lets-plot-compose", version.ref = "lets-plot-compose" }
 slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
+javafx-controls = { module = "org.openjfx:javafx-controls", version.ref = "javafx" }
+javafx-base = { module = "org.openjfx:javafx-base", version.ref = "javafx" }
+javafx-graphics = { module = "org.openjfx:javafx-graphics", version.ref = "javafx" }
+javafx-swing = { module = "org.openjfx:javafx-swing", version.ref = "javafx" }
 
 [plugins]
 composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }

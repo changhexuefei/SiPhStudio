@@ -1,11 +1,22 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
+import org.gradle.internal.os.OperatingSystem
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
 }
+
+val javafxPlatform = with(OperatingSystem.current()) {
+    when {
+        isWindows -> "win"
+        isMacOsX -> if (System.getProperty("os.arch") == "aarch64") "mac-aarch64" else "mac"
+        isLinux -> "linux"
+        else -> error("Unsupported JavaFX platform: $name")
+    }
+}
+val javafxVersion = libs.versions.javafx.get()
 
 kotlin {
     jvm()
@@ -43,6 +54,10 @@ kotlin {
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
+            implementation("org.openjfx:javafx-base:$javafxVersion:$javafxPlatform")
+            implementation("org.openjfx:javafx-controls:$javafxVersion:$javafxPlatform")
+            implementation("org.openjfx:javafx-graphics:$javafxVersion:$javafxPlatform")
+            implementation("org.openjfx:javafx-swing:$javafxVersion:$javafxPlatform")
             runtimeOnly(libs.slf4j.simple)
         }
     }

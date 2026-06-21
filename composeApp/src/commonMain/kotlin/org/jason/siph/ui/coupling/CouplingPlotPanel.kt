@@ -2,39 +2,44 @@ package org.jason.siph.ui.coupling
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.jetbrains.letsPlot.Figure
 import org.jetbrains.letsPlot.compose.PlotPanel
 import org.jetbrains.letsPlot.coord.coordCartesian
-import org.jetbrains.letsPlot.coord.coordFixed
 import org.jetbrains.letsPlot.geom.geomLine
 import org.jetbrains.letsPlot.geom.geomPoint
-import org.jetbrains.letsPlot.geom.geomPolygon
 import org.jetbrains.letsPlot.geom.geomTile
 import org.jetbrains.letsPlot.ggsize
 import org.jetbrains.letsPlot.label.labs
 import org.jetbrains.letsPlot.letsPlot
 import org.jetbrains.letsPlot.scale.scaleFillGradientN
-import org.jetbrains.letsPlot.themes.elementBlank
 import org.jetbrains.letsPlot.themes.elementLine
 import org.jetbrains.letsPlot.themes.elementRect
 import org.jetbrains.letsPlot.themes.elementText
@@ -50,6 +55,10 @@ fun CouplingPlotPanel(
     modifier: Modifier = Modifier
 ) {
     var viewMode by remember { mutableStateOf(CouplingPlotViewMode.Planar) }
+    var rendererBackend by remember { mutableStateOf(SurfaceRendererBackend.ComposeCanvas) }
+    val plotSummary = remember(samples) {
+        buildPlotSummary(samples)
+    }
 
     Card(
         modifier = modifier,
@@ -62,28 +71,48 @@ fun CouplingPlotPanel(
                 .fillMaxSize()
                 .padding(12.dp)
         ) {
-            Text(
-                text = "Plot",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-
             Row(
-                modifier = Modifier.padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                CouplingPlotViewMode.entries.forEach { mode ->
-                    FilterChip(
-                        selected = viewMode == mode,
-                        onClick = {
-                            viewMode = mode
-                        },
-                        label = {
-                            Text(mode.label)
-                        }
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = "Signal Maps",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Text(
+                        text = plotSummary.caption,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CouplingPlotViewMode.entries.forEach { mode ->
+                        FilterChip(
+                            selected = viewMode == mode,
+                            onClick = {
+                                viewMode = mode
+                            },
+                            label = {
+                                Text(mode.label)
+                            }
+                        )
+                    }
+                }
             }
+
+            PlotMetricsStrip(
+                summary = plotSummary,
+                modifier = Modifier.padding(top = 10.dp)
+            )
 
             when (viewMode) {
                 CouplingPlotViewMode.Planar -> {
@@ -120,7 +149,7 @@ fun CouplingPlotPanel(
 
                 CouplingPlotViewMode.Surface3d -> {
                     Text(
-                        text = "2.5D Power Projection",
+                        text = "Power Surface",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 8.dp)
@@ -128,6 +157,10 @@ fun CouplingPlotPanel(
 
                     PowerSurface3d(
                         samples = samples,
+                        selectedBackend = rendererBackend,
+                        onSelectBackend = {
+                            rendererBackend = it
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
@@ -143,7 +176,123 @@ private enum class CouplingPlotViewMode(
     val label: String
 ) {
     Planar("2D"),
-    Surface3d("2.5D")
+    Surface3d("3D")
+}
+
+private enum class SurfaceRendererBackend(
+    val label: String,
+    val caption: String,
+    val enabled: Boolean
+) {
+    ComposeCanvas(
+        label = "Canvas",
+        caption = "Common fallback renderer",
+        enabled = true
+    ),
+    JavaFx3d(
+        label = "JavaFX 3D",
+        caption = "Desktop renderer hook",
+        enabled = true
+    ),
+    Lwjgl(
+        label = "LWJGL",
+        caption = "Reserved high-performance backend",
+        enabled = false
+    )
+}
+
+private data class PlotSummary(
+    val sampleCount: Int,
+    val peakPowerDbm: Double?,
+    val currentPowerDbm: Double?,
+    val dynamicRangeDb: Double?
+) {
+    val caption: String
+        get() = if (sampleCount == 0) {
+            "Waiting for coupling samples"
+        } else {
+            "$sampleCount samples across the current alignment run"
+        }
+}
+
+@Composable
+private fun PlotMetricsStrip(
+    summary: PlotSummary,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        PlotMetric(
+            label = "Samples",
+            value = summary.sampleCount.toString(),
+            modifier = Modifier.weight(1f)
+        )
+
+        PlotMetric(
+            label = "Current",
+            value = formatDbm(summary.currentPowerDbm),
+            modifier = Modifier.weight(1f)
+        )
+
+        PlotMetric(
+            label = "Peak",
+            value = formatDbm(summary.peakPowerDbm),
+            emphasized = summary.peakPowerDbm != null,
+            modifier = Modifier.weight(1f)
+        )
+
+        PlotMetric(
+            label = "Range",
+            value = summary.dynamicRangeDb?.let { "${round2(it)} dB" } ?: "-- dB",
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun PlotMetric(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    emphasized: Boolean = false
+) {
+    Surface(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.small,
+        color = if (emphasized) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f)
+        },
+        contentColor = if (emphasized) {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        }
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (emphasized) {
+                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f)
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+
+            Text(
+                text = value,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
 }
 
 @Composable
@@ -260,162 +409,9 @@ private fun buildXyHeatmapFigure(
                 x = "X (um)",
                 y = "Y (um)"
             ) +
-            coordFixed() +
-            ggsize(760, 360) +
-            compactPlotTheme()
-}
-
-private fun buildPowerProjectionFigure(
-    samples: List<CouplingSampleUi>
-): Figure {
-    val xValues = samples.map { it.pose.xUm }.distinct().sorted()
-    val yValues = samples.map { it.pose.yUm }.distinct().sorted()
-    val pMin = samples.minOfOrNull { it.powerDbm } ?: 0.0
-    val pMax = samples.maxOfOrNull { it.powerDbm } ?: 1.0
-    val pSpan = (pMax - pMin).takeIf { it.absoluteValue > 1e-9 } ?: 1.0
-
-    val cells = samples
-        .groupBy { it.pose.xUm to it.pose.yUm }
-        .mapValues { (_, groupedSamples) ->
-            groupedSamples.map { it.powerDbm }.average()
-        }
-
-    fun project(
-        xValue: Double,
-        yValue: Double,
-        powerDbm: Double
-    ): ProjectedPoint {
-        if (xValues.isEmpty() || yValues.isEmpty()) {
-            return ProjectedPoint(
-                screenX = 0.0,
-                screenY = 0.0,
-                depth = 0.0,
-                powerDbm = powerDbm
-            )
-        }
-
-        val xNorm = normalize(xValue, xValues.first(), xValues.last()).toDouble() * 2.0 - 1.0
-        val yNorm = normalize(yValue, yValues.first(), yValues.last()).toDouble() * 2.0 - 1.0
-        val zNorm = ((powerDbm - pMin) / pSpan).coerceIn(0.0, 1.0)
-        val z = zNorm * 1.2
-
-        val yaw = 0.72
-        val pitch = 0.82
-        val yawCos = cos(yaw)
-        val yawSin = sin(yaw)
-        val pitchCos = cos(pitch)
-        val pitchSin = sin(pitch)
-
-        val rotatedX = xNorm * yawCos - yNorm * yawSin
-        val rotatedY = xNorm * yawSin + yNorm * yawCos
-        val projectedY = rotatedY * pitchCos - z * pitchSin
-        val depth = rotatedY * pitchSin + z * pitchCos
-
-        return ProjectedPoint(
-            screenX = rotatedX * 0.9,
-            screenY = projectedY * 1.75,
-            depth = depth,
-            powerDbm = powerDbm
-        )
-    }
-
-    val projectedCells = mutableListOf<ProjectedCell>()
-
-    for (xIndex in 0 until xValues.lastIndex) {
-        for (yIndex in 0 until yValues.lastIndex) {
-            val bottomLeftPower = cells[xValues[xIndex] to yValues[yIndex]]
-            val bottomRightPower = cells[xValues[xIndex + 1] to yValues[yIndex]]
-            val topRightPower = cells[xValues[xIndex + 1] to yValues[yIndex + 1]]
-            val topLeftPower = cells[xValues[xIndex] to yValues[yIndex + 1]]
-
-            if (
-                bottomLeftPower != null &&
-                bottomRightPower != null &&
-                topRightPower != null &&
-                topLeftPower != null
-            ) {
-                val vertices = listOf(
-                    project(xValues[xIndex], yValues[yIndex], bottomLeftPower),
-                    project(xValues[xIndex + 1], yValues[yIndex], bottomRightPower),
-                    project(xValues[xIndex + 1], yValues[yIndex + 1], topRightPower),
-                    project(xValues[xIndex], yValues[yIndex + 1], topLeftPower)
-                )
-
-                projectedCells += ProjectedCell(
-                    vertices = vertices,
-                    depth = vertices.map { it.depth }.average(),
-                    powerDbm = vertices.map { it.powerDbm }.average()
-                )
-            }
-        }
-    }
-
-    val sortedCells = projectedCells.sortedBy { it.depth }
-    val polygonRows = sortedCells.flatMapIndexed { index, cell ->
-        cell.vertices.map { vertex ->
-            ProjectionPolygonRow(
-                screenX = vertex.screenX,
-                screenY = vertex.screenY,
-                powerDbm = cell.powerDbm,
-                cell = "cell_$index"
-            )
-        }
-    }
-    val projectedSamples = samples.map {
-        project(
-            xValue = it.pose.xUm,
-            yValue = it.pose.yUm,
-            powerDbm = it.powerDbm
-        )
-    }
-
-    val polygonData = mapOf(
-        "screenX" to polygonRows.map { it.screenX },
-        "screenY" to polygonRows.map { it.screenY },
-        "power" to polygonRows.map { it.powerDbm },
-        "cell" to polygonRows.map { it.cell }
-    )
-    val sampleData = mapOf(
-        "screenX" to projectedSamples.map { it.screenX },
-        "screenY" to projectedSamples.map { it.screenY }
-    )
-
-    return letsPlot(polygonData) {
-        x = "screenX"
-        y = "screenY"
-        fill = "power"
-        group = "cell"
-    } +
-            geomPolygon(
-                color = "#FFFFFF",
-                size = 0.24,
-                alpha = 0.9
-            ) +
-            geomPoint(
-                data = sampleData,
-                inheritAes = false,
-                color = "#18202F",
-                fill = "#FFFFFF",
-                shape = 21,
-                size = 1.7,
-                stroke = 0.5,
-                alpha = 0.72,
-                mapping = {
-                    x = "screenX"
-                    y = "screenY"
-                }
-            ) +
-            scaleFillGradientN(
-                colors = listOf("#2563EB", "#0F766E", "#F59E0B"),
-                name = "Power (dBm)"
-            ) +
-            labs(
-                x = "",
-                y = ""
-            ) +
             coordCartesian() +
-            ggsize(820, 520) +
-            projectionPlotTheme()
+            ggsize(820, 360) +
+            heatmapPlotTheme()
 }
 
 private fun compactPlotTheme() = theme(
@@ -430,17 +426,16 @@ private fun compactPlotTheme() = theme(
     plotMargin = listOf(4, 8, 4, 4)
 )
 
-private fun projectionPlotTheme() = theme(
+private fun heatmapPlotTheme() = theme(
     panelBackground = elementRect(fill = "#EEF3F8", color = "#C7D0DC", size = 0.6),
     plotBackground = elementRect(fill = "transparent", color = "transparent"),
-    panelGrid = elementBlank(),
-    axisTitle = elementBlank(),
-    axisText = elementBlank(),
-    axisTicks = elementBlank(),
-    axisLine = elementBlank(),
+    panelGridMajor = elementLine(color = "#D7DEE8", size = 0.45),
+    panelGridMinor = elementLine(color = "#E5EAF1", size = 0.3),
+    axisTitle = elementText(color = "#526070", size = 11),
+    axisText = elementText(color = "#526070", size = 10),
     legendTitle = elementText(color = "#526070", size = 10),
     legendText = elementText(color = "#526070", size = 9),
-    plotMargin = listOf(6, 8, 6, 6)
+    plotMargin = listOf(4, 8, 4, 4)
 )
 
 private data class HeatmapPoint(
@@ -449,37 +444,148 @@ private data class HeatmapPoint(
     val powerDbm: Double
 )
 
-private data class ProjectedPoint(
-    val screenX: Double,
-    val screenY: Double,
-    val depth: Double,
-    val powerDbm: Double
-)
-
-private data class ProjectedCell(
-    val vertices: List<ProjectedPoint>,
-    val depth: Double,
-    val powerDbm: Double
-)
-
-private data class ProjectionPolygonRow(
-    val screenX: Double,
-    val screenY: Double,
-    val powerDbm: Double,
-    val cell: String
-)
-
 @Composable
 private fun PowerSurface3d(
     samples: List<CouplingSampleUi>,
+    selectedBackend: SurfaceRendererBackend,
+    onSelectBackend: (SurfaceRendererBackend) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    LetsPlotChart(
-        figure = remember(samples) {
-            buildPowerProjectionFigure(samples)
-        },
+    val mesh = remember(samples) {
+        buildSurfaceMesh(samples)
+    }
+
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        RendererBackendStrip(
+            selectedBackend = selectedBackend,
+            onSelectBackend = onSelectBackend
+        )
+
+        when (selectedBackend) {
+            SurfaceRendererBackend.ComposeCanvas -> {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    SurfaceViewport(
+                        title = "3-D surface",
+                        mesh = mesh,
+                        yaw = -0.72,
+                        pitch = 0.72,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    SurfaceViewport(
+                        title = "Rotated view",
+                        mesh = mesh,
+                        yaw = 0.58,
+                        pitch = 0.86,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            SurfaceRendererBackend.JavaFx3d -> {
+                JavaFxPowerSurface3d(
+                    mesh = mesh,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                )
+            }
+
+            SurfaceRendererBackend.Lwjgl -> {
+                RendererUnavailablePanel(
+                    backend = selectedBackend,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RendererBackendStrip(
+    selectedBackend: SurfaceRendererBackend,
+    onSelectBackend: (SurfaceRendererBackend) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "Renderer",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        SurfaceRendererBackend.entries.forEach { backend ->
+            FilterChip(
+                selected = selectedBackend == backend,
+                enabled = backend.enabled,
+                onClick = {
+                    onSelectBackend(backend)
+                },
+                label = {
+                    Text(backend.label)
+                }
+            )
+        }
+
+        Text(
+            text = selectedBackend.caption,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun RendererUnavailablePanel(
+    backend: SurfaceRendererBackend,
+    modifier: Modifier = Modifier
+) {
+    Surface(
         modifier = modifier
-    )
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.28f),
+                shape = MaterialTheme.shapes.small
+            ),
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = backend.label,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+
+            Text(
+                text = "Renderer backend is reserved for the JVM desktop implementation.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+    }
 }
 
 @Composable
@@ -508,3 +614,382 @@ private fun normalize(
 
     return ((value - min) / span).toFloat().coerceIn(0f, 1f)
 }
+
+private fun buildPlotSummary(
+    samples: List<CouplingSampleUi>
+): PlotSummary {
+    val minPower = samples.minOfOrNull { it.powerDbm }
+    val maxPower = samples.maxOfOrNull { it.powerDbm }
+
+    return PlotSummary(
+        sampleCount = samples.size,
+        peakPowerDbm = maxPower,
+        currentPowerDbm = samples.lastOrNull()?.powerDbm,
+        dynamicRangeDb = if (minPower != null && maxPower != null) {
+            maxPower - minPower
+        } else {
+            null
+        }
+    )
+}
+
+private fun formatDbm(
+    value: Double?
+): String {
+    return value?.let { "${round2(it)} dBm" } ?: "-- dBm"
+}
+
+private fun round2(
+    value: Double
+): Double {
+    return kotlin.math.round(value * 100.0) / 100.0
+}
+
+@Composable
+private fun SurfaceViewport(
+    title: String,
+    mesh: SurfaceMesh?,
+    yaw: Double,
+    pitch: Double,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.fillMaxSize(),
+        shape = MaterialTheme.shapes.small,
+        color = Color(0xFFF8FAFC),
+        tonalElevation = 1.dp,
+        shadowElevation = 1.dp
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .heightIn(min = 190.dp)
+                .padding(8.dp)
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                if (mesh == null) {
+                    drawSurfacePlaceholder()
+                } else {
+                    drawPowerSurface(
+                        mesh = mesh,
+                        yaw = yaw,
+                        pitch = pitch
+                    )
+                }
+            }
+
+            Surface(
+                modifier = Modifier.align(Alignment.TopStart),
+                shape = MaterialTheme.shapes.extraSmall,
+                color = Color.White.copy(alpha = 0.86f),
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                listOf("View", "Fit", "Peak", "Reset").forEach { label ->
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = MaterialTheme.shapes.extraSmall,
+                        color = Color(0xFFE7ECF3),
+                        contentColor = Color(0xFF334155)
+                    ) {
+                        Text(
+                            text = label,
+                            modifier = Modifier.padding(vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun buildSurfaceMesh(
+    samples: List<CouplingSampleUi>,
+    resolution: Int = 26
+): SurfaceMesh? {
+    if (samples.size < 3) {
+        return null
+    }
+
+    val xMin = samples.minOf { it.pose.xUm }
+    val xMax = samples.maxOf { it.pose.xUm }
+    val yMin = samples.minOf { it.pose.yUm }
+    val yMax = samples.maxOf { it.pose.yUm }
+    val pMin = samples.minOf { it.powerDbm }
+    val pMax = samples.maxOf { it.powerDbm }
+
+    if (
+        (xMax - xMin).absoluteValue < 1e-9 ||
+        (yMax - yMin).absoluteValue < 1e-9 ||
+        (pMax - pMin).absoluteValue < 1e-9
+    ) {
+        return null
+    }
+
+    val points = List(resolution) { yIndex ->
+        List(resolution) { xIndex ->
+            val x = xMin + (xMax - xMin) * xIndex / (resolution - 1)
+            val y = yMin + (yMax - yMin) * yIndex / (resolution - 1)
+            val power = interpolatePower(samples, x, y)
+            SurfacePoint(
+                x = normalize(x, xMin, xMax).toDouble() * 2.0 - 1.0,
+                y = normalize(y, yMin, yMax).toDouble() * 2.0 - 1.0,
+                z = normalize(power, pMin, pMax).toDouble(),
+                power = power
+            )
+        }
+    }
+
+    return SurfaceMesh(
+        points = points,
+        minPower = pMin,
+        maxPower = pMax
+    )
+}
+
+private fun interpolatePower(
+    samples: List<CouplingSampleUi>,
+    x: Double,
+    y: Double
+): Double {
+    var weightedPower = 0.0
+    var totalWeight = 0.0
+
+    samples.forEach { sample ->
+        val dx = sample.pose.xUm - x
+        val dy = sample.pose.yUm - y
+        val distanceSquared = dx * dx + dy * dy
+
+        if (distanceSquared < 1e-9) {
+            return sample.powerDbm
+        }
+
+        val weight = 1.0 / distanceSquared
+        weightedPower += sample.powerDbm * weight
+        totalWeight += weight
+    }
+
+    return weightedPower / totalWeight
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawPowerSurface(
+    mesh: SurfaceMesh,
+    yaw: Double,
+    pitch: Double
+) {
+    val projected = mesh.points.map { row ->
+        row.map { point ->
+            projectSurfacePoint(point, yaw, pitch, size.width, size.height)
+        }
+    }
+    val cells = mutableListOf<SurfaceCell>()
+
+    for (yIndex in 0 until projected.lastIndex) {
+        for (xIndex in 0 until projected[yIndex].lastIndex) {
+            val vertices = listOf(
+                projected[yIndex][xIndex],
+                projected[yIndex][xIndex + 1],
+                projected[yIndex + 1][xIndex + 1],
+                projected[yIndex + 1][xIndex]
+            )
+            val power = listOf(
+                mesh.points[yIndex][xIndex].power,
+                mesh.points[yIndex][xIndex + 1].power,
+                mesh.points[yIndex + 1][xIndex + 1].power,
+                mesh.points[yIndex + 1][xIndex].power
+            ).average()
+
+            cells += SurfaceCell(
+                vertices = vertices,
+                depth = vertices.map { it.depth }.average(),
+                powerRatio = normalize(power, mesh.minPower, mesh.maxPower)
+            )
+        }
+    }
+
+    cells.sortedBy { it.depth }.forEach { cell ->
+        val path = Path().apply {
+            moveTo(cell.vertices[0].offset.x, cell.vertices[0].offset.y)
+            cell.vertices.drop(1).forEach { lineTo(it.offset.x, it.offset.y) }
+            close()
+        }
+
+        drawPath(
+            path = path,
+            color = surfaceColor(cell.powerRatio),
+        )
+        drawPath(
+            path = path,
+            color = Color.White.copy(alpha = 0.42f),
+            style = Stroke(width = 0.55f)
+        )
+    }
+
+    drawBoxFrame(projected)
+    drawPeakMarker(projected)
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBoxFrame(
+    projected: List<List<ProjectedSurfacePoint>>
+) {
+    val stroke = Stroke(width = 1.1f)
+    val frameColor = Color(0xFFCBD5E1)
+    val back = projected.first()
+    val front = projected.last()
+
+    listOf(back, front).forEach { row ->
+        drawLine(frameColor, row.first().offset, row.last().offset, strokeWidth = stroke.width)
+    }
+
+    projected.first().indices.forEach { index ->
+        if (index == 0 || index == projected.first().lastIndex || index % 5 == 0) {
+            drawLine(frameColor.copy(alpha = 0.55f), back[index].offset, front[index].offset, strokeWidth = 0.7f)
+        }
+    }
+
+    projected.indices.forEach { index ->
+        if (index == 0 || index == projected.lastIndex || index % 5 == 0) {
+            drawLine(
+                frameColor.copy(alpha = 0.55f),
+                projected[index].first().offset,
+                projected[index].last().offset,
+                strokeWidth = 0.7f
+            )
+        }
+    }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawPeakMarker(
+    projected: List<List<ProjectedSurfacePoint>>
+) {
+    val peak = projected.flatten().maxByOrNull { it.powerRatio } ?: return
+    drawCircle(
+        color = Color(0xFFE11D48).copy(alpha = 0.22f),
+        radius = 10f,
+        center = peak.offset
+    )
+    drawCircle(
+        color = Color(0xFFE11D48),
+        radius = 3.8f,
+        center = peak.offset
+    )
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSurfacePlaceholder() {
+    val frame = Color(0xFFCBD5E1)
+    val center = Offset(size.width * 0.5f, size.height * 0.48f)
+    val radiusX = size.width * 0.28f
+    val radiusY = size.height * 0.16f
+
+    drawLine(frame, Offset(size.width * 0.18f, size.height * 0.72f), Offset(size.width * 0.82f, size.height * 0.72f))
+    drawLine(frame, Offset(size.width * 0.18f, size.height * 0.72f), Offset(size.width * 0.5f, size.height * 0.20f))
+    drawLine(frame, Offset(size.width * 0.82f, size.height * 0.72f), Offset(size.width * 0.5f, size.height * 0.20f))
+    drawOval(
+        color = Color(0xFFE7ECF3),
+        topLeft = Offset(center.x - radiusX, center.y - radiusY),
+        size = androidx.compose.ui.geometry.Size(radiusX * 2f, radiusY * 2f),
+        style = Stroke(width = 1.2f)
+    )
+}
+
+private fun projectSurfacePoint(
+    point: SurfacePoint,
+    yaw: Double,
+    pitch: Double,
+    width: Float,
+    height: Float
+): ProjectedSurfacePoint {
+    val z = point.z * 1.28
+    val yawCos = cos(yaw)
+    val yawSin = sin(yaw)
+    val pitchCos = cos(pitch)
+    val pitchSin = sin(pitch)
+    val rotatedX = point.x * yawCos - point.y * yawSin
+    val rotatedY = point.x * yawSin + point.y * yawCos
+    val projectedY = rotatedY * pitchCos - z * pitchSin
+    val depth = rotatedY * pitchSin + z * pitchCos
+    val scale = minOf(width * 0.28, height * 0.72)
+
+    return ProjectedSurfacePoint(
+        offset = Offset(
+            x = width * 0.50f + (rotatedX * scale).toFloat(),
+            y = height * 0.68f + (projectedY * scale).toFloat()
+        ),
+        depth = depth,
+        powerRatio = point.z.toFloat()
+    )
+}
+
+private fun surfaceColor(powerRatio: Float): Color {
+    val low = Color(0xFF111827)
+    val mid = Color(0xFF64748B)
+    val high = Color(0xFFE11D48)
+
+    return if (powerRatio < 0.52f) {
+        lerpColor(low, mid, powerRatio / 0.52f)
+    } else {
+        lerpColor(mid, high, (powerRatio - 0.52f) / 0.48f)
+    }
+}
+
+private fun lerpColor(
+    start: Color,
+    end: Color,
+    fraction: Float
+): Color {
+    val t = fraction.coerceIn(0f, 1f)
+
+    return Color(
+        red = start.red + (end.red - start.red) * t,
+        green = start.green + (end.green - start.green) * t,
+        blue = start.blue + (end.blue - start.blue) * t,
+        alpha = start.alpha + (end.alpha - start.alpha) * t
+    )
+}
+
+internal data class SurfaceMesh(
+    val points: List<List<SurfacePoint>>,
+    val minPower: Double,
+    val maxPower: Double
+)
+
+internal data class SurfacePoint(
+    val x: Double,
+    val y: Double,
+    val z: Double,
+    val power: Double
+)
+
+private data class ProjectedSurfacePoint(
+    val offset: Offset,
+    val depth: Double,
+    val powerRatio: Float
+)
+
+private data class SurfaceCell(
+    val vertices: List<ProjectedSurfacePoint>,
+    val depth: Double,
+    val powerRatio: Float
+)
+
+@Composable
+internal expect fun JavaFxPowerSurface3d(
+    mesh: SurfaceMesh?,
+    modifier: Modifier = Modifier
+)
