@@ -11,11 +11,6 @@ kotlin {
     jvm()
     jvmToolchain(21)
 
-    js {
-        browser()
-        binaries.executable()
-    }
-
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
         browser()
@@ -41,10 +36,14 @@ kotlin {
             implementation(libs.compose.navigationevent)
             implementation(libs.androidx.savedstate)
             implementation(libs.androidx.window.core)
+            implementation(libs.kotlinx.datetime)
+            implementation(libs.lets.plot.kotlin)
+            implementation(libs.lets.plot.compose)
         }
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
+            runtimeOnly(libs.slf4j.simple)
         }
     }
 }

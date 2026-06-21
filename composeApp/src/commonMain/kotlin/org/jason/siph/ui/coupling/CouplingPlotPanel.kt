@@ -2,30 +2,55 @@ package org.jason.siph.ui.coupling
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import org.jetbrains.letsPlot.Figure
+import org.jetbrains.letsPlot.compose.PlotPanel
+import org.jetbrains.letsPlot.coord.coordCartesian
+import org.jetbrains.letsPlot.coord.coordFixed
+import org.jetbrains.letsPlot.geom.geomLine
+import org.jetbrains.letsPlot.geom.geomPoint
+import org.jetbrains.letsPlot.geom.geomPolygon
+import org.jetbrains.letsPlot.geom.geomTile
+import org.jetbrains.letsPlot.ggsize
+import org.jetbrains.letsPlot.label.labs
+import org.jetbrains.letsPlot.letsPlot
+import org.jetbrains.letsPlot.scale.scaleFillGradientN
+import org.jetbrains.letsPlot.themes.elementBlank
+import org.jetbrains.letsPlot.themes.elementLine
+import org.jetbrains.letsPlot.themes.elementRect
+import org.jetbrains.letsPlot.themes.elementText
+import org.jetbrains.letsPlot.themes.theme
 import org.jason.siph.ui.model.CouplingSampleUi
 import kotlin.math.absoluteValue
+import kotlin.math.cos
+import kotlin.math.sin
 
 @Composable
 fun CouplingPlotPanel(
     samples: List<CouplingSampleUi>,
     modifier: Modifier = Modifier
 ) {
+    var viewMode by remember { mutableStateOf(CouplingPlotViewMode.Planar) }
+
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(
@@ -43,35 +68,82 @@ fun CouplingPlotPanel(
                 fontWeight = FontWeight.Bold
             )
 
-            Text(
-                text = "Power vs Step",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp)
-            )
+            Row(
+                modifier = Modifier.padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                CouplingPlotViewMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = viewMode == mode,
+                        onClick = {
+                            viewMode = mode
+                        },
+                        label = {
+                            Text(mode.label)
+                        }
+                    )
+                }
+            }
 
-            PowerVsStepChart(
-                samples = samples,
-                modifier = Modifier
-                    .height(140.dp)
-                    .padding(top = 4.dp)
-            )
+            when (viewMode) {
+                CouplingPlotViewMode.Planar -> {
+                    Text(
+                        text = "Power vs Step",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
 
-            Text(
-                text = "XY Heatmap",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp)
-            )
+                    PowerVsStepChart(
+                        samples = samples,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .padding(top = 4.dp)
+                    )
 
-            XyHeatmap(
-                samples = samples,
-                modifier = Modifier
-                    .height(160.dp)
-                    .padding(top = 4.dp)
-            )
+                    Text(
+                        text = "XY Heatmap",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+
+                    XyHeatmap(
+                        samples = samples,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1.1f)
+                            .padding(top = 4.dp)
+                    )
+                }
+
+                CouplingPlotViewMode.Surface3d -> {
+                    Text(
+                        text = "2.5D Power Projection",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+
+                    PowerSurface3d(
+                        samples = samples,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .padding(top = 4.dp)
+                    )
+                }
+            }
         }
     }
+}
+
+private enum class CouplingPlotViewMode(
+    val label: String
+) {
+    Planar("2D"),
+    Surface3d("2.5D")
 }
 
 @Composable
@@ -79,81 +151,335 @@ private fun PowerVsStepChart(
     samples: List<CouplingSampleUi>,
     modifier: Modifier = Modifier
 ) {
-    val lineColor = MaterialTheme.colorScheme.primary
-    val pointHaloColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.36f)
-    val axisColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.72f)
-    val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)
-    val surfaceColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
-
-    Canvas(
+    LetsPlotChart(
+        figure = remember(samples) {
+            buildPowerVsStepFigure(samples)
+        },
         modifier = modifier
-            .fillMaxSize()
-            .background(surfaceColor, MaterialTheme.shapes.small)
-    ) {
-        val padding = 12.dp.toPx()
-        val width = size.width - padding * 2f
-        val height = size.height - padding * 2f
+    )
+}
 
-        repeat(4) { index ->
-            val y = padding + height * (index + 1) / 5f
-            drawLine(
-                color = gridColor,
-                start = Offset(padding, y),
-                end = Offset(padding + width, y),
-                strokeWidth = 1.dp.toPx()
-            )
+@Composable
+private fun LetsPlotChart(
+    figure: Figure,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier = modifier) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f),
+                    shape = MaterialTheme.shapes.small
+                )
+        ) {
+            // Keeps an immediate, stable background while PlotPanel initializes its renderer.
         }
 
-        drawRect(
-            color = axisColor,
-            topLeft = Offset(padding, padding),
-            size = Size(width, height),
-            style = Stroke(width = 1.dp.toPx())
+        PlotPanel(
+            figure = figure,
+            preserveAspectRatio = false,
+            modifier = Modifier.fillMaxSize(),
+            computationMessagesHandler = {}
         )
+    }
+}
 
-        if (samples.isEmpty()) {
-            return@Canvas
+private fun buildPowerVsStepFigure(
+    samples: List<CouplingSampleUi>
+): Figure {
+    val data = mapOf(
+        "step" to samples.map { it.index },
+        "power" to samples.map { it.powerDbm },
+        "stage" to samples.map { it.stage.text }
+    )
+
+    return letsPlot(data) {
+        x = "step"
+        y = "power"
+    } +
+            geomLine(
+                color = "#0F766E",
+                size = 1.35
+            ) +
+            geomPoint(
+                color = "#063F39",
+                fill = "#CFF7EF",
+                shape = 21,
+                size = 3.2,
+                stroke = 0.8
+            ) +
+            labs(
+                x = "Step",
+                y = "Power (dBm)"
+            ) +
+            ggsize(760, 320) +
+            compactPlotTheme()
+}
+
+private fun buildXyHeatmapFigure(
+    samples: List<CouplingSampleUi>
+): Figure {
+    val averagedSamples = samples
+        .groupBy { it.pose.xUm to it.pose.yUm }
+        .map { (position, groupedSamples) ->
+            HeatmapPoint(
+                xUm = position.first,
+                yUm = position.second,
+                powerDbm = groupedSamples.map { it.powerDbm }.average()
+            )
         }
 
-        val minPower = samples.minOf { it.powerDbm }
-        val maxPower = samples.maxOf { it.powerDbm }
-        val powerSpan = (maxPower - minPower).takeIf { it.absoluteValue > 1e-9 } ?: 1.0
+    val data = mapOf(
+        "x" to averagedSamples.map { it.xUm },
+        "y" to averagedSamples.map { it.yUm },
+        "power" to averagedSamples.map { it.powerDbm }
+    )
 
-        val points = samples.mapIndexed { index, sample ->
-            val x = if (samples.size <= 1) {
-                padding
-            } else {
-                padding + width * index / (samples.size - 1)
+    return letsPlot(data) {
+        x = "x"
+        y = "y"
+    } +
+            geomTile(
+                color = "#FFFFFF",
+                size = 0.18,
+                mapping = {
+                    fill = "power"
+                }
+            ) +
+            geomPoint(
+                color = "#18202F",
+                size = 1.2,
+                alpha = 0.62
+            ) +
+            scaleFillGradientN(
+                colors = listOf("#2563EB", "#0F766E", "#F59E0B"),
+                name = "Power (dBm)"
+            ) +
+            labs(
+                x = "X (um)",
+                y = "Y (um)"
+            ) +
+            coordFixed() +
+            ggsize(760, 360) +
+            compactPlotTheme()
+}
+
+private fun buildPowerProjectionFigure(
+    samples: List<CouplingSampleUi>
+): Figure {
+    val xValues = samples.map { it.pose.xUm }.distinct().sorted()
+    val yValues = samples.map { it.pose.yUm }.distinct().sorted()
+    val pMin = samples.minOfOrNull { it.powerDbm } ?: 0.0
+    val pMax = samples.maxOfOrNull { it.powerDbm } ?: 1.0
+    val pSpan = (pMax - pMin).takeIf { it.absoluteValue > 1e-9 } ?: 1.0
+
+    val cells = samples
+        .groupBy { it.pose.xUm to it.pose.yUm }
+        .mapValues { (_, groupedSamples) ->
+            groupedSamples.map { it.powerDbm }.average()
+        }
+
+    fun project(
+        xValue: Double,
+        yValue: Double,
+        powerDbm: Double
+    ): ProjectedPoint {
+        if (xValues.isEmpty() || yValues.isEmpty()) {
+            return ProjectedPoint(
+                screenX = 0.0,
+                screenY = 0.0,
+                depth = 0.0,
+                powerDbm = powerDbm
+            )
+        }
+
+        val xNorm = normalize(xValue, xValues.first(), xValues.last()).toDouble() * 2.0 - 1.0
+        val yNorm = normalize(yValue, yValues.first(), yValues.last()).toDouble() * 2.0 - 1.0
+        val zNorm = ((powerDbm - pMin) / pSpan).coerceIn(0.0, 1.0)
+        val z = zNorm * 1.2
+
+        val yaw = 0.72
+        val pitch = 0.82
+        val yawCos = cos(yaw)
+        val yawSin = sin(yaw)
+        val pitchCos = cos(pitch)
+        val pitchSin = sin(pitch)
+
+        val rotatedX = xNorm * yawCos - yNorm * yawSin
+        val rotatedY = xNorm * yawSin + yNorm * yawCos
+        val projectedY = rotatedY * pitchCos - z * pitchSin
+        val depth = rotatedY * pitchSin + z * pitchCos
+
+        return ProjectedPoint(
+            screenX = rotatedX * 0.9,
+            screenY = projectedY * 1.75,
+            depth = depth,
+            powerDbm = powerDbm
+        )
+    }
+
+    val projectedCells = mutableListOf<ProjectedCell>()
+
+    for (xIndex in 0 until xValues.lastIndex) {
+        for (yIndex in 0 until yValues.lastIndex) {
+            val bottomLeftPower = cells[xValues[xIndex] to yValues[yIndex]]
+            val bottomRightPower = cells[xValues[xIndex + 1] to yValues[yIndex]]
+            val topRightPower = cells[xValues[xIndex + 1] to yValues[yIndex + 1]]
+            val topLeftPower = cells[xValues[xIndex] to yValues[yIndex + 1]]
+
+            if (
+                bottomLeftPower != null &&
+                bottomRightPower != null &&
+                topRightPower != null &&
+                topLeftPower != null
+            ) {
+                val vertices = listOf(
+                    project(xValues[xIndex], yValues[yIndex], bottomLeftPower),
+                    project(xValues[xIndex + 1], yValues[yIndex], bottomRightPower),
+                    project(xValues[xIndex + 1], yValues[yIndex + 1], topRightPower),
+                    project(xValues[xIndex], yValues[yIndex + 1], topLeftPower)
+                )
+
+                projectedCells += ProjectedCell(
+                    vertices = vertices,
+                    depth = vertices.map { it.depth }.average(),
+                    powerDbm = vertices.map { it.powerDbm }.average()
+                )
             }
-
-            val yNorm = ((sample.powerDbm - minPower) / powerSpan).toFloat()
-            val y = padding + height * (1f - yNorm)
-
-            Offset(x, y)
         }
+    }
 
-        points.zipWithNext().forEach { (a, b) ->
-            drawLine(
-                color = lineColor,
-                start = a,
-                end = b,
-                strokeWidth = 2.dp.toPx()
-            )
-        }
-
-        points.forEach {
-            drawCircle(
-                color = pointHaloColor,
-                radius = 5.dp.toPx(),
-                center = it
-            )
-            drawCircle(
-                color = lineColor,
-                radius = 2.8.dp.toPx(),
-                center = it
+    val sortedCells = projectedCells.sortedBy { it.depth }
+    val polygonRows = sortedCells.flatMapIndexed { index, cell ->
+        cell.vertices.map { vertex ->
+            ProjectionPolygonRow(
+                screenX = vertex.screenX,
+                screenY = vertex.screenY,
+                powerDbm = cell.powerDbm,
+                cell = "cell_$index"
             )
         }
     }
+    val projectedSamples = samples.map {
+        project(
+            xValue = it.pose.xUm,
+            yValue = it.pose.yUm,
+            powerDbm = it.powerDbm
+        )
+    }
+
+    val polygonData = mapOf(
+        "screenX" to polygonRows.map { it.screenX },
+        "screenY" to polygonRows.map { it.screenY },
+        "power" to polygonRows.map { it.powerDbm },
+        "cell" to polygonRows.map { it.cell }
+    )
+    val sampleData = mapOf(
+        "screenX" to projectedSamples.map { it.screenX },
+        "screenY" to projectedSamples.map { it.screenY }
+    )
+
+    return letsPlot(polygonData) {
+        x = "screenX"
+        y = "screenY"
+        fill = "power"
+        group = "cell"
+    } +
+            geomPolygon(
+                color = "#FFFFFF",
+                size = 0.24,
+                alpha = 0.9
+            ) +
+            geomPoint(
+                data = sampleData,
+                inheritAes = false,
+                color = "#18202F",
+                fill = "#FFFFFF",
+                shape = 21,
+                size = 1.7,
+                stroke = 0.5,
+                alpha = 0.72,
+                mapping = {
+                    x = "screenX"
+                    y = "screenY"
+                }
+            ) +
+            scaleFillGradientN(
+                colors = listOf("#2563EB", "#0F766E", "#F59E0B"),
+                name = "Power (dBm)"
+            ) +
+            labs(
+                x = "",
+                y = ""
+            ) +
+            coordCartesian() +
+            ggsize(820, 520) +
+            projectionPlotTheme()
+}
+
+private fun compactPlotTheme() = theme(
+    panelBackground = elementRect(fill = "#EEF3F8", color = "#C7D0DC", size = 0.6),
+    plotBackground = elementRect(fill = "transparent", color = "transparent"),
+    panelGridMajor = elementLine(color = "#D7DEE8", size = 0.45),
+    panelGridMinor = elementLine(color = "#E5EAF1", size = 0.3),
+    axisTitle = elementText(color = "#526070", size = 11),
+    axisText = elementText(color = "#526070", size = 10),
+    legendTitle = elementText(color = "#526070", size = 10),
+    legendText = elementText(color = "#526070", size = 9),
+    plotMargin = listOf(4, 8, 4, 4)
+)
+
+private fun projectionPlotTheme() = theme(
+    panelBackground = elementRect(fill = "#EEF3F8", color = "#C7D0DC", size = 0.6),
+    plotBackground = elementRect(fill = "transparent", color = "transparent"),
+    panelGrid = elementBlank(),
+    axisTitle = elementBlank(),
+    axisText = elementBlank(),
+    axisTicks = elementBlank(),
+    axisLine = elementBlank(),
+    legendTitle = elementText(color = "#526070", size = 10),
+    legendText = elementText(color = "#526070", size = 9),
+    plotMargin = listOf(6, 8, 6, 6)
+)
+
+private data class HeatmapPoint(
+    val xUm: Double,
+    val yUm: Double,
+    val powerDbm: Double
+)
+
+private data class ProjectedPoint(
+    val screenX: Double,
+    val screenY: Double,
+    val depth: Double,
+    val powerDbm: Double
+)
+
+private data class ProjectedCell(
+    val vertices: List<ProjectedPoint>,
+    val depth: Double,
+    val powerDbm: Double
+)
+
+private data class ProjectionPolygonRow(
+    val screenX: Double,
+    val screenY: Double,
+    val powerDbm: Double,
+    val cell: String
+)
+
+@Composable
+private fun PowerSurface3d(
+    samples: List<CouplingSampleUi>,
+    modifier: Modifier = Modifier
+) {
+    LetsPlotChart(
+        figure = remember(samples) {
+            buildPowerProjectionFigure(samples)
+        },
+        modifier = modifier
+    )
 }
 
 @Composable
@@ -161,57 +487,12 @@ private fun XyHeatmap(
     samples: List<CouplingSampleUi>,
     modifier: Modifier = Modifier
 ) {
-    val borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.72f)
-    val surfaceColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
-
-    Canvas(
+    LetsPlotChart(
+        figure = remember(samples) {
+            buildXyHeatmapFigure(samples)
+        },
         modifier = modifier
-            .fillMaxSize()
-            .background(surfaceColor, MaterialTheme.shapes.small)
-    ) {
-        val padding = 12.dp.toPx()
-        val width = size.width - padding * 2f
-        val height = size.height - padding * 2f
-
-        drawRect(
-            color = borderColor,
-            topLeft = Offset(padding, padding),
-            size = Size(width, height),
-            style = Stroke(width = 1.dp.toPx())
-        )
-
-        if (samples.isEmpty()) {
-            return@Canvas
-        }
-
-        val xMin = samples.minOf { it.pose.xUm }
-        val xMax = samples.maxOf { it.pose.xUm }
-        val yMin = samples.minOf { it.pose.yUm }
-        val yMax = samples.maxOf { it.pose.yUm }
-
-        val pMin = samples.minOf { it.powerDbm }
-        val pMax = samples.maxOf { it.powerDbm }
-        val pSpan = (pMax - pMin).takeIf { it.absoluteValue > 1e-9 } ?: 1.0
-        val pointSize = 8.dp.toPx()
-
-        samples.forEach { sample ->
-            val xNorm = normalize(sample.pose.xUm, xMin, xMax)
-            val yNorm = normalize(sample.pose.yUm, yMin, yMax)
-            val pNorm = ((sample.powerDbm - pMin) / pSpan).toFloat().coerceIn(0f, 1f)
-
-            val x = padding + width * xNorm
-            val y = padding + height * (1f - yNorm)
-
-            drawRect(
-                color = heatColor(pNorm),
-                topLeft = Offset(
-                    x = x - pointSize / 2f,
-                    y = y - pointSize / 2f
-                ),
-                size = Size(pointSize, pointSize)
-            )
-        }
-    }
+    )
 }
 
 private fun normalize(
@@ -226,34 +507,4 @@ private fun normalize(
     }
 
     return ((value - min) / span).toFloat().coerceIn(0f, 1f)
-}
-
-private fun heatColor(
-    value: Float
-): Color {
-    val t = value.coerceIn(0f, 1f)
-    val cold = Color(0xFF2563EB)
-    val mid = Color(0xFF0F766E)
-    val hot = Color(0xFFF59E0B)
-
-    return if (t < 0.5f) {
-        lerpColor(cold, mid, t * 2f)
-    } else {
-        lerpColor(mid, hot, (t - 0.5f) * 2f)
-    }.copy(alpha = 0.9f)
-}
-
-private fun lerpColor(
-    start: Color,
-    end: Color,
-    t: Float
-): Color {
-    val clamped = t.coerceIn(0f, 1f)
-
-    return Color(
-        red = start.red + (end.red - start.red) * clamped,
-        green = start.green + (end.green - start.green) * clamped,
-        blue = start.blue + (end.blue - start.blue) * clamped,
-        alpha = start.alpha + (end.alpha - start.alpha) * clamped
-    )
 }

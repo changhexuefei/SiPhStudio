@@ -129,14 +129,14 @@ fun CouplingResultPanel(
             samples = state.samples,
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f)
+                .weight(1.45f)
         )
 
         CouplingLogPanel(
             logs = state.logs,
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(0.8f)
+                .weight(0.55f)
         )
     }
 }
