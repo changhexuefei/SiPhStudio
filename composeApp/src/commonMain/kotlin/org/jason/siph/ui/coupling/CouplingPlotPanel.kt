@@ -3,6 +3,8 @@ package org.jason.siph.ui.coupling
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +30,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.jetbrains.letsPlot.Figure
@@ -196,8 +199,8 @@ private enum class SurfaceRendererBackend(
     ),
     Lwjgl(
         label = "LWJGL",
-        caption = "Reserved high-performance backend",
-        enabled = false
+        caption = "OpenGL desktop renderer",
+        enabled = true
     )
 }
 
@@ -475,16 +478,16 @@ private fun PowerSurface3d(
                     SurfaceViewport(
                         title = "3-D surface",
                         mesh = mesh,
-                        yaw = -0.72,
-                        pitch = 0.72,
+                        initialYaw = -0.62,
+                        initialPitch = 0.58,
                         modifier = Modifier.weight(1f)
                     )
 
                     SurfaceViewport(
                         title = "Rotated view",
                         mesh = mesh,
-                        yaw = 0.58,
-                        pitch = 0.86,
+                        initialYaw = 0.58,
+                        initialPitch = 0.66,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -500,8 +503,8 @@ private fun PowerSurface3d(
             }
 
             SurfaceRendererBackend.Lwjgl -> {
-                RendererUnavailablePanel(
-                    backend = selectedBackend,
+                LwjglPowerSurface3d(
+                    mesh = mesh,
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
@@ -649,10 +652,13 @@ private fun round2(
 private fun SurfaceViewport(
     title: String,
     mesh: SurfaceMesh?,
-    yaw: Double,
-    pitch: Double,
+    initialYaw: Double,
+    initialPitch: Double,
     modifier: Modifier = Modifier
 ) {
+    var yaw by remember(title) { mutableStateOf(initialYaw) }
+    var pitch by remember(title) { mutableStateOf(initialPitch) }
+
     Surface(
         modifier = modifier.fillMaxSize(),
         shape = MaterialTheme.shapes.small,
@@ -670,13 +676,25 @@ private fun SurfaceViewport(
                 if (mesh == null) {
                     drawSurfacePlaceholder()
                 } else {
-                    drawPowerSurface(
+                    drawEngineeringSurfacePlot(
                         mesh = mesh,
                         yaw = yaw,
                         pitch = pitch
                     )
                 }
             }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(title) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            yaw += dragAmount.x * 0.008
+                            pitch = (pitch - dragAmount.y * 0.008).coerceIn(0.24, 1.18)
+                        }
+                    }
+            )
 
             Surface(
                 modifier = Modifier.align(Alignment.TopStart),
@@ -701,7 +719,16 @@ private fun SurfaceViewport(
             ) {
                 listOf("View", "Fit", "Peak", "Reset").forEach { label ->
                     Surface(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable {
+                                when (label) {
+                                    "View", "Fit", "Reset" -> {
+                                        yaw = initialYaw
+                                        pitch = initialPitch
+                                    }
+                                }
+                            },
                         shape = MaterialTheme.shapes.extraSmall,
                         color = Color(0xFFE7ECF3),
                         contentColor = Color(0xFF334155)
@@ -788,14 +815,16 @@ private fun interpolatePower(
     return weightedPower / totalWeight
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawPowerSurface(
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawEngineeringSurfacePlot(
     mesh: SurfaceMesh,
     yaw: Double,
     pitch: Double
 ) {
+    val plotWidth = size.width - 86f
+    val plotHeight = size.height
     val projected = mesh.points.map { row ->
         row.map { point ->
-            projectSurfacePoint(point, yaw, pitch, size.width, size.height)
+            projectSurfacePoint(point, yaw, pitch, plotWidth, plotHeight)
         }
     }
     val cells = mutableListOf<SurfaceCell>()
@@ -823,6 +852,9 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawPowerSurface(
         }
     }
 
+    drawPlotBox(projected)
+    drawFloorProjection(projected)
+
     cells.sortedBy { it.depth }.forEach { cell ->
         val path = Path().apply {
             moveTo(cell.vertices[0].offset.x, cell.vertices[0].offset.y)
@@ -836,42 +868,134 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawPowerSurface(
         )
         drawPath(
             path = path,
-            color = Color.White.copy(alpha = 0.42f),
-            style = Stroke(width = 0.55f)
+            color = Color(0xFF334155).copy(alpha = 0.34f),
+            style = Stroke(width = 0.62f)
         )
     }
 
-    drawBoxFrame(projected)
+    drawPlotBox(projected)
+    drawColorBar(
+        minPower = mesh.minPower,
+        maxPower = mesh.maxPower,
+        x = size.width - 54f,
+        y = 22f,
+        height = size.height - 72f
+    )
     drawPeakMarker(projected)
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBoxFrame(
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawPlotBox(
     projected: List<List<ProjectedSurfacePoint>>
 ) {
-    val stroke = Stroke(width = 1.1f)
-    val frameColor = Color(0xFFCBD5E1)
+    val stroke = Stroke(width = 1.2f)
+    val frameColor = Color(0xFF94A3B8)
     val back = projected.first()
     val front = projected.last()
+    val left = projected.map { it.first() }
+    val right = projected.map { it.last() }
+    val topOffset = Offset(0f, -projected.flatten().maxOf { it.heightPixels })
 
-    listOf(back, front).forEach { row ->
+    listOf(back, front, left, right).forEach { row ->
         drawLine(frameColor, row.first().offset, row.last().offset, strokeWidth = stroke.width)
+        drawLine(frameColor.copy(alpha = 0.52f), row.first().offset + topOffset, row.last().offset + topOffset, strokeWidth = 0.8f)
+        drawLine(frameColor.copy(alpha = 0.42f), row.first().offset, row.first().offset + topOffset, strokeWidth = 0.8f)
+        drawLine(frameColor.copy(alpha = 0.42f), row.last().offset, row.last().offset + topOffset, strokeWidth = 0.8f)
     }
 
     projected.first().indices.forEach { index ->
         if (index == 0 || index == projected.first().lastIndex || index % 5 == 0) {
-            drawLine(frameColor.copy(alpha = 0.55f), back[index].offset, front[index].offset, strokeWidth = 0.7f)
+            drawLine(frameColor.copy(alpha = 0.28f), back[index].offset, front[index].offset, strokeWidth = 0.7f)
+            drawLine(frameColor.copy(alpha = 0.20f), back[index].offset + topOffset, front[index].offset + topOffset, strokeWidth = 0.6f)
         }
     }
 
     projected.indices.forEach { index ->
         if (index == 0 || index == projected.lastIndex || index % 5 == 0) {
             drawLine(
-                frameColor.copy(alpha = 0.55f),
+                frameColor.copy(alpha = 0.28f),
                 projected[index].first().offset,
                 projected[index].last().offset,
                 strokeWidth = 0.7f
             )
+            drawLine(
+                frameColor.copy(alpha = 0.20f),
+                projected[index].first().offset + topOffset,
+                projected[index].last().offset + topOffset,
+                strokeWidth = 0.6f
+            )
         }
+    }
+
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawFloorProjection(
+    projected: List<List<ProjectedSurfacePoint>>
+) {
+    val floorRows = projected.map { row ->
+        row.map { it.copy(offset = it.floorOffset) }
+    }
+
+    floorRows.forEachIndexed { index, row ->
+        if (index % 2 == 0 || index == floorRows.lastIndex) {
+            drawPolyline(
+                points = row.map { it.offset },
+                color = Color(0xFFDC2626).copy(alpha = 0.72f),
+                strokeWidth = 1.0f
+            )
+        }
+    }
+
+    floorRows.first().indices.forEach { index ->
+        if (index % 2 == 0 || index == floorRows.first().lastIndex) {
+            drawPolyline(
+                points = floorRows.map { it[index].offset },
+                color = Color(0xFF2563EB).copy(alpha = 0.52f),
+                strokeWidth = 0.9f
+            )
+        }
+    }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawPolyline(
+    points: List<Offset>,
+    color: Color,
+    strokeWidth: Float
+) {
+    points.zipWithNext().forEach { (start, end) ->
+        drawLine(color, start, end, strokeWidth = strokeWidth)
+    }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawColorBar(
+    minPower: Double,
+    maxPower: Double,
+    x: Float,
+    y: Float,
+    height: Float
+) {
+    val width = 16f
+    val steps = height.toInt().coerceAtLeast(1)
+
+    for (i in 0..steps) {
+        val ratio = 1f - i / steps.toFloat()
+        drawLine(
+            color = surfaceColor(ratio),
+            start = Offset(x, y + i),
+            end = Offset(x + width, y + i),
+            strokeWidth = 1f
+        )
+    }
+
+    drawRect(
+        color = Color(0xFF64748B),
+        topLeft = Offset(x, y),
+        size = androidx.compose.ui.geometry.Size(width, height),
+        style = Stroke(width = 1f)
+    )
+
+    listOf(1f, 0.75f, 0.5f, 0.25f, 0f).forEach { ratio ->
+        val tickY = y + (1f - ratio) * height
+        drawLine(Color(0xFF64748B), Offset(x + width, tickY), Offset(x + width + 5f, tickY), strokeWidth = 1f)
     }
 }
 
@@ -924,28 +1048,51 @@ private fun projectSurfacePoint(
     val rotatedY = point.x * yawSin + point.y * yawCos
     val projectedY = rotatedY * pitchCos - z * pitchSin
     val depth = rotatedY * pitchSin + z * pitchCos
-    val scale = minOf(width * 0.28, height * 0.72)
+    val scale = minOf(width * 0.34, height * 0.46)
+    val floorY = height * 0.82f + (rotatedY * pitchCos * scale).toFloat()
+    val heightPixels = (z * pitchSin * scale).toFloat()
 
     return ProjectedSurfacePoint(
         offset = Offset(
             x = width * 0.50f + (rotatedX * scale).toFloat(),
-            y = height * 0.68f + (projectedY * scale).toFloat()
+            y = height * 0.82f + (projectedY * scale).toFloat()
+        ),
+        floorOffset = Offset(
+            x = width * 0.50f + (rotatedX * scale).toFloat(),
+            y = floorY
         ),
         depth = depth,
+        heightPixels = heightPixels,
         powerRatio = point.z.toFloat()
     )
 }
 
 private fun surfaceColor(powerRatio: Float): Color {
-    val low = Color(0xFF111827)
-    val mid = Color(0xFF64748B)
-    val high = Color(0xFFE11D48)
+    val stops = listOf(
+        0.00f to Color(0xFF2563EB),
+        0.28f to Color(0xFF2DD4BF),
+        0.52f to Color(0xFF22C55E),
+        0.74f to Color(0xFFFACC15),
+        1.00f to Color(0xFFEF4444)
+    )
+    val rightIndex = stops.indexOfFirst { powerRatio <= it.first }.takeIf { it > 0 } ?: stops.lastIndex
+    val left = stops[rightIndex - 1]
+    val right = stops[rightIndex]
+    val local = ((powerRatio - left.first) / (right.first - left.first)).coerceIn(0f, 1f)
 
-    return if (powerRatio < 0.52f) {
-        lerpColor(low, mid, powerRatio / 0.52f)
-    } else {
-        lerpColor(mid, high, (powerRatio - 0.52f) / 0.48f)
-    }
+    return lerpColor(left.second, right.second, local)
+}
+
+private fun ProjectedSurfacePoint.copy(
+    offset: Offset
+): ProjectedSurfacePoint {
+    return ProjectedSurfacePoint(
+        offset = offset,
+        floorOffset = floorOffset,
+        depth = depth,
+        heightPixels = heightPixels,
+        powerRatio = powerRatio
+    )
 }
 
 private fun lerpColor(
@@ -978,7 +1125,9 @@ internal data class SurfacePoint(
 
 private data class ProjectedSurfacePoint(
     val offset: Offset,
+    val floorOffset: Offset,
     val depth: Double,
+    val heightPixels: Float,
     val powerRatio: Float
 )
 
@@ -990,6 +1139,12 @@ private data class SurfaceCell(
 
 @Composable
 internal expect fun JavaFxPowerSurface3d(
+    mesh: SurfaceMesh?,
+    modifier: Modifier = Modifier
+)
+
+@Composable
+internal expect fun LwjglPowerSurface3d(
     mesh: SurfaceMesh?,
     modifier: Modifier = Modifier
 )
