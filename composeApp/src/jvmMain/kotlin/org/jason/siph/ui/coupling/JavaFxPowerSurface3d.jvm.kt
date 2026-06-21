@@ -114,6 +114,7 @@ private fun createPowerSurfaceScene(
 
     val world = Group().apply {
         children += createPlotBox()
+        children += createAxes()
         children += createContourProjection(mesh)
         children += createSurfaceGroup(mesh)
         children += createWireframe(mesh)
@@ -180,9 +181,66 @@ private fun createPlotBox(): Group {
 
     return Group().apply {
         children += frame
-        children += axisLabel("X", Color.rgb(71, 85, 105), PLOT_SIZE / 2.0 + 28.0, 16.0, PLOT_SIZE / 2.0)
-        children += axisLabel("Y", Color.rgb(71, 85, 105), -PLOT_SIZE / 2.0 - 28.0, 16.0, -PLOT_SIZE / 2.0)
-        children += axisLabel("Power", Color.rgb(71, 85, 105), -PLOT_SIZE / 2.0 - 56.0, -POWER_SIZE - 10.0, PLOT_SIZE / 2.0)
+    }
+}
+
+private fun createAxes(): Group {
+    val originX = -PLOT_HALF - 22.0
+    val originY = 0.0
+    val originZ = PLOT_HALF + 22.0
+
+    return Group().apply {
+        children += axisBar(
+            length = PLOT_SIZE + 58.0,
+            thickness = 5.0,
+            color = Color.rgb(220, 38, 38),
+            x = originX + (PLOT_SIZE + 58.0) / 2.0,
+            y = originY,
+            z = originZ,
+            rotateY = 0.0
+        )
+        children += axisBar(
+            length = PLOT_SIZE + 58.0,
+            thickness = 5.0,
+            color = Color.rgb(37, 99, 235),
+            x = originX,
+            y = originY,
+            z = originZ - (PLOT_SIZE + 58.0) / 2.0,
+            rotateY = 90.0
+        )
+        children += axisBar(
+            length = POWER_SIZE + 58.0,
+            thickness = 5.0,
+            color = Color.rgb(5, 150, 105),
+            x = originX,
+            y = originY - (POWER_SIZE + 58.0) / 2.0,
+            z = originZ,
+            rotateZ = 90.0
+        )
+        children += axisLabel("X", Color.rgb(185, 28, 28), PLOT_HALF + 52.0, 18.0, originZ)
+        children += axisLabel("Y", Color.rgb(29, 78, 216), originX, 18.0, -PLOT_HALF - 52.0)
+        children += axisLabel("Power", Color.rgb(4, 120, 87), originX - 70.0, -POWER_SIZE - 56.0, originZ)
+    }
+}
+
+private fun axisBar(
+    length: Double,
+    thickness: Double,
+    color: Color,
+    x: Double,
+    y: Double,
+    z: Double,
+    rotateY: Double = 0.0,
+    rotateZ: Double = 0.0
+): Box {
+    return Box(length, thickness, thickness).apply {
+        translateX = x
+        translateY = y
+        translateZ = z
+        material = PhongMaterial(color)
+        cullFace = CullFace.NONE
+        if (rotateY != 0.0) transforms += Rotate(rotateY, Rotate.Y_AXIS)
+        if (rotateZ != 0.0) transforms += Rotate(rotateZ, Rotate.Z_AXIS)
     }
 }
 

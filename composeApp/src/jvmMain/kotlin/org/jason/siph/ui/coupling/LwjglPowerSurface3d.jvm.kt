@@ -1,9 +1,17 @@
 package org.jason.siph.ui.coupling
 
 
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.SwingPanel
+import androidx.compose.ui.input.pointer.pointerInput
+import org.lwjgl.glfw.GLFW
+import org.lwjgl.glfw.GLFWErrorCallback
 import org.lwjgl.opengl.GL
 import org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT
 import org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT
@@ -17,6 +25,7 @@ import org.lwjgl.opengl.GL11.GL_LINE_STRIP
 import org.lwjgl.opengl.GL11.GL_MODELVIEW
 import org.lwjgl.opengl.GL11.GL_POINTS
 import org.lwjgl.opengl.GL11.GL_PROJECTION
+import org.lwjgl.opengl.GL11.GL_QUADS
 import org.lwjgl.opengl.GL11.GL_SMOOTH
 import org.lwjgl.opengl.GL11.GL_TRIANGLES
 import org.lwjgl.opengl.GL11.glBegin
@@ -40,22 +49,33 @@ import org.lwjgl.opengl.GL11.glVertex3f
 import org.lwjgl.opengl.GL11.glViewport
 import org.lwjgl.opengl.awt.AWTGLCanvas
 import org.lwjgl.opengl.awt.GLData
+import org.lwjgl.system.MemoryStack
+import org.lwjgl.system.MemoryUtil.NULL
 import java.awt.BorderLayout
 import java.awt.CardLayout
+import java.awt.AWTEvent
 import java.awt.Color
+import java.awt.Cursor
 import java.awt.Dimension
 import java.awt.EventQueue
 import java.awt.Font
+import java.awt.Graphics
+import java.awt.Graphics2D
+import java.awt.RenderingHints
+import java.awt.Toolkit
+import java.awt.Component
+import java.awt.event.AWTEventListener
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.awt.event.MouseMotionAdapter
 import java.awt.event.MouseWheelEvent
-import java.awt.event.MouseWheelListener
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.BorderFactory
+import javax.swing.JButton
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.SwingConstants
+import javax.swing.SwingUtilities
 import kotlin.math.absoluteValue
 
 @Composable
@@ -63,6 +83,10 @@ internal actual fun LwjglPowerSurface3d(
     mesh: SurfaceMesh?,
     modifier: Modifier
 ) {
+    var yaw by remember { mutableStateOf(-34f) }
+    var pitch by remember { mutableStateOf(62f) }
+    val zoom by remember { mutableStateOf(1.0f) }
+
     /*
      * 不要在 mesh == null 时直接 return Compose Placeholder。
      *
@@ -72,12 +96,23 @@ internal actual fun LwjglPowerSurface3d(
      * JAWTDrawingSurface ds is null
      */
     SwingPanel(
-        modifier = modifier,
+        modifier = modifier.pointerInput(Unit) {
+            detectDragGestures { change, dragAmount ->
+                change.consume()
+                yaw += dragAmount.x * 0.48f
+                pitch = (pitch + dragAmount.y * 0.48f).coerceIn(12f, 88f)
+            }
+        },
         factory = {
             LwjglSurfacePanel()
         },
         update = { panel ->
             panel.setMesh(mesh)
+            panel.setView(
+                yaw = yaw,
+                pitch = pitch,
+                zoom = zoom
+            )
         }
     )
 }
@@ -95,7 +130,54 @@ private class LwjglSurfacePanel : JPanel(BorderLayout()) {
 
     private val placeholder = createPlaceholder()
 
+    private val titleLabel = JLabel("Output 3D Diagram", SwingConstants.CENTER).apply {
+        isOpaque = true
+        background = Color(248, 250, 252)
+        foreground = Color(31, 41, 55)
+        font = Font(Font.SANS_SERIF, Font.BOLD, 12)
+        border = BorderFactory.createEmptyBorder(6, 0, 3, 0)
+    }
+
+    private val colorBar = PowerColorBarPanel()
+
+    private val resetButton = JButton("Reset").apply {
+        isFocusable = false
+        font = Font(Font.SANS_SERIF, Font.PLAIN, 11)
+        background = Color(241, 245, 249)
+        foreground = Color(51, 65, 85)
+    }
+
+    private val openGlfwButton = JButton("Open GLFW").apply {
+        isFocusable = false
+        font = Font(Font.SANS_SERIF, Font.PLAIN, 11)
+        background = Color(226, 232, 240)
+        foreground = Color(15, 23, 42)
+    }
+
+    private val controlPanel = JPanel(BorderLayout()).apply {
+        isOpaque = true
+        background = Color(248, 250, 252)
+        border = BorderFactory.createEmptyBorder(4, 8, 5, 8)
+        preferredSize = Dimension(1, 34)
+        add(
+            JLabel("Rotate", SwingConstants.CENTER).apply {
+                foreground = Color(71, 85, 105)
+                font = Font(Font.SANS_SERIF, Font.BOLD, 11)
+            },
+            BorderLayout.CENTER
+        )
+        add(openGlfwButton, BorderLayout.WEST)
+        add(resetButton, BorderLayout.EAST)
+    }
+
     private var canvas: LwjglSurfaceCanvas? = null
+    private val glfwWindow = GlfwSurfaceWindow()
+    private var yaw = -34f
+    private var pitch = 62f
+    private var zoom = 1.0f
+    private var currentMesh: SurfaceMesh? = null
+    private var lastDragScreenX = 0
+    private var lastDragScreenY = 0
 
     private val cardPanel = JPanel(cardLayout).apply {
         add(placeholder, CARD_PLACEHOLDER)
@@ -106,7 +188,23 @@ private class LwjglSurfacePanel : JPanel(BorderLayout()) {
         preferredSize = Dimension(720, 420)
         border = BorderFactory.createLineBorder(Color(210, 218, 230), 1)
 
+        add(titleLabel, BorderLayout.NORTH)
         add(cardPanel, BorderLayout.CENTER)
+        add(colorBar, BorderLayout.EAST)
+        add(controlPanel, BorderLayout.SOUTH)
+
+        listOf<Component>(titleLabel, colorBar, controlPanel).forEach(::installViewControls)
+        resetButton.addActionListener {
+            yaw = -34f
+            pitch = 62f
+            zoom = 1.0f
+            applyView()
+        }
+        openGlfwButton.addActionListener {
+            currentMesh?.let { mesh ->
+                glfwWindow.open(mesh)
+            }
+        }
 
         cardLayout.show(cardPanel, CARD_PLACEHOLDER)
     }
@@ -114,7 +212,9 @@ private class LwjglSurfacePanel : JPanel(BorderLayout()) {
     fun setMesh(mesh: SurfaceMesh?) {
         runOnEdt {
             if (mesh == null) {
+                currentMesh = null
                 canvas?.setMesh(null)
+                colorBar.setRange(null, null)
 
                 cardLayout.show(cardPanel, CARD_PLACEHOLDER)
                 revalidate()
@@ -124,11 +224,27 @@ private class LwjglSurfacePanel : JPanel(BorderLayout()) {
             }
 
             val activeCanvas = ensureCanvas()
+            currentMesh = mesh
             activeCanvas.setMesh(mesh)
+            glfwWindow.updateMesh(mesh)
+            colorBar.setRange(mesh.minPower, mesh.maxPower)
 
             cardLayout.show(cardPanel, CARD_CANVAS)
             revalidate()
             repaint()
+        }
+    }
+
+    fun setView(
+        yaw: Float,
+        pitch: Float,
+        zoom: Float
+    ) {
+        runOnEdt {
+            this.yaw = yaw
+            this.pitch = pitch
+            this.zoom = zoom
+            applyView()
         }
     }
 
@@ -149,6 +265,50 @@ private class LwjglSurfacePanel : JPanel(BorderLayout()) {
         cardPanel.add(created, CARD_CANVAS)
 
         return created
+    }
+
+    private fun installViewControls(component: Component) {
+        component.cursor = Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR)
+        val mouseAdapter = object : MouseAdapter() {
+            override fun mousePressed(event: MouseEvent) {
+                lastDragScreenX = event.xOnScreen
+                lastDragScreenY = event.yOnScreen
+            }
+
+            override fun mouseWheelMoved(event: MouseWheelEvent) {
+                zoom = (zoom - event.preciseWheelRotation.toFloat() * 0.08f)
+                    .coerceIn(0.58f, 1.95f)
+                applyView()
+            }
+        }
+        component.addMouseListener(mouseAdapter)
+        component.addMouseWheelListener(mouseAdapter)
+        component.addMouseMotionListener(object : MouseMotionAdapter() {
+            override fun mouseDragged(event: MouseEvent) {
+                val dx = event.xOnScreen - lastDragScreenX
+                val dy = event.yOnScreen - lastDragScreenY
+
+                yaw += dx * 0.48f
+                pitch = (pitch + dy * 0.48f).coerceIn(12f, 88f)
+                lastDragScreenX = event.xOnScreen
+                lastDragScreenY = event.yOnScreen
+
+                applyView()
+            }
+        })
+    }
+
+    private fun applyView() {
+        canvas?.setView(
+            yaw = yaw,
+            pitch = pitch,
+            zoom = zoom
+        )
+    }
+
+    override fun removeNotify() {
+        glfwWindow.close()
+        super.removeNotify()
     }
 
     companion object {
@@ -187,6 +347,222 @@ private class LwjglSurfacePanel : JPanel(BorderLayout()) {
  * 3. removeNotify 捕获 lwjgl3-awt 在 Windows 下偶发的 dispose NPE。
  * 4. dispose NPE 只打印一次，避免控制台刷屏。
  */
+private class PowerColorBarPanel : JPanel() {
+
+    private var minPower: Double? = null
+    private var maxPower: Double? = null
+
+    init {
+        preferredSize = Dimension(58, 1)
+        minimumSize = Dimension(48, 1)
+        isOpaque = true
+        background = Color(248, 250, 252)
+        font = Font(Font.SANS_SERIF, Font.PLAIN, 10)
+    }
+
+    fun setRange(
+        minPower: Double?,
+        maxPower: Double?
+    ) {
+        this.minPower = minPower
+        this.maxPower = maxPower
+        repaint()
+    }
+
+    override fun paintComponent(graphics: Graphics) {
+        super.paintComponent(graphics)
+
+        val g = graphics as Graphics2D
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+
+        val barX = 8
+        val barY = 12
+        val barWidth = 16
+        val barHeight = (height - 34).coerceAtLeast(40)
+
+        for (i in 0..barHeight) {
+            val ratio = 1f - i / barHeight.toFloat()
+            g.color = surfaceAwtColor(ratio)
+            g.drawLine(barX, barY + i, barX + barWidth, barY + i)
+        }
+
+        g.color = Color(100, 116, 139)
+        g.drawRect(barX, barY, barWidth, barHeight)
+
+        val min = minPower
+        val max = maxPower
+
+        listOf(1f, 0.75f, 0.5f, 0.25f, 0f).forEach { ratio ->
+            val y = barY + ((1f - ratio) * barHeight).toInt()
+            g.color = Color(100, 116, 139)
+            g.drawLine(barX + barWidth, y, barX + barWidth + 5, y)
+
+            if (min != null && max != null) {
+                val value = min + (max - min) * ratio
+                g.color = Color(71, 85, 105)
+                g.drawString(String.format("%.1f", value), barX + barWidth + 8, y + 4)
+            }
+        }
+    }
+}
+
+private class GlfwSurfaceWindow {
+
+    @Volatile
+    private var mesh: SurfaceMesh? = null
+
+    @Volatile
+    private var windowHandle: Long = NULL
+
+    private val running = AtomicBoolean(false)
+    private val closeRequested = AtomicBoolean(false)
+
+    fun open(initialMesh: SurfaceMesh) {
+        mesh = initialMesh
+
+        if (!running.compareAndSet(false, true)) {
+            val handle = windowHandle
+            if (handle != NULL) {
+                GLFW.glfwShowWindow(handle)
+                GLFW.glfwFocusWindow(handle)
+            }
+            return
+        }
+
+        closeRequested.set(false)
+
+        Thread(
+            {
+                renderLoop()
+            },
+            "LWJGL-GLFW-PowerSurface"
+        ).apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    fun updateMesh(nextMesh: SurfaceMesh) {
+        mesh = nextMesh
+    }
+
+    fun close() {
+        closeRequested.set(true)
+        val handle = windowHandle
+        if (handle != NULL) {
+            GLFW.glfwSetWindowShouldClose(handle, true)
+        }
+    }
+
+    private fun renderLoop() {
+        var errorCallback: GLFWErrorCallback? = null
+        var yaw = -34f
+        var pitch = 62f
+        var zoom = 1.0f
+        var dragging = false
+        var lastX = 0.0
+        var lastY = 0.0
+
+        try {
+            errorCallback = GLFWErrorCallback.createPrint(System.err).also {
+                GLFW.glfwSetErrorCallback(it)
+            }
+
+            if (!GLFW.glfwInit()) {
+                throw IllegalStateException("Unable to initialize GLFW")
+            }
+
+            GLFW.glfwDefaultWindowHints()
+            GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR, 3)
+            GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR, 2)
+            GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE, GLFW.GLFW_OPENGL_COMPAT_PROFILE)
+            GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE, GLFW.GLFW_FALSE)
+            GLFW.glfwWindowHint(GLFW.GLFW_RESIZABLE, GLFW.GLFW_TRUE)
+            GLFW.glfwWindowHint(GLFW.GLFW_SAMPLES, 4)
+
+            val window = GLFW.glfwCreateWindow(
+                980,
+                680,
+                "LWJGL GLFW Power Surface",
+                NULL,
+                NULL
+            )
+
+            if (window == NULL) {
+                throw IllegalStateException("Unable to create GLFW window")
+            }
+
+            windowHandle = window
+
+            GLFW.glfwSetMouseButtonCallback(window) { handle, button, action, _ ->
+                if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return@glfwSetMouseButtonCallback
+
+                dragging = action == GLFW.GLFW_PRESS
+
+                if (dragging) {
+                    MemoryStack.stackPush().use { stack ->
+                        val x = stack.mallocDouble(1)
+                        val y = stack.mallocDouble(1)
+                        GLFW.glfwGetCursorPos(handle, x, y)
+                        lastX = x[0]
+                        lastY = y[0]
+                    }
+                }
+            }
+
+            GLFW.glfwSetCursorPosCallback(window) { _, x, y ->
+                if (!dragging) return@glfwSetCursorPosCallback
+
+                yaw += ((x - lastX) * 0.48).toFloat()
+                pitch = (pitch + ((y - lastY) * 0.48).toFloat()).coerceIn(12f, 88f)
+                lastX = x
+                lastY = y
+            }
+
+            GLFW.glfwSetScrollCallback(window) { _, _, yOffset ->
+                zoom = (zoom + yOffset.toFloat() * 0.08f).coerceIn(0.58f, 1.95f)
+            }
+
+            GLFW.glfwMakeContextCurrent(window)
+            GLFW.glfwSwapInterval(1)
+            GLFW.glfwShowWindow(window)
+
+            GL.createCapabilities()
+            initSharedGlState()
+
+            while (!GLFW.glfwWindowShouldClose(window) && !closeRequested.get()) {
+                MemoryStack.stackPush().use { stack ->
+                    val width = stack.mallocInt(1)
+                    val height = stack.mallocInt(1)
+                    GLFW.glfwGetFramebufferSize(window, width, height)
+                    renderPowerSurface(
+                        mesh = mesh,
+                        viewportWidth = width[0].coerceAtLeast(1),
+                        viewportHeight = height[0].coerceAtLeast(1),
+                        yaw = yaw,
+                        pitch = pitch,
+                        zoom = zoom
+                    )
+                }
+
+                GLFW.glfwSwapBuffers(window)
+                GLFW.glfwPollEvents()
+            }
+
+            GLFW.glfwDestroyWindow(window)
+            windowHandle = NULL
+        } catch (e: Throwable) {
+            e.printStackTrace(System.err)
+        } finally {
+            running.set(false)
+            closeRequested.set(false)
+            windowHandle = NULL
+            GLFW.glfwTerminate()
+            errorCallback?.free()
+        }
+    }
+}
+
 private class LwjglSurfaceCanvas : AWTGLCanvas(
     GLData().apply {
         /*
@@ -221,50 +597,28 @@ private class LwjglSurfaceCanvas : AWTGLCanvas(
         get() = disposed
 
     private var yaw = -34f
-    private var pitch = 58f
+    private var pitch = 62f
     private var zoom = 1.0f
 
     private var lastX = 0
     private var lastY = 0
+    private var dragStartedInCanvas = false
+    private var globalMouseListenerInstalled = false
+
+    private val globalMouseListener = AWTEventListener { event ->
+        handleGlobalMouseEvent(event)
+    }
 
     init {
         minimumSize = Dimension(64, 64)
         preferredSize = Dimension(720, 420)
-
-        addMouseListener(object : MouseAdapter() {
-            override fun mousePressed(event: MouseEvent) {
-                if (disposed) return
-
-                lastX = event.x
-                lastY = event.y
-            }
-        })
-
-        addMouseMotionListener(object : MouseMotionAdapter() {
-            override fun mouseDragged(event: MouseEvent) {
-                if (disposed) return
-
-                val dx = event.x - lastX
-                val dy = event.y - lastY
-
-                yaw += dx * 0.45f
-                pitch = (pitch + dy * 0.45f).coerceIn(18f, 86f)
-
-                lastX = event.x
-                lastY = event.y
-
-                repaintSafely()
-            }
-        })
-
-        addMouseWheelListener(MouseWheelListener { event: MouseWheelEvent ->
-            if (disposed) return@MouseWheelListener
-
-            zoom = (zoom - event.preciseWheelRotation.toFloat() * 0.08f)
-                .coerceIn(0.62f, 1.85f)
-
-            repaintSafely()
-        })
+        cursor = Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR)
+        isFocusable = true
+        enableEvents(
+            AWTEvent.MOUSE_EVENT_MASK or
+                    AWTEvent.MOUSE_MOTION_EVENT_MASK or
+                    AWTEvent.MOUSE_WHEEL_EVENT_MASK
+        )
     }
 
     fun setMesh(nextMesh: SurfaceMesh?) {
@@ -274,6 +628,59 @@ private class LwjglSurfaceCanvas : AWTGLCanvas(
         repaintSafely()
     }
 
+    fun setView(
+        yaw: Float,
+        pitch: Float,
+        zoom: Float
+    ) {
+        if (disposed) return
+
+        this.yaw = yaw
+        this.pitch = pitch
+        this.zoom = zoom
+        repaintSafely()
+    }
+
+    override fun processMouseEvent(event: MouseEvent) {
+        super.processMouseEvent(event)
+
+        if (disposed || event.isConsumed) return
+
+        if (event.id == MouseEvent.MOUSE_PRESSED) {
+            requestFocusInWindow()
+            lastX = event.x
+            lastY = event.y
+            event.consume()
+        }
+    }
+
+    override fun processMouseMotionEvent(event: MouseEvent) {
+        super.processMouseMotionEvent(event)
+
+        if (disposed || event.isConsumed) return
+
+        if (event.id == MouseEvent.MOUSE_DRAGGED) {
+            rotateBy(event.x - lastX, event.y - lastY)
+            lastX = event.x
+            lastY = event.y
+            event.consume()
+        }
+    }
+
+    override fun processMouseWheelEvent(event: MouseWheelEvent) {
+        super.processMouseWheelEvent(event)
+
+        if (disposed) return
+
+        zoomBy(event.preciseWheelRotation.toFloat())
+        event.consume()
+    }
+
+    override fun addNotify() {
+        super.addNotify()
+        installGlobalMouseListener()
+    }
+
     override fun initGL() {
         if (disposed || initialized) return
 
@@ -281,10 +688,7 @@ private class LwjglSurfaceCanvas : AWTGLCanvas(
 
         initialized = true
 
-        glClearColor(0.972f, 0.980f, 0.988f, 1f)
-        glEnable(GL_DEPTH_TEST)
-        glDepthFunc(GL_LEQUAL)
-        glShadeModel(GL_SMOOTH)
+        initSharedGlState()
     }
 
     override fun paintGL() {
@@ -298,35 +702,14 @@ private class LwjglSurfaceCanvas : AWTGLCanvas(
             return
         }
 
-        val viewportWidth = width.coerceAtLeast(1)
-        val viewportHeight = height.coerceAtLeast(1)
-
-        glViewport(0, 0, viewportWidth, viewportHeight)
-        glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
-
-        val currentMesh = mesh
-
-        if (currentMesh == null || currentMesh.points.isEmpty()) {
-            swapBuffers()
-            return
-        }
-
-        setupProjection(viewportWidth, viewportHeight)
-
-        glMatrixMode(GL_MODELVIEW)
-        glLoadIdentity()
-
-        glTranslatef(0f, -0.18f, -3.35f)
-        glScalef(zoom, zoom, zoom)
-        glRotatef(pitch, 1f, 0f, 0f)
-        glRotatef(yaw, 0f, 1f, 0f)
-
-        drawPlotBox()
-        drawProjection(currentMesh)
-        drawSurface(currentMesh)
-        drawWireframe(currentMesh)
-        drawAxes()
-        drawPeak(currentMesh)
+        renderPowerSurface(
+            mesh = mesh,
+            viewportWidth = width.coerceAtLeast(1),
+            viewportHeight = height.coerceAtLeast(1),
+            yaw = yaw,
+            pitch = pitch,
+            zoom = zoom
+        )
 
         swapBuffers()
     }
@@ -334,6 +717,8 @@ private class LwjglSurfaceCanvas : AWTGLCanvas(
     override fun removeNotify() {
         disposed = true
         initialized = false
+        dragStartedInCanvas = false
+        uninstallGlobalMouseListener()
 
         try {
             super.removeNotify()
@@ -361,6 +746,89 @@ private class LwjglSurfaceCanvas : AWTGLCanvas(
         }
     }
 
+    private fun handleGlobalMouseEvent(event: AWTEvent) {
+        if (disposed || !isShowing || event !is MouseEvent) return
+
+        val source = event.source as? java.awt.Component ?: return
+        val localPoint = try {
+            SwingUtilities.convertPoint(source, event.point, this)
+        } catch (_: RuntimeException) {
+            return
+        }
+        val insideCanvas = localPoint.x in 0 until width && localPoint.y in 0 until height
+
+        when (event.id) {
+            MouseEvent.MOUSE_PRESSED -> {
+                if (!insideCanvas) {
+                    dragStartedInCanvas = false
+                    return
+                }
+
+                requestFocusInWindow()
+                dragStartedInCanvas = true
+                lastX = localPoint.x
+                lastY = localPoint.y
+                event.consume()
+            }
+
+            MouseEvent.MOUSE_DRAGGED -> {
+                if (!dragStartedInCanvas) return
+
+                rotateBy(localPoint.x - lastX, localPoint.y - lastY)
+                lastX = localPoint.x
+                lastY = localPoint.y
+                event.consume()
+            }
+
+            MouseEvent.MOUSE_RELEASED,
+            MouseEvent.MOUSE_EXITED -> {
+                dragStartedInCanvas = false
+            }
+
+            MouseEvent.MOUSE_WHEEL -> {
+                if (!insideCanvas || event !is MouseWheelEvent) return
+
+                zoomBy(event.preciseWheelRotation.toFloat())
+                event.consume()
+            }
+        }
+    }
+
+    private fun installGlobalMouseListener() {
+        if (globalMouseListenerInstalled) return
+
+        Toolkit.getDefaultToolkit().addAWTEventListener(
+            globalMouseListener,
+            AWTEvent.MOUSE_EVENT_MASK or
+                    AWTEvent.MOUSE_MOTION_EVENT_MASK or
+                    AWTEvent.MOUSE_WHEEL_EVENT_MASK
+        )
+        globalMouseListenerInstalled = true
+    }
+
+    private fun uninstallGlobalMouseListener() {
+        if (!globalMouseListenerInstalled) return
+
+        Toolkit.getDefaultToolkit().removeAWTEventListener(globalMouseListener)
+        globalMouseListenerInstalled = false
+    }
+
+    private fun rotateBy(
+        dx: Int,
+        dy: Int
+    ) {
+        yaw += dx * 0.48f
+        pitch = (pitch + dy * 0.48f).coerceIn(12f, 88f)
+        repaintSafely()
+    }
+
+    private fun zoomBy(
+        wheelRotation: Float
+    ) {
+        zoom = (zoom - wheelRotation * 0.08f).coerceIn(0.58f, 1.95f)
+        repaintSafely()
+    }
+
     private fun setupProjection(
         viewportWidth: Int,
         viewportHeight: Int
@@ -383,6 +851,70 @@ private class LwjglSurfaceCanvas : AWTGLCanvas(
     companion object {
         private val disposeWarningPrinted = AtomicBoolean(false)
     }
+}
+
+private fun initSharedGlState() {
+    glClearColor(0.985f, 0.989f, 0.994f, 1f)
+    glEnable(GL_DEPTH_TEST)
+    glDepthFunc(GL_LEQUAL)
+    glShadeModel(GL_SMOOTH)
+}
+
+private fun renderPowerSurface(
+    mesh: SurfaceMesh?,
+    viewportWidth: Int,
+    viewportHeight: Int,
+    yaw: Float,
+    pitch: Float,
+    zoom: Float
+) {
+    glViewport(0, 0, viewportWidth, viewportHeight)
+    glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
+
+    val currentMesh = mesh
+
+    if (currentMesh == null || currentMesh.points.isEmpty()) {
+        return
+    }
+
+    setupSharedProjection(viewportWidth, viewportHeight)
+
+    glMatrixMode(GL_MODELVIEW)
+    glLoadIdentity()
+
+    glTranslatef(0f, -0.18f, -3.48f)
+    glScalef(zoom, zoom, zoom)
+    glRotatef(pitch, 1f, 0f, 0f)
+    glRotatef(yaw, 0f, 1f, 0f)
+
+    drawFloorPanel()
+    drawFloorHeatmap(currentMesh)
+    drawPlotBox()
+    drawGrid()
+    drawProjection(currentMesh)
+    drawSurface(currentMesh)
+    drawWireframe(currentMesh)
+    drawAxes()
+    drawPeak(currentMesh)
+}
+
+private fun setupSharedProjection(
+    viewportWidth: Int,
+    viewportHeight: Int
+) {
+    val aspect = viewportWidth.toDouble() / viewportHeight.toDouble()
+
+    glMatrixMode(GL_PROJECTION)
+    glLoadIdentity()
+
+    glFrustum(
+        -aspect * 0.62,
+        aspect * 0.62,
+        -0.62,
+        0.62,
+        1.2,
+        12.0
+    )
 }
 
 private fun drawSurface(
@@ -431,8 +963,8 @@ private fun drawWireframe(
     val rows = mesh.points
     if (rows.isEmpty()) return
 
-    glLineWidth(1.05f)
-    glColor3f(0.16f, 0.20f, 0.27f)
+    glLineWidth(0.82f)
+    glColor3f(0.30f, 0.36f, 0.46f)
 
     rows.forEachIndexed { index, row ->
         if (row.isEmpty()) return@forEachIndexed
@@ -469,13 +1001,13 @@ private fun drawProjection(
     val rows = mesh.points
     if (rows.isEmpty()) return
 
-    glLineWidth(1.5f)
+    glLineWidth(1.8f)
 
     rows.forEachIndexed { index, row ->
         if (row.isEmpty()) return@forEachIndexed
 
         if (index % 2 == 0 || index == rows.lastIndex) {
-            glColor3f(0.86f, 0.15f, 0.15f)
+            glColor3f(0.86f, 0.10f, 0.14f)
 
             glBegin(GL_LINE_STRIP)
 
@@ -489,7 +1021,7 @@ private fun drawProjection(
 
     val maxRowSize = rows.maxOfOrNull { it.size } ?: return
 
-    glColor3f(0.15f, 0.39f, 0.92f)
+    glColor3f(0.16f, 0.36f, 0.92f)
 
     for (xIndex in 0 until maxRowSize step 2) {
         glBegin(GL_LINE_STRIP)
@@ -504,9 +1036,64 @@ private fun drawProjection(
     }
 }
 
+private fun drawFloorPanel() {
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+    glColor3f(0.962f, 0.972f, 0.986f)
+
+    glBegin(GL_QUADS)
+
+    glVertex3f(-1f, -0.002f, -1f)
+    glVertex3f(1f, -0.002f, -1f)
+    glVertex3f(1f, -0.002f, 1f)
+    glVertex3f(-1f, -0.002f, 1f)
+
+    glEnd()
+}
+
+private fun drawFloorHeatmap(
+    mesh: SurfaceMesh
+) {
+    val rows = mesh.points
+    if (rows.size < 2) return
+
+    val powerSpan = (mesh.maxPower - mesh.minPower)
+        .takeIf { it.absoluteValue > 1e-9 }
+        ?: 1.0
+
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+    glBegin(GL_QUADS)
+
+    for (yIndex in 0 until rows.lastIndex) {
+        val currentRow = rows[yIndex]
+        val nextRow = rows[yIndex + 1]
+        val cellCount = minOf(currentRow.size, nextRow.size) - 1
+
+        for (xIndex in 0 until cellCount) {
+            val p0 = currentRow[xIndex]
+            val p1 = currentRow[xIndex + 1]
+            val p2 = nextRow[xIndex + 1]
+            val p3 = nextRow[xIndex]
+            val ratio = listOf(p0, p1, p2, p3)
+                .map { powerRatio(it, mesh.minPower, powerSpan) }
+                .average()
+                .toFloat()
+                .coerceIn(0f, 1f)
+            val color = floorColor(ratio)
+
+            glColor3f(color[0], color[1], color[2])
+            floorVertex(p0)
+            floorVertex(p1)
+            floorVertex(p2)
+            floorVertex(p3)
+        }
+    }
+
+    glEnd()
+}
+
 private fun drawPlotBox() {
-    glLineWidth(1.2f)
-    glColor3f(0.58f, 0.64f, 0.72f)
+    glLineWidth(1.35f)
+    glColor3f(0.60f, 0.66f, 0.74f)
 
     val min = -1f
     val max = 1f
@@ -542,8 +1129,43 @@ private fun drawPlotBox() {
     glEnd()
 }
 
+private fun drawGrid() {
+    val min = -1f
+    val max = 1f
+    val top = 1.24f
+    val bottom = 0f
+    val steps = 5
+
+    glLineWidth(0.62f)
+    glColor3f(0.82f, 0.86f, 0.91f)
+
+    glBegin(GL_LINES)
+
+    for (index in 1 until steps) {
+        val t = min + (max - min) * index / steps
+        val y = bottom + (top - bottom) * index / steps
+
+        glVertex3f(t, bottom, min)
+        glVertex3f(t, bottom, max)
+
+        glVertex3f(min, bottom, t)
+        glVertex3f(max, bottom, t)
+
+        glVertex3f(min, y, min)
+        glVertex3f(max, y, min)
+
+        glVertex3f(min, y, min)
+        glVertex3f(min, y, max)
+
+        glVertex3f(max, y, min)
+        glVertex3f(max, y, max)
+    }
+
+    glEnd()
+}
+
 private fun drawAxes() {
-    glLineWidth(3f)
+    glLineWidth(2.2f)
 
     glBegin(GL_LINES)
 
@@ -616,6 +1238,16 @@ private fun vertex(
     )
 }
 
+private fun floorVertex(
+    point: SurfacePoint
+) {
+    glVertex3f(
+        point.x.toFloat(),
+        0.004f,
+        point.y.toFloat()
+    )
+}
+
 private fun pointCoords(
     point: SurfacePoint,
     flattened: Boolean = false
@@ -628,6 +1260,19 @@ private fun pointCoords(
             (point.z * 1.24).toFloat()
         },
         point.y.toFloat()
+    )
+}
+
+private fun floorColor(
+    ratio: Float
+): FloatArray {
+    val base = surfaceColor(ratio)
+    val mix = 0.34f
+
+    return floatArrayOf(
+        base[0] * mix + 0.962f * (1f - mix),
+        base[1] * mix + 0.972f * (1f - mix),
+        base[2] * mix + 0.986f * (1f - mix)
     )
 }
 
@@ -647,11 +1292,12 @@ private fun surfaceColor(
     val safeRatio = ratio.coerceIn(0f, 1f)
 
     val stops = listOf(
-        0.00f to floatArrayOf(0.15f, 0.39f, 0.92f),
-        0.28f to floatArrayOf(0.18f, 0.83f, 0.75f),
-        0.52f to floatArrayOf(0.13f, 0.77f, 0.37f),
-        0.74f to floatArrayOf(0.98f, 0.80f, 0.08f),
-        1.00f to floatArrayOf(0.94f, 0.27f, 0.27f)
+        0.00f to floatArrayOf(0.18f, 0.24f, 0.92f),
+        0.24f to floatArrayOf(0.10f, 0.54f, 0.94f),
+        0.46f to floatArrayOf(0.10f, 0.78f, 0.68f),
+        0.68f to floatArrayOf(0.26f, 0.78f, 0.26f),
+        0.84f to floatArrayOf(0.92f, 0.82f, 0.18f),
+        1.00f to floatArrayOf(1.00f, 0.92f, 0.18f)
     )
 
     val rightIndex = stops
@@ -674,6 +1320,18 @@ private fun surfaceColor(
         left.second[0] + (right.second[0] - left.second[0]) * local,
         left.second[1] + (right.second[1] - left.second[1]) * local,
         left.second[2] + (right.second[2] - left.second[2]) * local
+    )
+}
+
+private fun surfaceAwtColor(
+    ratio: Float
+): Color {
+    val color = surfaceColor(ratio)
+
+    return Color(
+        (color[0] * 255f).toInt().coerceIn(0, 255),
+        (color[1] * 255f).toInt().coerceIn(0, 255),
+        (color[2] * 255f).toInt().coerceIn(0, 255)
     )
 }
 

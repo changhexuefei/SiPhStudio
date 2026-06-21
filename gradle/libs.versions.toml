@@ -114,6 +114,7 @@ javafx-swing = { module = "org.openjfx:javafx-swing", version.ref = "javafx" }
 lwjgl-bom = { module = "org.lwjgl:lwjgl-bom", version.ref = "lwjgl" }
 lwjgl = { module = "org.lwjgl:lwjgl" }
 lwjgl-opengl = { module = "org.lwjgl:lwjgl-opengl" }
+lwjgl-glfw = { module = "org.lwjgl:lwjgl-glfw" }
 lwjgl-jawt = { module = "org.lwjgl:lwjgl-jawt" }
 lwjgl3-awt = { module = "org.lwjglx:lwjgl3-awt", version.ref = "lwjgl3-awt" }
 

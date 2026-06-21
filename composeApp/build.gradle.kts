@@ -118,6 +118,7 @@ kotlin {
 
             implementation(libs.lwjgl)
             implementation(libs.lwjgl.opengl)
+            implementation(libs.lwjgl.glfw)
             implementation(libs.lwjgl.jawt)
             implementation("org.lwjglx:lwjgl3-awt:0.2.4") {
                 isTransitive = false
@@ -125,6 +126,7 @@ kotlin {
 
             runtimeOnly("org.lwjgl:lwjgl:$lwjglVersion:$lwjglPlatform")
             runtimeOnly("org.lwjgl:lwjgl-opengl:$lwjglVersion:$lwjglPlatform")
+            runtimeOnly("org.lwjgl:lwjgl-glfw:$lwjglVersion:$lwjglPlatform")
 
             runtimeOnly(libs.slf4j.simple)
         }
