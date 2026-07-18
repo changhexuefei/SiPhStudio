@@ -72,6 +72,8 @@ private fun CouplingWorkspaceTwoColumns(
 
             CouplingConfigPanel(
                 state = state.coupling.config,
+                previousRunStartPose = state.coupling.previousRunStartPose,
+                safePose = state.positioner.safePose,
                 enabled = !state.coupling.isRunning,
                 canStart = state.canStartCoupling,
                 onConfigChange = {
@@ -121,6 +123,8 @@ private fun CouplingWorkspaceSingleColumn(
 
         CouplingConfigPanel(
             state = state.coupling.config,
+            previousRunStartPose = state.coupling.previousRunStartPose,
+            safePose = state.positioner.safePose,
             enabled = !state.coupling.isRunning,
             canStart = state.canStartCoupling,
             onConfigChange = {
