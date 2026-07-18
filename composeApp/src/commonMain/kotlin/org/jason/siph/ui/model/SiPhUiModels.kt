@@ -10,7 +10,8 @@ enum class CouplingToolPage(
 ) {
     Coupling("Auto Coupling", "Search and optimize power"),
     PivotSetup("Pivot Setup", "Set rotation center"),
-    ManualControl("Manual Control", "Jog positioner axes")
+    ManualControl("Manual Control", "Jog positioner axes"),
+    MotionSafety("Motion Safety", "Soft limits, clearance path and interlock")
 }
 
 enum class CouplingToolRunState(
@@ -81,26 +82,21 @@ enum class CouplingPlane(
     XZ("XZ")
 }
 
-/**
- * 自动耦光每一轮的起点策略。
- */
+/** 自动耦光每一轮的起点策略。 */
 enum class CouplingStartMode(
     val text: String,
     val caption: String
 ) {
-    /** 直接使用启动瞬间从定位器读取到的当前位置。 */
     CurrentPose(
         text = "Current",
         caption = "Start from the current positioner pose"
     ),
 
-    /** 回到上一轮真正使用的起点，适合重复完整粗扫。 */
     PreviousRunStart(
         text = "Previous Start",
         caption = "Return to the previous run start pose"
     ),
 
-    /** 回到当前保存的安全位后开始。 */
     SafePose(
         text = "Safe Pose",
         caption = "Move to the saved safe pose before searching"
@@ -127,12 +123,7 @@ data class CouplingConfigUiState(
     val enableSoftwarePivotCompensation: Boolean = false,
     val maxTotalSamples: Int = 1500,
 
-    /**
-     * 达到目标功率后是否立即结束本轮搜索。
-     *
-     * 默认关闭，保证平台已经停在上一轮最佳点时，再次点击 Start 仍会执行精调流程。
-     * 生产节拍优先时可以在 UI 中显式开启。
-     */
+    /** 达到目标功率后是否立即结束本轮搜索。 */
     val stopWhenTargetReached: Boolean = false
 )
 
@@ -163,13 +154,8 @@ data class CouplingUiState(
     val currentPowerDbm: Double? = null,
     val bestPowerDbm: Double? = null,
     val bestPose: OpticalPose? = null,
-
-    /** 本轮真正交给算法的起点。 */
     val activeRunStartPose: OpticalPose? = null,
-
-    /** 上一轮真正使用的起点，用于 PreviousRunStart。 */
     val previousRunStartPose: OpticalPose? = null,
-
     val samples: List<CouplingSampleUi> = emptyList(),
     val logs: List<String> = emptyList(),
     val isRunning: Boolean = false,
