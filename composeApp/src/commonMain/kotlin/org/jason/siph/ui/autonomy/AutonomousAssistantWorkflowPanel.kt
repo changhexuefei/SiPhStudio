@@ -111,7 +111,7 @@ private fun AutonomousRuntimePanel(
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.Stretch
+            verticalAlignment = Alignment.Top
         ) {
             CapabilityRuntimeCard(
                 title = "VISION ALIGNMENT",
