@@ -13,9 +13,23 @@ open class PiGcsException(
  */
 class PiGcsCommandException(
     val command: String,
-    val errorCode: Int
+    val errorCode: Int,
+    val descriptor: PiGcsErrorDescriptor = PiGcsErrorCatalog.describe(errorCode)
 ) : PiGcsException(
-    message = "PI GCS 命令执行失败: command='$command', errorCode=$errorCode"
+    message = buildString {
+        append("PI GCS 命令执行失败: command='")
+        append(command)
+        append("', errorCode=")
+        append(errorCode)
+        append(", symbol=")
+        append(descriptor.symbol)
+        append(", message=")
+        append(descriptor.message)
+        descriptor.recoveryHint?.let { hint ->
+            append(", recoveryHint=")
+            append(hint)
+        }
+    }
 )
 
 /**
