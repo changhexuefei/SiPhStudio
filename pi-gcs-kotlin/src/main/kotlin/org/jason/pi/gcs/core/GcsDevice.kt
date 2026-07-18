@@ -9,6 +9,9 @@ import org.jason.pi.gcs.hexapod.PiAxis
  * - GcsDevice 暴露设备语义；
  * - GcsCommand 生成协议文本并描述响应结构；
  * - GcsClient 串行化传输、读取完整响应并执行 ERR? 检查。
+ *
+ * 原有 [PiAxis] API 继续用于 X/Y/Z/U/V/W 六轴平台；带 `Ids` 后缀的 API
+ * 支持数字轴和 GCS 3.0 的 AXIS_1 类动态轴名。
  */
 class GcsDevice(
     private val client: GcsClient
@@ -31,6 +34,11 @@ class GcsDevice(
 
     suspend fun qERR(): Int = client.qERR()
 
+    suspend fun qAxisIds(): List<PiAxisId> {
+        return GcsResponseParser.parseAxisIds(query(GcsCommand.qAxes()))
+    }
+
+    /** 兼容原有六轴 API。动态轴控制器应使用 [qAxisIds]。 */
     suspend fun qAxes(): List<PiAxis> {
         return GcsResponseParser.parseAxes(query(GcsCommand.qAxes()))
     }
@@ -42,6 +50,11 @@ class GcsDevice(
     suspend fun setServo(states: Map<PiAxis, Boolean>) {
         if (states.isEmpty()) return
         command(GcsCommand.servo(states))
+    }
+
+    suspend fun setServoIds(states: Map<PiAxisId, Boolean>) {
+        if (states.isEmpty()) return
+        command(GcsCommand.servoIds(states))
     }
 
     suspend fun servoOn(axis: PiAxis) {
@@ -63,6 +76,14 @@ class GcsDevice(
         require(axes.isNotEmpty()) { "qServo axes must not be empty" }
         return GcsResponseParser.parseAxisBooleanMap(
             response = query(GcsCommand.qServo(axes)),
+            expectedAxes = axes
+        )
+    }
+
+    suspend fun qServoIds(axes: List<PiAxisId>): Map<PiAxisId, Boolean> {
+        require(axes.isNotEmpty()) { "qServoIds axes must not be empty" }
+        return GcsResponseParser.parseAxisIdBooleanMap(
+            response = query(GcsCommand.qServoIds(axes)),
             expectedAxes = axes
         )
     }
@@ -93,6 +114,11 @@ class GcsDevice(
         command(GcsCommand.moveAbsolute(targets))
     }
 
+    suspend fun moveAbsoluteIds(targets: Map<PiAxisId, Double>) {
+        if (targets.isEmpty()) return
+        command(GcsCommand.moveAbsoluteIds(targets))
+    }
+
     suspend fun moveRelative(
         axis: PiAxis,
         delta: Double
@@ -104,6 +130,12 @@ class GcsDevice(
         val nonZero = deltas.filterValues { it != 0.0 }
         if (nonZero.isEmpty()) return
         command(GcsCommand.moveRelative(nonZero))
+    }
+
+    suspend fun moveRelativeIds(deltas: Map<PiAxisId, Double>) {
+        val nonZero = deltas.filterValues { it != 0.0 }
+        if (nonZero.isEmpty()) return
+        command(GcsCommand.moveRelativeIds(nonZero))
     }
 
     suspend fun qPOS(axis: PiAxis): Double {
@@ -123,6 +155,14 @@ class GcsDevice(
         )
     }
 
+    suspend fun qPOSIds(axes: List<PiAxisId>): Map<PiAxisId, Double> {
+        require(axes.isNotEmpty()) { "qPOSIds axes must not be empty" }
+        return GcsResponseParser.parseAxisIdDoubleMap(
+            response = query(GcsCommand.qPositionIds(axes)),
+            expectedAxes = axes
+        )
+    }
+
     suspend fun qONT(axis: PiAxis): Boolean {
         return GcsResponseParser.parseAxisBoolean(
             response = query(GcsCommand.qOnTarget(axis)),
@@ -136,6 +176,14 @@ class GcsDevice(
         require(axes.isNotEmpty()) { "qONT axes must not be empty" }
         return GcsResponseParser.parseAxisBooleanMap(
             response = query(GcsCommand.qOnTarget(axes)),
+            expectedAxes = axes
+        )
+    }
+
+    suspend fun qONTIds(axes: List<PiAxisId>): Map<PiAxisId, Boolean> {
+        require(axes.isNotEmpty()) { "qONTIds axes must not be empty" }
+        return GcsResponseParser.parseAxisIdBooleanMap(
+            response = query(GcsCommand.qOnTargetIds(axes)),
             expectedAxes = axes
         )
     }
@@ -174,15 +222,43 @@ class GcsDevice(
         )
     }
 
-    suspend fun reference(axis: PiAxis) {
-        command(GcsCommand.reference(axis))
+    suspend fun qTMNIds(axes: List<PiAxisId>): Map<PiAxisId, Double> {
+        require(axes.isNotEmpty()) { "qTMNIds axes must not be empty" }
+        return GcsResponseParser.parseAxisIdDoubleMap(
+            response = query(GcsCommand.qTravelMinIds(axes)),
+            expectedAxes = axes
+        )
+    }
+
+    suspend fun qTMXIds(axes: List<PiAxisId>): Map<PiAxisId, Double> {
+        require(axes.isNotEmpty()) { "qTMXIds axes must not be empty" }
+        return GcsResponseParser.parseAxisIdDoubleMap(
+            response = query(GcsCommand.qTravelMaxIds(axes)),
+            expectedAxes = axes
+        )
+    }
+
+    suspend fun reference(
+        axis: PiAxis,
+        mode: PiReferenceCommand = PiReferenceCommand.FRF
+    ) {
+        command(GcsCommand.reference(axis, mode))
     }
 
     suspend fun referenceAll(
-        axes: List<PiAxis> = PiAxis.HEXAPOD_AXES
+        axes: List<PiAxis> = PiAxis.HEXAPOD_AXES,
+        mode: PiReferenceCommand = PiReferenceCommand.FRF
     ) {
         require(axes.isNotEmpty()) { "referenceAll axes must not be empty" }
-        command(GcsCommand.reference(axes))
+        command(GcsCommand.reference(axes, mode))
+    }
+
+    suspend fun referenceIds(
+        axes: List<PiAxisId>,
+        mode: PiReferenceCommand = PiReferenceCommand.FRF
+    ) {
+        require(axes.isNotEmpty()) { "referenceIds axes must not be empty" }
+        command(GcsCommand.referenceIds(axes, mode))
     }
 
     override fun close() {
