@@ -33,7 +33,9 @@ data class CouplingToolUiState(
     val canStartCoupling: Boolean
         get() = positioner.connected &&
             !positioner.connecting &&
-            !coupling.isRunning
+            !positioner.isMoving &&
+            !coupling.isRunning &&
+            coupling.canResolveStartPose
 }
 
 data class CouplingToolStatusState(
@@ -79,10 +81,37 @@ enum class CouplingPlane(
     XZ("XZ")
 }
 
+/**
+ * 自动耦光每一轮的起点策略。
+ */
+enum class CouplingStartMode(
+    val text: String,
+    val caption: String
+) {
+    /** 直接使用启动瞬间从定位器读取到的当前位置。 */
+    CurrentPose(
+        text = "Current",
+        caption = "Start from the current positioner pose"
+    ),
+
+    /** 回到上一轮真正使用的起点，适合重复完整粗扫。 */
+    PreviousRunStart(
+        text = "Previous Start",
+        caption = "Return to the previous run start pose"
+    ),
+
+    /** 回到当前保存的安全位后开始。 */
+    SafePose(
+        text = "Safe Pose",
+        caption = "Move to the saved safe pose before searching"
+    )
+}
+
 data class CouplingConfigUiState(
     val wavelengthNm: Double = 1550.0,
     val powerMeterChannel: Int = 1,
     val plane: CouplingPlane = CouplingPlane.XY,
+    val startMode: CouplingStartMode = CouplingStartMode.CurrentPose,
     val firstLightThresholdDbm: Double = -40.0,
     val targetPowerDbm: Double = -10.0,
     val spiralStepUm: Double = 3.0,
@@ -134,6 +163,13 @@ data class CouplingUiState(
     val currentPowerDbm: Double? = null,
     val bestPowerDbm: Double? = null,
     val bestPose: OpticalPose? = null,
+
+    /** 本轮真正交给算法的起点。 */
+    val activeRunStartPose: OpticalPose? = null,
+
+    /** 上一轮真正使用的起点，用于 PreviousRunStart。 */
+    val previousRunStartPose: OpticalPose? = null,
+
     val samples: List<CouplingSampleUi> = emptyList(),
     val logs: List<String> = emptyList(),
     val isRunning: Boolean = false,
@@ -147,6 +183,10 @@ data class CouplingUiState(
 ) {
     val sampleCount: Int
         get() = samples.size
+
+    val canResolveStartPose: Boolean
+        get() = config.startMode != CouplingStartMode.PreviousRunStart ||
+            previousRunStartPose != null
 }
 
 sealed interface CouplingToolAction {
