@@ -22,6 +22,7 @@ class SafetyCheckedOpticalPositioner(
 
     private val motionMutex = Mutex()
 
+    /** 连接本身允许建立通信；任何可能启用运动的 startup/move 都需要互锁就绪。 */
     override suspend fun connect() = delegate.connect()
 
     override suspend fun disconnect() = delegate.disconnect()
@@ -29,6 +30,8 @@ class SafetyCheckedOpticalPositioner(
     override suspend fun identify(): String = delegate.identify()
 
     override suspend fun startup(reference: Boolean) {
+        // 必须在调用底层 startup 之前检查，防止绕过 UI 后启用伺服或开始参考动作。
+        planner.requireConfigured()
         delegate.startup(reference)
         planner.requireValid(delegate.currentPose())
     }
@@ -41,6 +44,7 @@ class SafetyCheckedOpticalPositioner(
 
     override suspend fun moveBy(delta: OpticalDelta, wait: Boolean) {
         motionMutex.withLock {
+            planner.requireConfigured()
             val current = delegate.currentPose()
             moveToLocked(current + delta, wait)
         }
@@ -52,6 +56,7 @@ class SafetyCheckedOpticalPositioner(
         wait: Boolean
     ) {
         motionMutex.withLock {
+            planner.requireConfigured()
             val pivotDelegate = delegate as? PivotAwareOpticalPositionerPort
                 ?: error("The wrapped positioner does not support pivot-aware motion")
 
@@ -72,19 +77,23 @@ class SafetyCheckedOpticalPositioner(
     }
 
     override suspend fun currentPose(): OpticalPose {
+        planner.requireConfigured()
         val pose = delegate.currentPose()
         planner.requireValid(pose)
         return pose
     }
 
     override suspend fun waitOnTarget(timeoutMs: Long) {
+        planner.requireConfigured()
         delegate.waitOnTarget(timeoutMs)
         validateActualPoseOrStop()
     }
 
+    /** Stop 始终允许，不依赖互锁状态。 */
     override suspend fun stop() = delegate.stop()
 
     override suspend fun moveToSafePose() {
+        planner.requireConfigured()
         val configuredSafePose = safePoseProvider?.invoke()
         if (configuredSafePose != null) {
             moveTo(configuredSafePose, wait = true)
@@ -101,6 +110,7 @@ class SafetyCheckedOpticalPositioner(
         target: OpticalPose,
         wait: Boolean
     ) {
+        planner.requireConfigured()
         val current = delegate.currentPose()
         val waypoints = planner.planMove(current, target)
 
