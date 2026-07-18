@@ -28,17 +28,28 @@ class GcsClient(
         }
     }
 
-    suspend fun execute(command: GcsCommand): String? {
+    /**
+     * 执行类型化命令。
+     *
+     * [forceErrorCheck] 主要用于控制器能力探测：查询响应读取完成后，仍在同一个
+     * 串行事务中执行 ERR?，避免把“不支持的查询”误判为成功。
+     */
+    suspend fun execute(
+        command: GcsCommand,
+        forceErrorCheck: Boolean = false
+    ): String? {
         return when (command.kind) {
             GcsCommandKind.Query -> query(
                 command = command.text,
-                expectedResponseLines = command.expectedResponseLines
+                expectedResponseLines = command.expectedResponseLines,
+                checkError = forceErrorCheck
             )
 
             GcsCommandKind.Command -> {
                 command(
                     command = command.text,
-                    checkError = checkErrorAfterCommand && command.shouldCheckError
+                    checkError = forceErrorCheck ||
+                        (checkErrorAfterCommand && command.shouldCheckError)
                 )
                 null
             }
@@ -53,7 +64,8 @@ class GcsClient(
      */
     suspend fun query(
         command: String,
-        expectedResponseLines: Int = 1
+        expectedResponseLines: Int = 1,
+        checkError: Boolean = false
     ): String {
         require(command.isNotBlank()) { "GCS query 不能为空" }
         require(expectedResponseLines > 0) {
@@ -62,11 +74,17 @@ class GcsClient(
 
         return transactionMutex.withLock {
             transport.writeLine(command)
-            transport.readLines(expectedResponseLines)
+            val response = transport.readLines(expectedResponseLines)
                 .joinToString(separator = "\n") { line ->
                     line.trimEnd('\r', '\n')
                 }
                 .trim()
+
+            if (checkError) {
+                checkControllerError(command)
+            }
+
+            response
         }
     }
 
@@ -80,16 +98,7 @@ class GcsClient(
             transport.writeLine(command)
 
             if (checkError) {
-                transport.writeLine("ERR?")
-                val errorText = transport.readLine().trim()
-                val errorCode = GcsResponseParser.parseErrorCode(errorText)
-
-                if (errorCode != 0) {
-                    throw PiGcsCommandException(
-                        command = command,
-                        errorCode = errorCode
-                    )
-                }
+                checkControllerError(command)
             }
         }
     }
@@ -101,5 +110,19 @@ class GcsClient(
 
     override fun close() {
         transport.close()
+    }
+
+    /** Must only be called while [transactionMutex] is held. */
+    private suspend fun checkControllerError(command: String) {
+        transport.writeLine("ERR?")
+        val errorText = transport.readLine().trim()
+        val errorCode = GcsResponseParser.parseErrorCode(errorText)
+
+        if (errorCode != 0) {
+            throw PiGcsCommandException(
+                command = command,
+                errorCode = errorCode
+            )
+        }
     }
 }
