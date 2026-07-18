@@ -13,27 +13,49 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import org.jason.siph.di.createSiPhAppModule
+import org.jason.siph.domain.runtime.HardwareRuntimeMode
+import org.jason.siph.ui.safety.MotionSafetySettingsStore
 import org.jason.siph.ui.siphtools.CouplingToolScreen
-import org.jason.siph.ui.state.createSafeDemoCouplingToolStore
+import org.jason.siph.ui.state.CouplingToolStore
+import org.koin.compose.KoinApplication
+import org.koin.compose.koinInject
 
 @Composable
 @androidx.compose.ui.tooling.preview.Preview
-fun App() {
+fun App(
+    runtimeMode: HardwareRuntimeMode = HardwareRuntimeMode.Demo
+) {
     SiPhTheme {
         val scope = rememberCoroutineScope()
-        val store = remember(scope) {
-            createSafeDemoCouplingToolStore(scope)
-        }
-        val state by store.state.collectAsState()
-
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.background
-        ) {
-            CouplingToolScreen(
-                state = state,
-                onAction = store::dispatch
+        val appModule = remember(scope, runtimeMode) {
+            createSiPhAppModule(
+                scope = scope,
+                runtimeMode = runtimeMode
             )
+        }
+
+        KoinApplication(
+            application = {
+                modules(appModule)
+            }
+        ) {
+            val couplingStore = koinInject<CouplingToolStore>()
+            val safetyStore = koinInject<MotionSafetySettingsStore>()
+            val couplingState by couplingStore.state.collectAsState()
+            val safetyState by safetyStore.state.collectAsState()
+
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background
+            ) {
+                CouplingToolScreen(
+                    state = couplingState,
+                    safetyState = safetyState,
+                    onAction = couplingStore::dispatch,
+                    onSafetyAction = safetyStore::dispatch
+                )
+            }
         }
     }
 }
