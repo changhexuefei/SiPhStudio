@@ -38,6 +38,13 @@ class KtorTcpGcsTransport(
     private var receiveChannel: ByteReadChannel? = null
     private var sendChannel: ByteWriteChannel? = null
 
+    /**
+     * Ktor 3 的 Socket 接口不再稳定暴露 isClosed，因此由传输层维护明确的生命周期标记。
+     * 只有 Socket 和读写通道全部安装完成后，该值才会变为 true。
+     */
+    @Volatile
+    private var connectionOpen: Boolean = false
+
     init {
         require(host.isNotBlank()) { "PI GCS host 不能为空" }
         require(port in 1..65535) { "PI GCS port 无效: $port" }
@@ -46,7 +53,8 @@ class KtorTcpGcsTransport(
     }
 
     override val isOpen: Boolean
-        get() = socket?.isClosed == false &&
+        get() = connectionOpen &&
+            socket != null &&
             receiveChannel != null &&
             sendChannel != null
 
@@ -76,7 +84,9 @@ class KtorTcpGcsTransport(
                 socket = connectedSocket
                 receiveChannel = readChannel
                 sendChannel = writeChannel
+                connectionOpen = true
             } catch (error: Throwable) {
+                connectionOpen = false
                 runCatching { connectedSocket?.close() }
                 runCatching { manager.close() }
                 throw error
@@ -86,7 +96,8 @@ class KtorTcpGcsTransport(
 
     override suspend fun writeLine(command: String) {
         require(command.isNotBlank()) { "PI GCS command 不能为空" }
-        val channel = sendChannel ?: error("PI GCS TCP 连接未打开")
+        check(isOpen) { "PI GCS TCP 连接未打开" }
+        val channel = sendChannel ?: error("PI GCS TCP 写通道未初始化")
 
         val normalized = command.trimEnd('\r', '\n')
         withTimeout(timeout.inWholeMilliseconds) {
@@ -96,15 +107,22 @@ class KtorTcpGcsTransport(
     }
 
     override suspend fun readLine(): String {
-        val channel = receiveChannel ?: error("PI GCS TCP 连接未打开")
+        check(isOpen) { "PI GCS TCP 连接未打开" }
+        val channel = receiveChannel ?: error("PI GCS TCP 读通道未初始化")
 
         return withTimeout(timeout.inWholeMilliseconds) {
             channel.readUTF8Line()
-                ?: error("PI GCS TCP 连接已关闭，未读取到完整响应")
+                ?: run {
+                    connectionOpen = false
+                    error("PI GCS TCP 连接已关闭，未读取到完整响应")
+                }
         }
     }
 
     override fun close() {
+        // 先发布关闭状态，避免其他协程在资源释放过程中继续发起 I/O。
+        connectionOpen = false
+
         val currentSocket = socket
         val currentManager = selectorManager
 
