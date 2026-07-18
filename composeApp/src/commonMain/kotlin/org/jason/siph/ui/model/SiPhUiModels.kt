@@ -4,28 +4,16 @@ import org.jason.siph.domain.positioner.OpticalDelta
 import org.jason.siph.domain.positioner.OpticalPose
 import org.jason.siph.domain.positioner.VirtualPivotPoint
 
-enum class CouplingToolPage(
-    val title: String,
-    val caption: String
-) {
-    AutonomousAssistant(
-        "Autonomous Assistant",
-        "Train, calibrate, verify and launch photonic workflows"
-    ),
+enum class CouplingToolPage(val title: String, val caption: String) {
+    AutonomousAssistant("Autonomous Assistant", "Train, calibrate, verify and launch photonic workflows"),
     Coupling("Auto Coupling", "Search and optimize power"),
     PivotSetup("Pivot Setup", "Set rotation center"),
     ManualControl("Manual Control", "Jog positioner axes"),
     MotionSafety("Motion Safety", "Soft limits, clearance path and interlock")
 }
 
-enum class CouplingToolRunState(
-    val text: String
-) {
-    Idle("Idle"),
-    Running("Running"),
-    Completed("Completed"),
-    Stopped("Stopped"),
-    Error("Error")
+enum class CouplingToolRunState(val text: String) {
+    Idle("Idle"), Running("Running"), Completed("Completed"), Stopped("Stopped"), Error("Error")
 }
 
 data class CouplingToolUiState(
@@ -36,11 +24,7 @@ data class CouplingToolUiState(
     val status: CouplingToolStatusState = CouplingToolStatusState()
 ) {
     val canStartCoupling: Boolean
-        get() = positioner.connected &&
-            !positioner.connecting &&
-            !positioner.isMoving &&
-            !coupling.isRunning &&
-            coupling.canResolveStartPose
+        get() = positioner.connected && !positioner.connecting && !positioner.isMoving && !coupling.isRunning && coupling.canResolveStartPose
 }
 
 data class CouplingToolStatusState(
@@ -63,48 +47,18 @@ data class PositionerUiState(
     val errorMessage: String? = null
 )
 
-enum class CouplingState(
-    val text: String
-) {
-    Idle("Idle"),
-    Initializing("Initializing"),
-    SpiralSearching("Spiral Searching"),
-    FineOptimizing("Fine Optimizing"),
-    AngleOptimizing("Angle Optimizing"),
-    Finalizing("Finalizing"),
-    Coupled("Coupled"),
-    Completed("Completed"),
-    Failed("Failed"),
-    Stopped("Stopped")
+enum class CouplingState(val text: String) {
+    Idle("Idle"), Initializing("Initializing"), SpiralSearching("Spiral Searching"), FineOptimizing("Fine Optimizing"),
+    AngleOptimizing("Angle Optimizing"), Finalizing("Finalizing"), Coupled("Coupled"), Completed("Completed"),
+    Failed("Failed"), Stopped("Stopped")
 }
 
-enum class CouplingPlane(
-    val text: String
-) {
-    XY("XY"),
-    YZ("YZ"),
-    XZ("XZ")
-}
+enum class CouplingPlane(val text: String) { XY("XY"), YZ("YZ"), XZ("XZ") }
 
-/** 自动耦光每一轮的起点策略。 */
-enum class CouplingStartMode(
-    val text: String,
-    val caption: String
-) {
-    CurrentPose(
-        text = "Current",
-        caption = "Start from the current positioner pose"
-    ),
-
-    PreviousRunStart(
-        text = "Previous Start",
-        caption = "Return to the previous run start pose"
-    ),
-
-    SafePose(
-        text = "Safe Pose",
-        caption = "Move to the saved safe pose before searching"
-    )
+enum class CouplingStartMode(val text: String, val caption: String) {
+    CurrentPose("Current", "Start from the current positioner pose"),
+    PreviousRunStart("Previous Start", "Return to the previous run start pose"),
+    SafePose("Safe Pose", "Move to the saved safe pose before searching")
 }
 
 data class CouplingConfigUiState(
@@ -126,21 +80,12 @@ data class CouplingConfigUiState(
     val virtualPivotPoint: VirtualPivotPoint = VirtualPivotPoint.Disabled,
     val enableSoftwarePivotCompensation: Boolean = false,
     val maxTotalSamples: Int = 1500,
-
-    /** 达到目标功率后是否立即结束本轮搜索。 */
     val stopWhenTargetReached: Boolean = false
 )
 
-enum class CouplingStageUi(
-    val text: String
-) {
-    Initial("Initial"),
-    SpiralFirstLight("Spiral"),
-    FineXyz("Fine XYZ"),
-    OptimizeU("Optimize U"),
-    OptimizeV("Optimize V"),
-    OptimizeW("Optimize W"),
-    Final("Final")
+enum class CouplingStageUi(val text: String) {
+    Initial("Initial"), SpiralFirstLight("Spiral"), FineXyz("Fine XYZ"), OptimizeU("Optimize U"),
+    OptimizeV("Optimize V"), OptimizeW("Optimize W"), Final("Final")
 }
 
 data class CouplingSampleUi(
@@ -171,17 +116,12 @@ data class CouplingUiState(
     val message: String? = null,
     val errorMessage: String? = null
 ) {
-    val sampleCount: Int
-        get() = samples.size
-
-    val canResolveStartPose: Boolean
-        get() = config.startMode != CouplingStartMode.PreviousRunStart ||
-            previousRunStartPose != null
+    val sampleCount: Int get() = samples.size
+    val canResolveStartPose: Boolean get() = config.startMode != CouplingStartMode.PreviousRunStart || previousRunStartPose != null
 }
 
 sealed interface CouplingToolAction {
     data class SelectPage(val page: CouplingToolPage) : CouplingToolAction
-
     data object ConnectPositioner : CouplingToolAction
     data object DisconnectPositioner : CouplingToolAction
     data object ReadPose : CouplingToolAction
@@ -190,15 +130,8 @@ sealed interface CouplingToolAction {
     data class JogPositioner(val delta: OpticalDelta) : CouplingToolAction
     data class UpdateLinearStep(val valueUm: Double) : CouplingToolAction
     data class UpdateAngleStep(val valueDeg: Double) : CouplingToolAction
-
-    data class UpdateCouplingConfig(
-        val config: CouplingConfigUiState
-    ) : CouplingToolAction
-
-    data class UpdateVirtualPivot(
-        val pivot: VirtualPivotPoint
-    ) : CouplingToolAction
-
+    data class UpdateCouplingConfig(val config: CouplingConfigUiState) : CouplingToolAction
+    data class UpdateVirtualPivot(val pivot: VirtualPivotPoint) : CouplingToolAction
     data object CapturePivotFromCurrentPose : CouplingToolAction
     data object DisableVirtualPivot : CouplingToolAction
     data object StartCoupling : CouplingToolAction
