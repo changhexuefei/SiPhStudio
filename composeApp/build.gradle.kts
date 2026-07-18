@@ -14,26 +14,14 @@ val currentArch = System.getProperty("os.arch").lowercase()
 
 val javafxPlatform = when {
     currentOs.isWindows -> "win"
-    currentOs.isMacOsX -> {
-        if (currentArch == "aarch64" || currentArch == "arm64") {
-            "mac-aarch64"
-        } else {
-            "mac"
-        }
-    }
+    currentOs.isMacOsX -> if (currentArch == "aarch64" || currentArch == "arm64") "mac-aarch64" else "mac"
     currentOs.isLinux -> "linux"
     else -> error("Unsupported JavaFX platform: ${currentOs.name}")
 }
 
 val lwjglPlatform = when {
     currentOs.isWindows -> "natives-windows"
-    currentOs.isMacOsX -> {
-        if (currentArch == "aarch64" || currentArch == "arm64") {
-            "natives-macos-arm64"
-        } else {
-            "natives-macos"
-        }
-    }
+    currentOs.isMacOsX -> if (currentArch == "aarch64" || currentArch == "arm64") "natives-macos-arm64" else "natives-macos"
     currentOs.isLinux -> "natives-linux"
     else -> error("Unsupported LWJGL platform: ${currentOs.name}")
 }
@@ -77,12 +65,9 @@ kotlin {
 
             implementation(libs.compose.navigation3.ui)
             implementation(libs.compose.navigationevent)
-
             implementation(libs.androidx.savedstate)
             implementation(libs.androidx.window.core)
-
             implementation(libs.kotlinx.datetime)
-
             implementation(libs.lets.plot.kotlin)
             implementation(libs.lets.plot.compose)
         }
@@ -96,10 +81,7 @@ kotlin {
             implementation("org.openjfx:javafx-graphics:$javafxVersion:$javafxPlatform")
             implementation("org.openjfx:javafx-swing:$javafxVersion:$javafxPlatform")
 
-            implementation(
-                project.dependencies.platform("org.lwjgl:lwjgl-bom:$lwjglVersion")
-            )
-
+            implementation(project.dependencies.platform("org.lwjgl:lwjgl-bom:$lwjglVersion"))
             implementation(libs.lwjgl)
             implementation(libs.lwjgl.opengl)
             implementation(libs.lwjgl.glfw)
@@ -111,8 +93,12 @@ kotlin {
             runtimeOnly("org.lwjgl:lwjgl:$lwjglVersion:$lwjglPlatform")
             runtimeOnly("org.lwjgl:lwjgl-opengl:$lwjglVersion:$lwjglPlatform")
             runtimeOnly("org.lwjgl:lwjgl-glfw:$lwjglVersion:$lwjglPlatform")
-
             runtimeOnly(libs.slf4j.simple)
+        }
+
+        jvmTest.dependencies {
+            implementation(kotlin("test"))
+            implementation(libs.kotlinx.coroutines.core)
         }
     }
 }
@@ -122,12 +108,7 @@ compose.desktop {
         mainClass = "org.jason.siph.MainKt"
 
         nativeDistributions {
-            targetFormats(
-                TargetFormat.Dmg,
-                TargetFormat.Msi,
-                TargetFormat.Deb
-            )
-
+            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "org.jason.siph"
             packageVersion = "1.0.0"
         }
