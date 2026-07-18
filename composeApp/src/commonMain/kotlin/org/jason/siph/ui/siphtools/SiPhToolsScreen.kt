@@ -28,19 +28,33 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import org.jason.siph.domain.runtime.HardwareRuntimeMode
 import org.jason.siph.ui.coupling.CouplingWorkspace
 import org.jason.siph.ui.coupling.PivotSetupPanel
 import org.jason.siph.ui.model.CouplingToolAction
 import org.jason.siph.ui.model.CouplingToolPage
 import org.jason.siph.ui.model.CouplingToolUiState
+import org.jason.siph.ui.model.MotionSafetyAction
+import org.jason.siph.ui.model.MotionSafetyUiState
+import org.jason.siph.ui.model.SafetyInterlockStatus
 import org.jason.siph.ui.positioner.PositionerControlPanel
+import org.jason.siph.ui.safety.MotionSafetyConfigPanel
 
 @Composable
 fun CouplingToolScreen(
     state: CouplingToolUiState,
+    safetyState: MotionSafetyUiState,
     onAction: (CouplingToolAction) -> Unit,
+    onSafetyAction: (MotionSafetyAction) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val motionEnabled = safetyState.interlockReady
+    val connectLabel = if (safetyState.runtimeMode == HardwareRuntimeMode.Demo) {
+        "Connect Demo"
+    } else {
+        "Connect Real"
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -48,6 +62,7 @@ fun CouplingToolScreen(
     ) {
         CouplingToolTopBar(
             state = state,
+            safetyState = safetyState,
             onAction = onAction
         )
 
@@ -102,6 +117,8 @@ fun CouplingToolScreen(
                     CouplingToolPage.Coupling -> CouplingWorkspace(
                         state = state,
                         onAction = onAction,
+                        motionEnabled = motionEnabled,
+                        connectLabel = connectLabel,
                         modifier = Modifier.fillMaxSize()
                     )
 
@@ -114,9 +131,18 @@ fun CouplingToolScreen(
                     CouplingToolPage.ManualControl -> PositionerControlPanel(
                         state = state.positioner,
                         onAction = onAction,
+                        motionEnabled = motionEnabled,
+                        connectLabel = connectLabel,
                         modifier = Modifier
                             .widthIn(max = 1280.dp)
                             .fillMaxWidth()
+                    )
+
+                    CouplingToolPage.MotionSafety -> MotionSafetyConfigPanel(
+                        state = safetyState,
+                        onAction = onSafetyAction,
+                        motionBusy = state.positioner.isMoving || state.coupling.isRunning,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
@@ -133,6 +159,7 @@ fun CouplingToolScreen(
 @Composable
 private fun CouplingToolTopBar(
     state: CouplingToolUiState,
+    safetyState: MotionSafetyUiState,
     onAction: (CouplingToolAction) -> Unit
 ) {
     Surface(
@@ -159,6 +186,11 @@ private fun CouplingToolTopBar(
             }
 
             Spacer(modifier = Modifier.weight(1f))
+
+            InterlockBadge(
+                state = safetyState,
+                modifier = Modifier.padding(end = 10.dp)
+            )
 
             Surface(
                 shape = MaterialTheme.shapes.medium,
@@ -190,7 +222,7 @@ private fun CouplingToolTopBar(
 
             Button(
                 onClick = { onAction(CouplingToolAction.StartCoupling) },
-                enabled = state.canStartCoupling,
+                enabled = safetyState.interlockReady && state.canStartCoupling,
                 modifier = Modifier.heightIn(min = 40.dp)
             ) {
                 Text("Start Coupling")
@@ -208,6 +240,42 @@ private fun CouplingToolTopBar(
             ) {
                 Text(if (state.coupling.stopRequested) "Stopping..." else "Stop")
             }
+        }
+    }
+}
+
+@Composable
+private fun InterlockBadge(
+    state: MotionSafetyUiState,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.border(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
+            shape = MaterialTheme.shapes.medium
+        ),
+        shape = MaterialTheme.shapes.medium,
+        color = when (state.interlockStatus) {
+            SafetyInterlockStatus.Ready -> MaterialTheme.colorScheme.primaryContainer
+            SafetyInterlockStatus.NotReady -> MaterialTheme.colorScheme.tertiaryContainer
+            SafetyInterlockStatus.Invalid -> MaterialTheme.colorScheme.errorContainer
+        }
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.End
+        ) {
+            Text(
+                text = "Safety ${state.interlockStatus.text}",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "${state.runtimeMode.text} · ${state.source.text}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
