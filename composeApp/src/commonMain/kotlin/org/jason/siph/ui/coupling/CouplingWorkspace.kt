@@ -18,21 +18,13 @@ import org.jason.siph.ui.model.CouplingToolAction
 import org.jason.siph.ui.model.CouplingToolUiState
 import org.jason.siph.ui.positioner.CompactPositionerPanel
 
-/**
- * Coupling workspace.
- *
- * This page keeps positioner controls compact so coupling config,
- * results, plot, and logs remain visible during alignment work.
- */
 @Composable
 fun CouplingWorkspace(
     state: CouplingToolUiState,
     onAction: (CouplingToolAction) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    BoxWithConstraints(
-        modifier = modifier.fillMaxSize()
-    ) {
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val useSingleColumn = maxWidth < 1100.dp
 
         if (useSingleColumn) {
@@ -81,6 +73,7 @@ private fun CouplingWorkspaceTwoColumns(
             CouplingConfigPanel(
                 state = state.coupling.config,
                 enabled = !state.coupling.isRunning,
+                canStart = state.canStartCoupling,
                 onConfigChange = {
                     onAction(CouplingToolAction.UpdateCouplingConfig(it))
                 },
@@ -129,6 +122,7 @@ private fun CouplingWorkspaceSingleColumn(
         CouplingConfigPanel(
             state = state.coupling.config,
             enabled = !state.coupling.isRunning,
+            canStart = state.canStartCoupling,
             onConfigChange = {
                 onAction(CouplingToolAction.UpdateCouplingConfig(it))
             },
