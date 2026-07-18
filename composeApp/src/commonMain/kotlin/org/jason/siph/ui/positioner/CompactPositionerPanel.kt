@@ -26,6 +26,8 @@ import kotlin.math.abs
 fun CompactPositionerPanel(
     state: PositionerUiState,
     onAction: (CouplingToolAction) -> Unit,
+    motionEnabled: Boolean = true,
+    connectLabel: String = "Connect",
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -57,6 +59,13 @@ fun CompactPositionerPanel(
                             MaterialTheme.colorScheme.onSurfaceVariant
                         }
                     )
+                    if (!motionEnabled) {
+                        Text(
+                            text = "Motion locked: apply a validated safety profile",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                    }
                 }
 
                 AssistChip(
@@ -64,6 +73,7 @@ fun CompactPositionerPanel(
                     label = {
                         Text(
                             text = when {
+                                !motionEnabled -> "Interlock"
                                 state.connecting -> "Connecting"
                                 state.connected && state.isMoving -> "Moving"
                                 state.connected -> "Connected"
@@ -71,6 +81,7 @@ fun CompactPositionerPanel(
                             },
                             color = when {
                                 state.errorMessage != null -> MaterialTheme.colorScheme.error
+                                !motionEnabled -> MaterialTheme.colorScheme.tertiary
                                 state.connected -> MaterialTheme.colorScheme.primary
                                 else -> MaterialTheme.colorScheme.onSurfaceVariant
                             },
@@ -85,7 +96,7 @@ fun CompactPositionerPanel(
             JogControlPanel(
                 linearStepUm = state.linearStepUm,
                 angleStepDeg = state.angleStepDeg,
-                enabled = state.connected && !state.connecting && !state.isMoving,
+                enabled = motionEnabled && state.connected && !state.connecting && !state.isMoving,
                 onLinearStepChange = {
                     onAction(CouplingToolAction.UpdateLinearStep(it))
                 },
@@ -111,14 +122,14 @@ fun CompactPositionerPanel(
                             }
                         )
                     },
-                    enabled = !state.connecting && !state.isMoving,
+                    enabled = !state.connecting && !state.isMoving && (state.connected || motionEnabled),
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(
                         when {
                             state.connecting -> "Connecting..."
                             state.connected -> "Disconnect"
-                            else -> "Connect Demo"
+                            else -> connectLabel
                         }
                     )
                 }
@@ -133,7 +144,7 @@ fun CompactPositionerPanel(
 
                 Button(
                     onClick = { onAction(CouplingToolAction.MoveSafe) },
-                    enabled = state.connected && !state.isMoving,
+                    enabled = motionEnabled && state.connected && !state.isMoving,
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Move Safe")
