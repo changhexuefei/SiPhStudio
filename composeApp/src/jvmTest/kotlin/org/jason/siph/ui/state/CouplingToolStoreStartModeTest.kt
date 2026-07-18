@@ -120,6 +120,7 @@ class CouplingToolStoreStartModeTest {
 
         assertEquals(false, store.state.value.canStartCoupling)
         assertNotNull(store.state.value.coupling.errorMessage)
+        Unit
     }
 
     private suspend fun waitForRun(
