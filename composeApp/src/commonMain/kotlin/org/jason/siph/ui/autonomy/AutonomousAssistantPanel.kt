@@ -1,3 +1,3 @@
 package org.jason.siph.ui.autonomy
 
-// Implementation retained in branch; no content change intended.
+// Branch ref will be reset to the last verified implementation.
