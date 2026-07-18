@@ -8,18 +8,9 @@ enum class CouplingToolPage(
     val title: String,
     val caption: String
 ) {
-    Coupling(
-        title = "Auto Coupling",
-        caption = "Search and optimize power"
-    ),
-    PivotSetup(
-        title = "Pivot Setup",
-        caption = "Set rotation center"
-    ),
-    ManualControl(
-        title = "Manual Control",
-        caption = "Jog positioner axes"
-    )
+    Coupling("Auto Coupling", "Search and optimize power"),
+    PivotSetup("Pivot Setup", "Set rotation center"),
+    ManualControl("Manual Control", "Jog positioner axes")
 }
 
 enum class CouplingToolRunState(
@@ -37,10 +28,15 @@ data class CouplingToolUiState(
     val positioner: PositionerUiState = PositionerUiState(),
     val coupling: CouplingUiState = CouplingUiState(),
     val status: CouplingToolStatusState = CouplingToolStatusState()
-)
+) {
+    val canStartCoupling: Boolean
+        get() = positioner.connected &&
+            !positioner.connecting &&
+            !coupling.isRunning
+}
 
 data class CouplingToolStatusState(
-    val deviceText: String = "PI: Disconnected | Laser: Disconnected | PowerMeter: Disconnected",
+    val deviceText: String = "PI: Disconnected | PowerMeter: Disconnected",
     val powerText: String = "Power: -- dBm",
     val stateText: String = "State: Idle",
     val message: String = "Ready",
@@ -49,6 +45,7 @@ data class CouplingToolStatusState(
 
 data class PositionerUiState(
     val connected: Boolean = false,
+    val connecting: Boolean = false,
     val idn: String? = null,
     val currentPose: OpticalPose = OpticalPose.ZERO,
     val safePose: OpticalPose = OpticalPose.ZERO,
@@ -62,9 +59,11 @@ enum class CouplingState(
     val text: String
 ) {
     Idle("Idle"),
+    Initializing("Initializing"),
     SpiralSearching("Spiral Searching"),
     FineOptimizing("Fine Optimizing"),
     AngleOptimizing("Angle Optimizing"),
+    Finalizing("Finalizing"),
     Coupled("Coupled"),
     Failed("Failed"),
     Stopped("Stopped")
@@ -84,23 +83,30 @@ data class CouplingConfigUiState(
     val plane: CouplingPlane = CouplingPlane.XY,
     val firstLightThresholdDbm: Double = -40.0,
     val targetPowerDbm: Double = -10.0,
-    val spiralStepUm: Double = 2.0,
-    val maxRadiusUm: Double = 50.0,
-    val settleDelayMs: Long = 50L,
+    val spiralStepUm: Double = 3.0,
+    val maxRadiusUm: Double = 35.0,
+    val settleDelayMs: Long = 8L,
+    val powerAverageCount: Int = 3,
+    val powerAverageDelayMs: Long = 3L,
     val enableFineXyz: Boolean = true,
+    val minImproveDb: Double = 0.02,
+    val maxFinePassesPerStep: Int = 10,
     val enableAngleOptimization: Boolean = false,
     val virtualPivotPoint: VirtualPivotPoint = VirtualPivotPoint.Disabled,
-    val enableSoftwarePivotCompensation: Boolean = false
+    val enableSoftwarePivotCompensation: Boolean = false,
+    val maxTotalSamples: Int = 1500,
+    val stopWhenTargetReached: Boolean = true
 )
 
 enum class CouplingStageUi(
     val text: String
 ) {
+    Initial("Initial"),
     SpiralFirstLight("Spiral"),
     FineXyz("Fine XYZ"),
-    OptimizeU("U"),
-    OptimizeV("V"),
-    OptimizeW("W"),
+    OptimizeU("Optimize U"),
+    OptimizeV("Optimize V"),
+    OptimizeW("Optimize W"),
     Final("Final")
 }
 
@@ -115,42 +121,36 @@ data class CouplingSampleUi(
 data class CouplingUiState(
     val state: CouplingState = CouplingState.Idle,
     val config: CouplingConfigUiState = CouplingConfigUiState(),
+    val currentStage: CouplingStageUi? = null,
     val currentPowerDbm: Double? = null,
     val bestPowerDbm: Double? = null,
     val bestPose: OpticalPose? = null,
     val samples: List<CouplingSampleUi> = emptyList(),
     val logs: List<String> = emptyList(),
     val isRunning: Boolean = false,
-    val message: String? = null
-)
+    val stopRequested: Boolean = false,
+    val progress: Float = 0f,
+    val estimatedSamples: Int = 0,
+    val startedAtMs: Long? = null,
+    val finishedAtMs: Long? = null,
+    val message: String? = null,
+    val errorMessage: String? = null
+) {
+    val sampleCount: Int
+        get() = samples.size
+}
 
 sealed interface CouplingToolAction {
-
-    data class SelectPage(
-        val page: CouplingToolPage
-    ) : CouplingToolAction
+    data class SelectPage(val page: CouplingToolPage) : CouplingToolAction
 
     data object ConnectPositioner : CouplingToolAction
-
     data object DisconnectPositioner : CouplingToolAction
-
     data object ReadPose : CouplingToolAction
-
     data object MoveSafe : CouplingToolAction
-
     data object StopPositioner : CouplingToolAction
-
-    data class JogPositioner(
-        val delta: OpticalDelta
-    ) : CouplingToolAction
-
-    data class UpdateLinearStep(
-        val valueUm: Double
-    ) : CouplingToolAction
-
-    data class UpdateAngleStep(
-        val valueDeg: Double
-    ) : CouplingToolAction
+    data class JogPositioner(val delta: OpticalDelta) : CouplingToolAction
+    data class UpdateLinearStep(val valueUm: Double) : CouplingToolAction
+    data class UpdateAngleStep(val valueDeg: Double) : CouplingToolAction
 
     data class UpdateCouplingConfig(
         val config: CouplingConfigUiState
@@ -161,14 +161,9 @@ sealed interface CouplingToolAction {
     ) : CouplingToolAction
 
     data object CapturePivotFromCurrentPose : CouplingToolAction
-
     data object DisableVirtualPivot : CouplingToolAction
-
     data object StartCoupling : CouplingToolAction
-
     data object StopCoupling : CouplingToolAction
-
     data object ClearCouplingData : CouplingToolAction
-
     data object SaveBestPose : CouplingToolAction
 }
