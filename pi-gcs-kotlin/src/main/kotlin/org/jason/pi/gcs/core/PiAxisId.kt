@@ -13,9 +13,21 @@ import org.jason.pi.gcs.hexapod.PiAxis
  * 轴标识会经过严格校验，避免空白符和控制字符进入 GCS 命令。
  */
 @JvmInline
-value class PiAxisId private constructor(
+value class PiAxisId(
     val value: String
 ) {
+
+    init {
+        require(value.isNotBlank()) {
+            "PI axis id 不能为空"
+        }
+        require(value == value.trim()) {
+            "PI axis id 前后不能包含空白: '$value'"
+        }
+        require(VALID_AXIS_ID.matches(value)) {
+            "非法 PI axis id: '$value'"
+        }
+    }
 
     val knownHexapodAxis: PiAxis?
         get() = PiAxis.entries.firstOrNull {
@@ -26,22 +38,11 @@ value class PiAxisId private constructor(
 
     companion object {
 
-        private val validAxisId = Regex("[A-Za-z0-9_.-]+")
+        private val VALID_AXIS_ID = Regex("[A-Za-z0-9_.-]+")
 
-        fun of(raw: String): PiAxisId {
-            val normalized = raw.trim()
+        fun of(raw: String): PiAxisId = PiAxisId(raw.trim())
 
-            require(normalized.isNotEmpty()) {
-                "PI axis id 不能为空"
-            }
-            require(validAxisId.matches(normalized)) {
-                "非法 PI axis id: '$raw'"
-            }
-
-            return PiAxisId(normalized)
-        }
-
-        fun from(axis: PiAxis): PiAxisId = of(axis.code)
+        fun from(axis: PiAxis): PiAxisId = PiAxisId(axis.code)
     }
 }
 
