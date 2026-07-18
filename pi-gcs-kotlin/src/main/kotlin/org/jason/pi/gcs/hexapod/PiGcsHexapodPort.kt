@@ -1,15 +1,30 @@
 package org.jason.pi.gcs.hexapod
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.jason.pi.gcs.core.GcsDevice
+import org.jason.pi.gcs.core.PiControllerProbeOptions
+import org.jason.pi.gcs.core.inspectController
+import org.jason.pi.gcs.pitools.PiStartupOptions
 import org.jason.pi.gcs.pitools.PiTools
+import org.jason.pi.gcs.pitools.PiWaitOptions
 
 /** 基于 PI GCS 的六轴定位器实现。 */
 class PiGcsHexapodPort(
     private val device: GcsDevice,
     private val safePose: PiHexapodPose,
     private val unitConfig: PiHexapodUnitConfig = PiHexapodUnitConfig(),
-    private val axes: List<PiAxis> = PiAxis.HEXAPOD_AXES
+    private val axes: List<PiAxis> = PiAxis.HEXAPOD_AXES,
+    private val probeOptions: PiControllerProbeOptions = PiControllerProbeOptions()
 ) : PiHexapodPort {
+
+    private val mutableConnectionState = MutableStateFlow(
+        PiHexapodConnectionState.Disconnected
+    )
+
+    val connectionState: StateFlow<PiHexapodConnectionState> =
+        mutableConnectionState.asStateFlow()
 
     init {
         require(axes.isNotEmpty()) { "PI Hexapod axes 不能为空" }
@@ -19,14 +34,30 @@ class PiGcsHexapodPort(
     }
 
     override suspend fun connect() {
-        if (device.isOpen) return
+        if (device.isOpen && connectionState.value.isConnected) return
+
+        mutableConnectionState.value = PiHexapodConnectionState(
+            phase = PiHexapodConnectionPhase.Connecting
+        )
 
         try {
-            device.connect()
-            // 用所有 PI 控制器都支持的 *IDN? 验证连接确实可收发，而不只是 TCP 已建立。
-            device.qIDN()
+            if (!device.isOpen) {
+                device.connect()
+            }
+
+            val profile = device.inspectController(probeOptions)
+            validateDiscoveredAxes(profile.knownHexapodAxes)
+
+            mutableConnectionState.value = PiHexapodConnectionState(
+                phase = PiHexapodConnectionPhase.Connected,
+                profile = profile
+            )
         } catch (error: Throwable) {
-            device.close()
+            runCatching { device.close() }
+            mutableConnectionState.value = PiHexapodConnectionState(
+                phase = PiHexapodConnectionPhase.Failed,
+                errorMessage = error.message ?: error::class.simpleName
+            )
             throw error
         }
     }
@@ -37,7 +68,8 @@ class PiGcsHexapodPort(
 
     override suspend fun identify(): String {
         ensureConnected()
-        return device.qIDN()
+        return connectionState.value.profile?.info?.idn
+            ?: device.qIDN()
     }
 
     override suspend fun startup(reference: Boolean) {
@@ -47,6 +79,18 @@ class PiGcsHexapodPort(
             axes = axes,
             enableServo = true,
             reference = reference
+        )
+    }
+
+    /** 使用完整 startup 配置，包括 FRF/FNL/FPL 参考方式。 */
+    suspend fun startup(options: PiStartupOptions) {
+        ensureConnected()
+        require(options.axes.all { it in axes }) {
+            "startup options 包含当前 Hexapod 未配置的轴: ${options.axes - axes.toSet()}"
+        }
+        PiTools.startup(
+            device = device,
+            options = options
         )
     }
 
@@ -99,8 +143,12 @@ class PiGcsHexapodPort(
         PiTools.waitOnTarget(
             device = device,
             axes = axes,
-            timeoutMs = timeoutMs,
-            pollDelayMs = 100L
+            options = PiWaitOptions(
+                timeoutMs = timeoutMs,
+                pollDelayMs = 100L,
+                stopOnTimeout = true,
+                stopOnCancellation = true
+            )
         )
     }
 
@@ -127,11 +175,22 @@ class PiGcsHexapodPort(
 
     override fun close() {
         device.close()
+        mutableConnectionState.value = PiHexapodConnectionState.Disconnected
     }
 
     private fun ensureConnected() {
-        check(device.isOpen) {
+        check(device.isOpen && connectionState.value.isConnected) {
             "PI GCS Hexapod 尚未连接"
+        }
+    }
+
+    private fun validateDiscoveredAxes(discoveredAxes: List<PiAxis>) {
+        if (discoveredAxes.isEmpty()) return
+
+        val missingAxes = axes.filterNot { it in discoveredAxes }
+        check(missingAxes.isEmpty()) {
+            "PI 控制器轴列表与 Hexapod 配置不匹配，缺少轴: $missingAxes, " +
+                "discovered=$discoveredAxes"
         }
     }
 }
