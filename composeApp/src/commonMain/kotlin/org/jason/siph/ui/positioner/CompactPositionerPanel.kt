@@ -18,8 +18,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.jason.siph.domain.positioner.OpticalPose
-import org.jason.siph.ui.model.PositionerUiState
 import org.jason.siph.ui.model.CouplingToolAction
+import org.jason.siph.ui.model.PositionerUiState
 import kotlin.math.abs
 
 @Composable
@@ -42,19 +42,20 @@ fun CompactPositionerPanel(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Column(
-                    modifier = Modifier.weight(1f)
-                ) {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Optical Positioner",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
-
                     Text(
-                        text = state.idn ?: "No device information",
+                        text = state.errorMessage ?: state.idn ?: "No device information",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = if (state.errorMessage != null) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
                     )
                 }
 
@@ -62,11 +63,16 @@ fun CompactPositionerPanel(
                     onClick = {},
                     label = {
                         Text(
-                            text = if (state.connected) "Connected" else "Disconnected",
-                            color = if (state.connected) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
+                            text = when {
+                                state.connecting -> "Connecting"
+                                state.connected && state.isMoving -> "Moving"
+                                state.connected -> "Connected"
+                                else -> "Disconnected"
+                            },
+                            color = when {
+                                state.errorMessage != null -> MaterialTheme.colorScheme.error
+                                state.connected -> MaterialTheme.colorScheme.primary
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
                             },
                             fontWeight = FontWeight.SemiBold
                         )
@@ -74,14 +80,12 @@ fun CompactPositionerPanel(
                 )
             }
 
-            CompactPoseGrid(
-                pose = state.currentPose
-            )
+            CompactPoseGrid(pose = state.currentPose)
 
             JogControlPanel(
                 linearStepUm = state.linearStepUm,
                 angleStepDeg = state.angleStepDeg,
-                enabled = state.connected && !state.isMoving,
+                enabled = state.connected && !state.connecting && !state.isMoving,
                 onLinearStepChange = {
                     onAction(CouplingToolAction.UpdateLinearStep(it))
                 },
@@ -98,16 +102,30 @@ fun CompactPositionerPanel(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Button(
-                    onClick = { onAction(CouplingToolAction.ConnectPositioner) },
-                    enabled = !state.connected,
+                    onClick = {
+                        onAction(
+                            if (state.connected) {
+                                CouplingToolAction.DisconnectPositioner
+                            } else {
+                                CouplingToolAction.ConnectPositioner
+                            }
+                        )
+                    },
+                    enabled = !state.connecting && !state.isMoving,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Connect")
+                    Text(
+                        when {
+                            state.connecting -> "Connecting..."
+                            state.connected -> "Disconnect"
+                            else -> "Connect Demo"
+                        }
+                    )
                 }
 
                 OutlinedButton(
                     onClick = { onAction(CouplingToolAction.ReadPose) },
-                    enabled = state.connected,
+                    enabled = state.connected && !state.isMoving,
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Read Pose")
@@ -134,12 +152,8 @@ fun CompactPositionerPanel(
 }
 
 @Composable
-private fun CompactPoseGrid(
-    pose: OpticalPose
-) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
+private fun CompactPoseGrid(pose: OpticalPose) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -148,7 +162,6 @@ private fun CompactPoseGrid(
             PoseMiniMetric("Y", formatUm(pose.yUm), Modifier.weight(1f))
             PoseMiniMetric("Z", formatUm(pose.zUm), Modifier.weight(1f))
         }
-
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -180,7 +193,6 @@ private fun PoseMiniMetric(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-
             Text(
                 text = value,
                 style = MaterialTheme.typography.bodyMedium,
@@ -190,13 +202,8 @@ private fun PoseMiniMetric(
     }
 }
 
-private fun formatUm(value: Double): String {
-    return "${formatNumber(value)} um"
-}
-
-private fun formatDeg(value: Double): String {
-    return "${formatNumber(value)} deg"
-}
+private fun formatUm(value: Double): String = "${formatNumber(value)} um"
+private fun formatDeg(value: Double): String = "${formatNumber(value)} deg"
 
 private fun formatNumber(value: Double): String {
     val normalized = if (abs(value) < 1e-9) 0.0 else value
