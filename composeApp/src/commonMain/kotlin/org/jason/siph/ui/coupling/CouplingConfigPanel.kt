@@ -20,14 +20,19 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import org.jason.siph.domain.positioner.OpticalPose
 import org.jason.siph.ui.model.CouplingConfigUiState
 import org.jason.siph.ui.model.CouplingPlane
+import org.jason.siph.ui.model.CouplingStartMode
 
 @Composable
 fun CouplingConfigPanel(
     state: CouplingConfigUiState,
+    previousRunStartPose: OpticalPose?,
+    safePose: OpticalPose,
     enabled: Boolean,
     canStart: Boolean = enabled,
     onConfigChange: (CouplingConfigUiState) -> Unit,
@@ -47,7 +52,11 @@ fun CouplingConfigPanel(
         ) {
             PanelHeader(
                 title = "Coupling Config",
-                caption = if (enabled) "Adaptive coarse and fine search" else "Configuration locked while running"
+                caption = if (enabled) {
+                    "Adaptive coarse and fine search"
+                } else {
+                    "Configuration locked while running"
+                }
             )
 
             SectionLabel("Optical Setup")
@@ -86,6 +95,34 @@ fun CouplingConfigPanel(
                     )
                 }
             }
+
+            HorizontalDivider()
+            SectionLabel("Run Start")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                CouplingStartMode.entries.forEach { mode ->
+                    val modeAvailable = mode != CouplingStartMode.PreviousRunStart ||
+                        previousRunStartPose != null
+
+                    FilterChip(
+                        selected = state.startMode == mode,
+                        onClick = { onConfigChange(state.copy(startMode = mode)) },
+                        enabled = enabled && modeAvailable,
+                        label = { Text(mode.text) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 42.dp)
+                    )
+                }
+            }
+
+            StartModeSummary(
+                mode = state.startMode,
+                previousRunStartPose = previousRunStartPose,
+                safePose = safePose
+            )
 
             HorizontalDivider()
             SectionLabel("Power Targets")
@@ -230,6 +267,46 @@ fun CouplingConfigPanel(
                     Text("Stop")
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun StartModeSummary(
+    mode: CouplingStartMode,
+    previousRunStartPose: OpticalPose?,
+    safePose: OpticalPose
+) {
+    val detail = when (mode) {
+        CouplingStartMode.CurrentPose -> mode.caption
+        CouplingStartMode.PreviousRunStart -> previousRunStartPose?.let {
+            "${mode.caption}: ${formatPoseCompact(it)}"
+        } ?: "No previous run start pose is available yet"
+        CouplingStartMode.SafePose -> "${mode.caption}: ${formatPoseCompact(safePose)}"
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 1.dp,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = mode.text,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontFamily = FontFamily.Monospace
+            )
         }
     }
 }
@@ -386,6 +463,11 @@ private fun angleOptimizationCaption(state: CouplingConfigUiState): String {
     } else {
         "Run after XYZ refinement"
     }
+}
+
+private fun formatPoseCompact(pose: OpticalPose): String {
+    return "X=${round3(pose.xUm)}, Y=${round3(pose.yUm)}, Z=${round3(pose.zUm)}, " +
+        "U=${round3(pose.uDeg)}, V=${round3(pose.vDeg)}, W=${round3(pose.wDeg)}"
 }
 
 private fun round3(value: Double): Double {
