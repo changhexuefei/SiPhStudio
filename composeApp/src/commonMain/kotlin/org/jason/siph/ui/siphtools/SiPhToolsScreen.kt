@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.jason.siph.domain.runtime.HardwareRuntimeMode
+import org.jason.siph.ui.autonomy.AutonomousAssistantPanel
 import org.jason.siph.ui.coupling.CouplingWorkspace
 import org.jason.siph.ui.coupling.PivotSetupPanel
 import org.jason.siph.ui.model.CouplingToolAction
@@ -134,6 +135,13 @@ fun CouplingToolScreen(
                         contentAlignment = Alignment.TopCenter
                     ) {
                         when (state.selectedPage) {
+                            CouplingToolPage.AutonomousAssistant -> AutonomousAssistantPanel(
+                                state = state,
+                                safetyState = safetyState,
+                                onAction = onAction,
+                                modifier = Modifier.fillMaxSize()
+                            )
+
                             CouplingToolPage.Coupling -> CouplingWorkspace(
                                 state = state,
                                 onAction = onAction,
