@@ -20,6 +20,7 @@ import org.jason.siph.ui.siphtools.CouplingToolScreen
 import org.jason.siph.ui.state.CouplingToolStore
 import org.koin.compose.KoinApplication
 import org.koin.compose.koinInject
+import org.koin.dsl.koinConfiguration
 
 @Composable
 @androidx.compose.ui.tooling.preview.Preview
@@ -36,7 +37,7 @@ fun App(
         }
 
         KoinApplication(
-            application = {
+            configuration = koinConfiguration {
                 modules(appModule)
             }
         ) {
