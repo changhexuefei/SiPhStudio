@@ -97,7 +97,14 @@ data class CouplingConfigUiState(
     val virtualPivotPoint: VirtualPivotPoint = VirtualPivotPoint.Disabled,
     val enableSoftwarePivotCompensation: Boolean = false,
     val maxTotalSamples: Int = 1500,
-    val stopWhenTargetReached: Boolean = true
+
+    /**
+     * 达到目标功率后是否立即结束本轮搜索。
+     *
+     * 默认关闭，保证平台已经停在上一轮最佳点时，再次点击 Start 仍会执行精调流程。
+     * 生产节拍优先时可以在 UI 中显式开启。
+     */
+    val stopWhenTargetReached: Boolean = false
 )
 
 enum class CouplingStageUi(
