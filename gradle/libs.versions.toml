@@ -18,6 +18,9 @@ compose-navigationevent = "1.1.0"
 kotlinx-coroutines = "1.10.2"
 kotlinx-datetime = "0.7.1-0.6.x-compat"
 
+# Dependency injection
+koin = "4.2.0"
+
 # Network
 ktor = "3.0.0"
 
@@ -71,6 +74,12 @@ kotlinx-coroutinesSwing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-s
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
 
 # =========================================================
+# Koin
+# =========================================================
+koin-core = { module = "io.insert-koin:koin-core", version.ref = "koin" }
+koin-compose = { module = "io.insert-koin:koin-compose", version.ref = "koin" }
+
+# =========================================================
 # Ktor
 # =========================================================
 ktor-network = { module = "io.ktor:ktor-network", version.ref = "ktor" }
@@ -92,10 +101,6 @@ slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
 # 注意：
 # JavaFX 在 Desktop 里通常需要平台 classifier：
 # win / mac / mac-aarch64 / linux
-#
-# 所以这里保留普通 alias，
-# 真正使用时建议在 build.gradle.kts 里写：
-# implementation("org.openjfx:javafx-controls:$javafxVersion:$javafxPlatform")
 # =========================================================
 javafx-base = { module = "org.openjfx:javafx-base", version.ref = "javafx" }
 javafx-controls = { module = "org.openjfx:javafx-controls", version.ref = "javafx" }
@@ -104,12 +109,6 @@ javafx-swing = { module = "org.openjfx:javafx-swing", version.ref = "javafx" }
 
 # =========================================================
 # LWJGL
-#
-# 注意：
-# 1. org.lwjgl:* 使用 BOM 统一版本。
-# 2. lwjgl / lwjgl-opengl / lwjgl-jawt 不单独写 version。
-# 3. natives-windows / natives-macos / natives-linux 不要写在 TOML 里。
-# 4. native jar 应该在 build.gradle.kts 里 runtimeOnly 动态添加。
 # =========================================================
 lwjgl-bom = { module = "org.lwjgl:lwjgl-bom", version.ref = "lwjgl" }
 lwjgl = { module = "org.lwjgl:lwjgl" }
