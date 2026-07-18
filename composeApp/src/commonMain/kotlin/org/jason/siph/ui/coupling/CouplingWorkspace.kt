@@ -27,7 +27,7 @@ fun CouplingWorkspace(
     modifier: Modifier = Modifier
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val useSingleColumn = maxWidth < 1100.dp
+        val useSingleColumn = maxWidth < 1180.dp
 
         if (useSingleColumn) {
             CouplingWorkspaceSingleColumn(
@@ -59,18 +59,18 @@ private fun CouplingWorkspaceTwoColumns(
 ) {
     Row(
         modifier = modifier
-            .widthIn(max = 1480.dp)
+            .widthIn(max = 1680.dp)
             .fillMaxSize(),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
+        horizontalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         val leftScrollState = rememberScrollState()
 
         Column(
             modifier = Modifier
-                .weight(0.95f)
+                .weight(0.86f)
                 .fillMaxHeight()
                 .verticalScroll(leftScrollState),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             CompactPositionerPanel(
                 state = state.positioner,
@@ -104,7 +104,7 @@ private fun CouplingWorkspaceTwoColumns(
             onAction = onAction,
             scrollable = true,
             modifier = Modifier
-                .weight(1.05f)
+                .weight(1.14f)
                 .fillMaxHeight()
         )
     }
@@ -122,10 +122,10 @@ private fun CouplingWorkspaceSingleColumn(
 
     Column(
         modifier = modifier
-            .widthIn(max = 960.dp)
+            .widthIn(max = 1040.dp)
             .fillMaxSize()
             .verticalScroll(scrollState),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         CompactPositionerPanel(
             state = state.positioner,
@@ -159,7 +159,7 @@ private fun CouplingWorkspaceSingleColumn(
             scrollable = false,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 1120.dp)
+                .heightIn(min = 1140.dp)
         )
     }
 }
