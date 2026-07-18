@@ -28,6 +28,17 @@ class GcsDevice(
         return client.execute(command)
     }
 
+    /**
+     * 执行命令并强制在同一个事务中检查 ERR?。
+     * 主要用于能力探测和诊断，不建议用于高频位置轮询。
+     */
+    suspend fun executeChecked(command: GcsCommand): String? {
+        return client.execute(
+            command = command,
+            forceErrorCheck = true
+        )
+    }
+
     suspend fun qIDN(): String = query(GcsCommand.qIDN())
 
     suspend fun qVER(): String = query(GcsCommand.qVER())
