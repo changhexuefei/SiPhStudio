@@ -1,9 +1,7 @@
 package org.jason.siph.ui.siphtools
 
-
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +16,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -33,7 +32,6 @@ import org.jason.siph.ui.coupling.CouplingWorkspace
 import org.jason.siph.ui.coupling.PivotSetupPanel
 import org.jason.siph.ui.model.CouplingToolAction
 import org.jason.siph.ui.model.CouplingToolPage
-import org.jason.siph.ui.model.CouplingToolRunState
 import org.jason.siph.ui.model.CouplingToolUiState
 import org.jason.siph.ui.positioner.PositionerControlPanel
 
@@ -52,6 +50,13 @@ fun CouplingToolScreen(
             state = state,
             onAction = onAction
         )
+
+        if (state.coupling.isRunning || state.coupling.progress > 0f) {
+            CouplingExecutionStrip(
+                state = state,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
 
         Row(
             modifier = Modifier
@@ -94,37 +99,30 @@ fun CouplingToolScreen(
                 contentAlignment = Alignment.TopCenter
             ) {
                 when (state.selectedPage) {
-                    CouplingToolPage.Coupling -> {
-                        CouplingWorkspace(
-                            state = state,
-                            onAction = onAction,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
+                    CouplingToolPage.Coupling -> CouplingWorkspace(
+                        state = state,
+                        onAction = onAction,
+                        modifier = Modifier.fillMaxSize()
+                    )
 
-                    CouplingToolPage.PivotSetup -> {
-                        PivotSetupPanel(
-                            state = state,
-                            onAction = onAction,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
+                    CouplingToolPage.PivotSetup -> PivotSetupPanel(
+                        state = state,
+                        onAction = onAction,
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                    CouplingToolPage.ManualControl -> {
-                        PositionerControlPanel(
-                            state = state.positioner,
-                            onAction = onAction,
-                            modifier = Modifier
-                                .widthIn(max = 1280.dp)
-                                .fillMaxWidth()
-                        )
-                    }
+                    CouplingToolPage.ManualControl -> PositionerControlPanel(
+                        state = state.positioner,
+                        onAction = onAction,
+                        modifier = Modifier
+                            .widthIn(max = 1280.dp)
+                            .fillMaxWidth()
+                    )
                 }
             }
         }
 
         HorizontalDivider()
-
         CouplingToolStatusBar(
             state = state.status,
             modifier = Modifier.fillMaxWidth()
@@ -153,7 +151,6 @@ private fun CouplingToolTopBar(
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
-
                 Text(
                     text = "Optical coupling alignment and PI hexapod control",
                     style = MaterialTheme.typography.bodySmall,
@@ -165,13 +162,21 @@ private fun CouplingToolTopBar(
 
             Surface(
                 shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                color = when {
+                    state.status.isError -> MaterialTheme.colorScheme.errorContainer
+                    state.coupling.isRunning -> MaterialTheme.colorScheme.primaryContainer
+                    else -> MaterialTheme.colorScheme.surfaceVariant
+                },
+                contentColor = when {
+                    state.status.isError -> MaterialTheme.colorScheme.onErrorContainer
+                    state.coupling.isRunning -> MaterialTheme.colorScheme.onPrimaryContainer
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
                 modifier = Modifier
                     .padding(end = 14.dp)
                     .border(
                         width = 1.dp,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
                         shape = MaterialTheme.shapes.medium
                     )
             ) {
@@ -185,7 +190,7 @@ private fun CouplingToolTopBar(
 
             Button(
                 onClick = { onAction(CouplingToolAction.StartCoupling) },
-                enabled = state.runState != CouplingToolRunState.Running,
+                enabled = state.canStartCoupling,
                 modifier = Modifier.heightIn(min = 40.dp)
             ) {
                 Text("Start Coupling")
@@ -195,13 +200,55 @@ private fun CouplingToolTopBar(
 
             OutlinedButton(
                 onClick = { onAction(CouplingToolAction.StopCoupling) },
+                enabled = state.coupling.isRunning,
                 modifier = Modifier.heightIn(min = 40.dp),
                 colors = ButtonDefaults.outlinedButtonColors(
                     contentColor = MaterialTheme.colorScheme.error
                 )
             ) {
-                Text("Stop")
+                Text(if (state.coupling.stopRequested) "Stopping..." else "Stop")
             }
+        }
+    }
+}
+
+@Composable
+private fun CouplingExecutionStrip(
+    state: CouplingToolUiState,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = state.coupling.currentStage?.text ?: state.coupling.state.text,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = "${state.coupling.sampleCount} samples" +
+                        state.coupling.estimatedSamples.takeIf { it > 0 }?.let { " / ~$it" }.orEmpty(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            LinearProgressIndicator(
+                progress = { state.coupling.progress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp)
+            )
         }
     }
 }
