@@ -1,19 +1,16 @@
 package org.jason.siph.ui.coupling
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -27,6 +24,11 @@ import androidx.compose.ui.unit.dp
 import org.jason.siph.domain.positioner.OpticalPose
 import org.jason.siph.ui.model.CouplingToolAction
 import org.jason.siph.ui.model.CouplingUiState
+import org.jason.siph.ui.theme.AerospacePalette
+import org.jason.siph.ui.theme.AerospacePanel
+import org.jason.siph.ui.theme.AerospaceSectionHeader
+import org.jason.siph.ui.theme.MetricTile
+import org.jason.siph.ui.theme.TelemetryPill
 
 @Composable
 fun CouplingResultPanel(
@@ -44,132 +46,132 @@ fun CouplingResultPanel(
 
     Column(
         modifier = contentModifier,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Card(
+        AerospacePanel(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            )
+            elevated = true,
+            highlighted = state.bestPowerDbm != null
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+            AerospaceSectionHeader(
+                eyebrow = "OPTICAL TELEMETRY",
+                title = "COUPLING RESULT",
+                caption = state.errorMessage ?: state.message ?: "No active result",
+                trailing = {
+                    TelemetryPill(
+                        label = "SEQUENCE",
+                        value = state.state.text.uppercase(),
+                        tone = when {
+                            state.errorMessage != null -> AerospacePalette.Danger
+                            state.isRunning -> AerospacePalette.Accent
+                            state.bestPowerDbm != null -> AerospacePalette.Success
+                            else -> AerospacePalette.TextMuted
+                        },
+                        active = state.isRunning || state.bestPowerDbm != null
+                    )
+                }
+            )
+
+            if (state.isRunning || state.progress > 0f) {
+                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "${state.currentStage?.text ?: state.state.text} // ${state.sampleCount} samples",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = AerospacePalette.TextSecondary,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Text(
+                            text = "${(state.progress * 100f).toInt()}%",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = AerospacePalette.AccentBright,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.weight(1f),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.End
+                        )
+                    }
+                    LinearProgressIndicator(
+                        progress = { state.progress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.dp),
+                        color = AerospacePalette.Accent,
+                        trackColor = AerospacePalette.Border
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Coupling Result",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = state.errorMessage ?: state.message ?: "No active result",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (state.errorMessage != null) {
-                                MaterialTheme.colorScheme.error
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
-                    }
+                MetricTile(
+                    label = "CURRENT POWER",
+                    value = formatPower(state.currentPowerDbm),
+                    modifier = Modifier.weight(1f)
+                )
+                MetricTile(
+                    label = "BEST POWER",
+                    value = formatPower(state.bestPowerDbm),
+                    emphasized = state.bestPowerDbm != null,
+                    accent = AerospacePalette.Success,
+                    modifier = Modifier.weight(1f)
+                )
+            }
 
-                    AssistChip(
-                        onClick = {},
-                        label = { Text(state.state.text) }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                MetricTile(
+                    label = "SAMPLES",
+                    value = state.sampleCount.toString(),
+                    modifier = Modifier.weight(1f)
+                )
+                MetricTile(
+                    label = "ELAPSED",
+                    value = formatDuration(state.startedAtMs, state.finishedAtMs),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            BestPoseBlock(pose = state.bestPose)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Button(
+                    onClick = { onAction(CouplingToolAction.SaveBestPose) },
+                    enabled = state.bestPose != null && !state.isRunning,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 44.dp),
+                    shape = MaterialTheme.shapes.small,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AerospacePalette.TextPrimary,
+                        contentColor = AerospacePalette.Void,
+                        disabledContainerColor = AerospacePalette.PanelHover,
+                        disabledContentColor = AerospacePalette.TextMuted
                     )
+                ) {
+                    Text("COMMIT BEST POSE", fontWeight = FontWeight.Bold)
                 }
 
-                if (state.isRunning || state.progress > 0f) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth()) {
-                            Text(
-                                text = state.currentStage?.text ?: state.state.text,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = "${(state.progress * 100f).toInt()}%",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.weight(1f),
-                                textAlign = androidx.compose.ui.text.style.TextAlign.End
-                            )
-                        }
-                        LinearProgressIndicator(
-                            progress = { state.progress },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                OutlinedButton(
+                    onClick = { onAction(CouplingToolAction.ClearCouplingData) },
+                    enabled = !state.isRunning,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 44.dp),
+                    shape = MaterialTheme.shapes.small,
+                    border = BorderStroke(1.dp, AerospacePalette.BorderStrong),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = AerospacePalette.TextSecondary,
+                        disabledContentColor = AerospacePalette.TextMuted
+                    )
                 ) {
-                    ResultMetric(
-                        label = "Current",
-                        value = formatPower(state.currentPowerDbm),
-                        emphasized = false,
-                        modifier = Modifier.weight(1f)
-                    )
-                    ResultMetric(
-                        label = "Best",
-                        value = formatPower(state.bestPowerDbm),
-                        emphasized = state.bestPowerDbm != null,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    ResultMetric(
-                        label = "Samples",
-                        value = state.sampleCount.toString(),
-                        emphasized = false,
-                        modifier = Modifier.weight(1f)
-                    )
-                    ResultMetric(
-                        label = "Duration",
-                        value = formatDuration(state.startedAtMs, state.finishedAtMs),
-                        emphasized = false,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                BestPoseBlock(pose = state.bestPose)
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Button(
-                        onClick = { onAction(CouplingToolAction.SaveBestPose) },
-                        enabled = state.bestPose != null && !state.isRunning,
-                        modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = 44.dp)
-                    ) {
-                        Text("Save Best Pose")
-                    }
-
-                    OutlinedButton(
-                        onClick = { onAction(CouplingToolAction.ClearCouplingData) },
-                        enabled = !state.isRunning,
-                        modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = 44.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    ) {
-                        Text("Clear")
-                    }
+                    Text("CLEAR TELEMETRY")
                 }
             }
         }
@@ -191,71 +193,27 @@ fun CouplingResultPanel(
 }
 
 @Composable
-private fun ResultMetric(
-    label: String,
-    value: String,
-    emphasized: Boolean,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier,
-        tonalElevation = 1.dp,
-        shape = MaterialTheme.shapes.medium,
-        color = if (emphasized) {
-            MaterialTheme.colorScheme.primaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f)
-        },
-        contentColor = if (emphasized) {
-            MaterialTheme.colorScheme.onPrimaryContainer
-        } else {
-            MaterialTheme.colorScheme.onSurface
-        }
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = if (emphasized) {
-                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.74f)
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                }
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-        }
-    }
-}
-
-@Composable
 private fun BestPoseBlock(pose: OpticalPose?) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        tonalElevation = 1.dp,
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surface
+        color = AerospacePalette.Void.copy(alpha = 0.72f),
+        border = BorderStroke(1.dp, AerospacePalette.Border)
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Text(
-                text = "Best Pose",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.SemiBold
+                text = "BEST POSE VECTOR",
+                style = MaterialTheme.typography.labelSmall,
+                color = AerospacePalette.Accent,
+                fontWeight = FontWeight.Bold
             )
             Text(
                 text = pose?.let { formatPose(it) } ?: "--",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontFamily = FontFamily.Monospace
             )
         }
@@ -270,7 +228,7 @@ private fun formatPower(value: Double?): String {
 
 private fun formatDuration(startedAtMs: Long?, finishedAtMs: Long?): String {
     if (startedAtMs == null) return "--"
-    if (finishedAtMs == null) return "Running"
+    if (finishedAtMs == null) return "RUNNING"
 
     val durationMs = (finishedAtMs - startedAtMs).coerceAtLeast(0L)
     return if (durationMs < 1000L) {
@@ -281,12 +239,12 @@ private fun formatDuration(startedAtMs: Long?, finishedAtMs: Long?): String {
 }
 
 private fun formatPose(pose: OpticalPose): String {
-    return "X=${round3(pose.xUm)} um, " +
-        "Y=${round3(pose.yUm)} um, " +
-        "Z=${round3(pose.zUm)} um, " +
-        "U=${round3(pose.uDeg)} deg, " +
-        "V=${round3(pose.vDeg)} deg, " +
-        "W=${round3(pose.wDeg)} deg"
+    return "X=${round3(pose.xUm)} µm  |  " +
+        "Y=${round3(pose.yUm)} µm  |  " +
+        "Z=${round3(pose.zUm)} µm  |  " +
+        "U=${round3(pose.uDeg)}°  |  " +
+        "V=${round3(pose.vDeg)}°  |  " +
+        "W=${round3(pose.wDeg)}°"
 }
 
 private fun round3(value: Double): Double {
