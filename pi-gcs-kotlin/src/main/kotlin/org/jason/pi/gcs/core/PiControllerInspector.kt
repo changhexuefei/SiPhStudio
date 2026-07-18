@@ -81,6 +81,7 @@ data class PiControllerProbeOptions(
  * 读取控制器信息并建立能力快照。
  *
  * 这里只探测只读命令，不会发送 MOV/MVR/SVO/FRF/FNL/FPL，避免设备在连接阶段运动。
+ * 每个探测查询读取响应后都会在同一事务中执行 ERR?，避免把控制器的错误响应误判为支持。
  * 写命令能力根据对应只读能力保守推断，参考模式必须由设备配置显式声明。
  */
 suspend fun GcsDevice.inspectController(
@@ -88,18 +89,24 @@ suspend fun GcsDevice.inspectController(
 ): PiControllerProfile {
     val capabilityResults = linkedMapOf<PiGcsFeature, PiCapabilityResult>()
 
-    val idn = qIDN().trim()
-    capabilityResults.supported(PiGcsFeature.Identify, "*IDN? succeeded")
+    val idn = checkedQuery(GcsCommand.qIDN()).trim()
+    capabilityResults.supported(PiGcsFeature.Identify, "*IDN? succeeded with ERR?=0")
     capabilityResults.assumed(PiGcsFeature.Stop, "STP is part of the configured PI control path")
 
-    val versionResult = runCatching { qVER().trim() }
+    val versionResult = runCatching {
+        checkedQuery(GcsCommand.qVER()).trim()
+    }
     val versionText = versionResult.getOrNull()
     capabilityResults.fromResult(
         feature = PiGcsFeature.VersionQuery,
         result = versionResult
     )
 
-    val axesResult = runCatching { qAxisIds() }
+    val axesResult = runCatching {
+        GcsResponseParser.parseAxisIds(
+            checkedQuery(GcsCommand.qAxes())
+        )
+    }
     val axisIds = axesResult.getOrDefault(emptyList())
     capabilityResults.fromResult(
         feature = PiGcsFeature.AxisDiscovery,
@@ -107,28 +114,51 @@ suspend fun GcsDevice.inspectController(
     )
 
     if (options.probeAxisQueries && axisIds.isNotEmpty()) {
-        val positionResult = runCatching { qPOSIds(axisIds) }
+        val positionResult = runCatching {
+            GcsResponseParser.parseAxisIdDoubleMap(
+                response = checkedQuery(GcsCommand.qPositionIds(axisIds)),
+                expectedAxes = axisIds
+            )
+        }
         capabilityResults.fromResult(PiGcsFeature.PositionQuery, positionResult)
 
-        val onTargetResult = runCatching { qONTIds(axisIds) }
+        val onTargetResult = runCatching {
+            GcsResponseParser.parseAxisIdBooleanMap(
+                response = checkedQuery(GcsCommand.qOnTargetIds(axisIds)),
+                expectedAxes = axisIds
+            )
+        }
         capabilityResults.fromResult(PiGcsFeature.OnTargetQuery, onTargetResult)
 
-        val servoResult = runCatching { qServoIds(axisIds) }
+        val servoResult = runCatching {
+            GcsResponseParser.parseAxisIdBooleanMap(
+                response = checkedQuery(GcsCommand.qServoIds(axisIds)),
+                expectedAxes = axisIds
+            )
+        }
         capabilityResults.fromResult(PiGcsFeature.ServoQuery, servoResult)
 
         val travelResult = runCatching {
-            qTMNIds(axisIds) to qTMXIds(axisIds)
+            val minimums = GcsResponseParser.parseAxisIdDoubleMap(
+                response = checkedQuery(GcsCommand.qTravelMinIds(axisIds)),
+                expectedAxes = axisIds
+            )
+            val maximums = GcsResponseParser.parseAxisIdDoubleMap(
+                response = checkedQuery(GcsCommand.qTravelMaxIds(axisIds)),
+                expectedAxes = axisIds
+            )
+            minimums to maximums
         }
         capabilityResults.fromResult(PiGcsFeature.TravelLimitQuery, travelResult)
 
         if (positionResult.isSuccess) {
             capabilityResults.assumed(
                 PiGcsFeature.AbsoluteMove,
-                "MOV inferred from successful POS? support"
+                "MOV inferred from successful checked POS? support"
             )
             capabilityResults.assumed(
                 PiGcsFeature.RelativeMove,
-                "MVR inferred from successful POS? support"
+                "MVR inferred from successful checked POS? support"
             )
         } else {
             capabilityResults.notProbed(
@@ -144,7 +174,7 @@ suspend fun GcsDevice.inspectController(
         if (servoResult.isSuccess) {
             capabilityResults.assumed(
                 PiGcsFeature.ServoControl,
-                "SVO setter inferred from successful SVO? support"
+                "SVO setter inferred from successful checked SVO? support"
             )
         } else {
             capabilityResults.notProbed(
@@ -206,6 +236,15 @@ suspend fun GcsDevice.inspectController(
         axisIds = axisIds,
         capabilities = PiControllerCapabilities(capabilityResults.toMap())
     )
+}
+
+private suspend fun GcsDevice.checkedQuery(command: GcsCommand): String {
+    require(command.isQuery) {
+        "Controller inspection only accepts query commands: ${command.text}"
+    }
+    return requireNotNull(executeChecked(command)) {
+        "PI GCS checked query 未返回响应: ${command.text}"
+    }
 }
 
 private fun PiReferenceCommand.toFeature(): PiGcsFeature {
