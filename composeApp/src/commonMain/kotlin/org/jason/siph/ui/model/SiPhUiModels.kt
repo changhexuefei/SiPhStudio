@@ -18,6 +18,7 @@ enum class CouplingToolRunState(
 ) {
     Idle("Idle"),
     Running("Running"),
+    Completed("Completed"),
     Stopped("Stopped"),
     Error("Error")
 }
@@ -65,6 +66,7 @@ enum class CouplingState(
     AngleOptimizing("Angle Optimizing"),
     Finalizing("Finalizing"),
     Coupled("Coupled"),
+    Completed("Completed"),
     Failed("Failed"),
     Stopped("Stopped")
 }
