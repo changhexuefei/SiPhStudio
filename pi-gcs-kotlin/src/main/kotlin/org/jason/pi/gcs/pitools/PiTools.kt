@@ -25,13 +25,13 @@ object PiTools {
 
         if (options.stopBeforeStartup) {
             runCatching { device.stopAll() }
-                .onFailure { error -> if (options.failFast) throw error }
+                .onFailure { error -> error.rethrowIfNeeded(options.failFast) }
             delayIfNeeded(options.stopSettleDelayMs)
         }
 
         if (options.clearErrorBeforeStartup) {
             runCatching { device.qERR() }
-                .onFailure { error -> if (options.failFast) throw error }
+                .onFailure { error -> error.rethrowIfNeeded(options.failFast) }
         }
 
         when (options.servoMode) {
@@ -114,7 +114,7 @@ object PiTools {
         runCatching {
             device.setServo(axes.associateWith { enabled })
         }.onFailure { error ->
-            if (failFast) throw error
+            error.rethrowIfNeeded(failFast)
         }
     }
 
@@ -135,7 +135,7 @@ object PiTools {
                     mode = referenceCommand
                 )
             }.onFailure { error ->
-                if (failFast) throw error
+                error.rethrowIfNeeded(failFast)
             }
             return
         }
@@ -152,7 +152,7 @@ object PiTools {
                     options = waitOptions
                 )
             }.onFailure { error ->
-                if (failFast) throw error
+                error.rethrowIfNeeded(failFast)
             }
         }
     }
@@ -242,6 +242,9 @@ object PiTools {
         device.stopAll()
         if (clearErrorAfterStop) {
             runCatching { device.qERR() }
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
+                }
         }
     }
 
@@ -276,6 +279,12 @@ object PiTools {
     private suspend fun delayIfNeeded(delayMs: Long) {
         if (delayMs > 0L) {
             delay(delayMs)
+        }
+    }
+
+    private fun Throwable.rethrowIfNeeded(failFast: Boolean) {
+        if (this is CancellationException || failFast) {
+            throw this
         }
     }
 
