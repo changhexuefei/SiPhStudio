@@ -22,6 +22,8 @@ import org.jason.siph.ui.positioner.CompactPositionerPanel
 fun CouplingWorkspace(
     state: CouplingToolUiState,
     onAction: (CouplingToolAction) -> Unit,
+    motionEnabled: Boolean,
+    connectLabel: String,
     modifier: Modifier = Modifier
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -31,12 +33,16 @@ fun CouplingWorkspace(
             CouplingWorkspaceSingleColumn(
                 state = state,
                 onAction = onAction,
+                motionEnabled = motionEnabled,
+                connectLabel = connectLabel,
                 modifier = Modifier.fillMaxSize()
             )
         } else {
             CouplingWorkspaceTwoColumns(
                 state = state,
                 onAction = onAction,
+                motionEnabled = motionEnabled,
+                connectLabel = connectLabel,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -47,6 +53,8 @@ fun CouplingWorkspace(
 private fun CouplingWorkspaceTwoColumns(
     state: CouplingToolUiState,
     onAction: (CouplingToolAction) -> Unit,
+    motionEnabled: Boolean,
+    connectLabel: String,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -67,6 +75,8 @@ private fun CouplingWorkspaceTwoColumns(
             CompactPositionerPanel(
                 state = state.positioner,
                 onAction = onAction,
+                motionEnabled = motionEnabled,
+                connectLabel = connectLabel,
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -75,7 +85,7 @@ private fun CouplingWorkspaceTwoColumns(
                 previousRunStartPose = state.coupling.previousRunStartPose,
                 safePose = state.positioner.safePose,
                 enabled = !state.coupling.isRunning,
-                canStart = state.canStartCoupling,
+                canStart = motionEnabled && state.canStartCoupling,
                 onConfigChange = {
                     onAction(CouplingToolAction.UpdateCouplingConfig(it))
                 },
@@ -104,6 +114,8 @@ private fun CouplingWorkspaceTwoColumns(
 private fun CouplingWorkspaceSingleColumn(
     state: CouplingToolUiState,
     onAction: (CouplingToolAction) -> Unit,
+    motionEnabled: Boolean,
+    connectLabel: String,
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
@@ -118,6 +130,8 @@ private fun CouplingWorkspaceSingleColumn(
         CompactPositionerPanel(
             state = state.positioner,
             onAction = onAction,
+            motionEnabled = motionEnabled,
+            connectLabel = connectLabel,
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -126,7 +140,7 @@ private fun CouplingWorkspaceSingleColumn(
             previousRunStartPose = state.coupling.previousRunStartPose,
             safePose = state.positioner.safePose,
             enabled = !state.coupling.isRunning,
-            canStart = state.canStartCoupling,
+            canStart = motionEnabled && state.canStartCoupling,
             onConfigChange = {
                 onAction(CouplingToolAction.UpdateCouplingConfig(it))
             },
