@@ -1,6 +1,6 @@
 [versions]
 # Kotlin / Compose
-kotlin = "2.4.0"
+kotlin = "2.4.10"
 composeMultiplatform = "1.12.0-alpha01"
 
 # AndroidX / JetBrains AndroidX
@@ -25,8 +25,8 @@ koin = "4.2.0"
 ktor = "3.0.0"
 
 # Plot
-lets-plot = "4.14.0"
-lets-plot-compose = "3.2.0"
+lets-plot = "4.15.0"
+lets-plot-compose = "3.2.2"
 
 # Logging
 slf4j = "2.0.17"
