@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -63,7 +62,6 @@ private val PlotBackground = Color(0xFF080D14)
 private val PlotPanel = Color(0xFF0B1119)
 private val PlotGridMajor = Color(0xFF26313E)
 private val PlotGridMinor = Color(0xFF18222E)
-private val PlotAxis = Color(0xFF98A6B7)
 private val PlotText = Color(0xFFF5F7FA)
 
 @Composable
