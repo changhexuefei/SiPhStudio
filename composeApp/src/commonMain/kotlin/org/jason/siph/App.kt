@@ -11,6 +11,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import org.jason.siph.di.createSiPhAppModule
 import org.jason.siph.domain.runtime.HardwareRuntimeMode
+import org.jason.siph.ui.autonomy.AutonomousWorkflowStore
 import org.jason.siph.ui.safety.MotionSafetySettingsStore
 import org.jason.siph.ui.siphtools.CouplingToolScreen
 import org.jason.siph.ui.state.CouplingToolStore
@@ -41,8 +42,10 @@ fun App(
         ) {
             val couplingStore = koinInject<CouplingToolStore>()
             val safetyStore = koinInject<MotionSafetySettingsStore>()
+            val autonomousStore = koinInject<AutonomousWorkflowStore>()
             val couplingState by couplingStore.state.collectAsState()
             val safetyState by safetyStore.state.collectAsState()
+            val autonomousState by autonomousStore.state.collectAsState()
 
             Surface(
                 modifier = Modifier.fillMaxSize(),
@@ -52,8 +55,10 @@ fun App(
                 CouplingToolScreen(
                     state = couplingState,
                     safetyState = safetyState,
+                    autonomousState = autonomousState,
                     onAction = couplingStore::dispatch,
-                    onSafetyAction = safetyStore::dispatch
+                    onSafetyAction = safetyStore::dispatch,
+                    onAutonomousAction = autonomousStore::dispatch
                 )
             }
         }
