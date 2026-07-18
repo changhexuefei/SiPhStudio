@@ -193,12 +193,31 @@ class GcsDeviceTest {
     }
 
     @Test
-    fun controllerInspectionUsesOnlyReadOnlyCommandsByDefault() = runBlocking {
+    fun checkedQueryReadsResponseAndErrorInsideOneTransaction() = runBlocking {
+        val transport = ScriptedTransport(
+            responses = listOf(
+                "GCS 2.0 Firmware 1.2.3",
+                "0"
+            )
+        )
+        val device = GcsDevice(GcsClient(transport))
+
+        val response = device.executeChecked(GcsCommand.qVER())
+
+        assertEquals("GCS 2.0 Firmware 1.2.3", response)
+        assertEquals(listOf("VER?", "ERR?"), transport.writes)
+    }
+
+    @Test
+    fun controllerInspectionUsesOnlyCheckedReadOnlyCommandsByDefault() = runBlocking {
         val transport = ScriptedTransport(
             responses = listOf(
                 "Physik Instrumente, C-887.52, SN 12345",
+                "0",
                 "GCS 2.0 Firmware 1.2.3",
-                "X Y Z U V W"
+                "0",
+                "X Y Z U V W",
+                "0"
             )
         )
         val device = GcsDevice(GcsClient(transport))
@@ -211,7 +230,11 @@ class GcsDeviceTest {
         )
 
         assertEquals(
-            listOf("*IDN?", "VER?", "SAI?"),
+            listOf(
+                "*IDN?", "ERR?",
+                "VER?", "ERR?",
+                "SAI?", "ERR?"
+            ),
             transport.writes
         )
         assertEquals(PiConnectionType.TcpIp, profile.info.connectionType)
