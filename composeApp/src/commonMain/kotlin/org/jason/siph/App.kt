@@ -14,7 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import org.jason.siph.ui.siphtools.CouplingToolScreen
-import org.jason.siph.ui.state.createDemoCouplingToolStore
+import org.jason.siph.ui.state.createSafeDemoCouplingToolStore
 
 @Composable
 @androidx.compose.ui.tooling.preview.Preview
@@ -22,7 +22,7 @@ fun App() {
     SiPhTheme {
         val scope = rememberCoroutineScope()
         val store = remember(scope) {
-            createDemoCouplingToolStore(scope)
+            createSafeDemoCouplingToolStore(scope)
         }
         val state by store.state.collectAsState()
 
