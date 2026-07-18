@@ -2,36 +2,14 @@ package org.jason.siph.domain.coupling
 
 import org.jason.siph.domain.positioner.VirtualPivotPoint
 
-/**
- * 耦光模式。
- */
+/** 耦光模式。 */
 enum class CouplingMode {
-
-    /**
-     * 垂直光栅耦合。
-     *
-     * 常见扫描平面：X/Y。
-     */
     VerticalGratingCoupler,
-
-    /**
-     * 芯片级边缘耦合。
-     *
-     * 常见扫描平面：Y/Z。
-     */
     HorizontalDieLevelEdgeCoupling,
-
-    /**
-     * 晶圆级边缘耦合。
-     *
-     * 常见扫描平面：Y/Z，需要更严格的碰撞规避。
-     */
     WaferLevelEdgeCoupling
 }
 
-/**
- * 螺旋搜索平面。
- */
+/** 螺旋搜索平面。 */
 enum class CouplingSpiralPlane {
     XY,
     YZ,
@@ -41,129 +19,107 @@ enum class CouplingSpiralPlane {
 /**
  * 自动耦光配置。
  *
- * 这是 domain 层配置，给 CouplingRunner / SpiralCouplingRunner 使用。
- *
- * 注意：
- * - X/Y/Z 单位：um
- * - U/V/W 单位：deg
- * - 光功率单位：dBm
+ * 单位：
+ * - X/Y/Z：um
+ * - U/V/W：deg
+ * - 光功率：dBm
  */
 data class CouplingConfig(
-
-    /**
-     * 耦光模式。
-     */
     val mode: CouplingMode = CouplingMode.VerticalGratingCoupler,
-
-    /**
-     * 激光波长。
-     */
     val wavelengthNm: Double = 1550.0,
-
-    /**
-     * 光功率计通道。
-     */
     val powerMeterChannel: Int = 1,
-
-    /**
-     * 螺旋搜索平面。
-     *
-     * Grating Coupler 通常用 XY。
-     * Edge Coupler 通常用 YZ。
-     */
     val spiralPlane: CouplingSpiralPlane = CouplingSpiralPlane.XY,
-
-    /**
-     * First light 阈值。
-     *
-     * 超过这个功率，认为已经找到初始光。
-     */
     val firstLightThresholdDbm: Double = -40.0,
-
-    /**
-     * 目标耦光功率。
-     */
     val targetPowerDbm: Double = -10.0,
-
-    /**
-     * 螺旋搜索步长。
-     */
     val spiralStepUm: Double = 2.0,
-
-    /**
-     * 螺旋搜索最大半径。
-     */
     val maxRadiusUm: Double = 50.0,
-
-    /**
-     * 每次移动后等待稳定时间。
-     */
     val settleDelayMs: Long = 50L,
 
-    /**
-     * 是否启用 XYZ 精细优化。
-     */
+    /** 每个位置读取几次功率并取平均值。 */
+    val powerAverageCount: Int = 3,
+
+    /** 同一位置多次功率读取之间的间隔。 */
+    val powerAverageDelayMs: Long = 5L,
+
     val enableFineXyz: Boolean = true,
-
-    /**
-     * XYZ 精细优化步长。
-     */
-    val fineStepsUm: List<Double> = listOf(
-        2.0,
-        1.0,
-        0.5,
-        0.2,
-        0.1
-    ),
-
-    /**
-     * 判断是否有明显改善的最小功率差。
-     */
+    val fineStepsUm: List<Double> = listOf(2.0, 1.0, 0.5, 0.2, 0.1),
     val minImproveDb: Double = 0.02,
 
-    /**
-     * 是否启用入射角优化。
-     */
+    /** 每个精调步长最多执行的坐标下降轮数，避免噪声导致无限循环。 */
+    val maxFinePassesPerStep: Int = 12,
+
     val enableIncidentAngleOptimization: Boolean = false,
-
-    /**
-     * U 轴角度优化步长。
-     */
     val uStepDeg: Double = 0.02,
-
-    /**
-     * V 轴角度优化步长。
-     */
     val vStepDeg: Double = 0.02,
-
-    /**
-     * W 轴角度优化步长。
-     *
-     * Fiber Array 时 W 很重要。
-     */
     val wStepDeg: Double = 0.01,
-
-    /**
-     * U/V/W 最大角度搜索范围。
-     */
     val maxAngleRangeDeg: Double = 0.2,
-
-    /**
-     * 虚拟枢轴点。
-     *
-     * 第一版可以先保存，不启用复杂补偿。
-     */
     val virtualPivotPoint: VirtualPivotPoint = VirtualPivotPoint.Disabled,
-
-    /**
-     * 是否启用软件层虚拟枢轴补偿。
-     *
-     * 第一版建议 false。
-     */
     val enableSoftwarePivotCompensation: Boolean = false,
+    val enableCollisionAvoidance: Boolean = true,
 
-    /**
-     * 是否启用碰撞规避。
-     */
-    val enableCollisionAvoidance: Boolean = true
-)
+    /** 单次任务最大采样点数，作为算法和机械运动的硬保护。 */
+    val maxTotalSamples: Int = 2500,
+
+    /** 达到目标功率后是否立即结束当前搜索。 */
+    val stopWhenTargetReached: Boolean = true
+) {
+    init {
+        require(wavelengthNm.isFinite() && wavelengthNm > 0.0) {
+            "wavelengthNm 必须为正的有限数，当前值: $wavelengthNm"
+        }
+        require(powerMeterChannel > 0) {
+            "powerMeterChannel 必须大于 0，当前值: $powerMeterChannel"
+        }
+        require(firstLightThresholdDbm.isFinite()) {
+            "firstLightThresholdDbm 必须是有限数"
+        }
+        require(targetPowerDbm.isFinite()) {
+            "targetPowerDbm 必须是有限数"
+        }
+        require(targetPowerDbm >= firstLightThresholdDbm) {
+            "targetPowerDbm 不能低于 firstLightThresholdDbm"
+        }
+        require(spiralStepUm.isFinite() && spiralStepUm > 0.0) {
+            "spiralStepUm 必须大于 0"
+        }
+        require(maxRadiusUm.isFinite() && maxRadiusUm > 0.0) {
+            "maxRadiusUm 必须大于 0"
+        }
+        require(settleDelayMs >= 0L) {
+            "settleDelayMs 不能小于 0"
+        }
+        require(powerAverageCount in 1..100) {
+            "powerAverageCount 必须在 1..100，当前值: $powerAverageCount"
+        }
+        require(powerAverageDelayMs >= 0L) {
+            "powerAverageDelayMs 不能小于 0"
+        }
+        require(fineStepsUm.isNotEmpty()) {
+            "fineStepsUm 不能为空"
+        }
+        require(fineStepsUm.all { it.isFinite() && it > 0.0 }) {
+            "fineStepsUm 必须全部为正的有限数: $fineStepsUm"
+        }
+        require(minImproveDb.isFinite() && minImproveDb >= 0.0) {
+            "minImproveDb 不能小于 0"
+        }
+        require(maxFinePassesPerStep > 0) {
+            "maxFinePassesPerStep 必须大于 0"
+        }
+        require(uStepDeg.isFinite() && uStepDeg > 0.0) {
+            "uStepDeg 必须大于 0"
+        }
+        require(vStepDeg.isFinite() && vStepDeg > 0.0) {
+            "vStepDeg 必须大于 0"
+        }
+        require(wStepDeg.isFinite() && wStepDeg > 0.0) {
+            "wStepDeg 必须大于 0"
+        }
+        require(maxAngleRangeDeg.isFinite() && maxAngleRangeDeg >= 0.0) {
+            "maxAngleRangeDeg 不能小于 0"
+        }
+        require(maxTotalSamples > 0) {
+            "maxTotalSamples 必须大于 0"
+        }
+    }
+}
