@@ -10,7 +10,7 @@ fun CouplingPlotPanel(
     samples: List<CouplingSampleUi>,
     modifier: Modifier = Modifier
 ) {
-    AerospaceCouplingPlotPanel(
+    AerospaceCouplingPlotPanelV2(
         samples = samples,
         modifier = modifier
     )
