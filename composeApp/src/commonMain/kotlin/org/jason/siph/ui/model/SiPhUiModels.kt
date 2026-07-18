@@ -8,6 +8,10 @@ enum class CouplingToolPage(
     val title: String,
     val caption: String
 ) {
+    AutonomousAssistant(
+        "Autonomous Assistant",
+        "Train, calibrate, verify and launch photonic workflows"
+    ),
     Coupling("Auto Coupling", "Search and optimize power"),
     PivotSetup("Pivot Setup", "Set rotation center"),
     ManualControl("Manual Control", "Jog positioner axes"),
