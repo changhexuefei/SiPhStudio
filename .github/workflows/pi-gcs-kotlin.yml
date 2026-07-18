@@ -48,4 +48,19 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run PI GCS tests
-        run: ./gradlew :pi-gcs-kotlin:test --stacktrace
+        shell: bash
+        run: |
+          set +e
+          ./gradlew :pi-gcs-kotlin:test --stacktrace --console=plain > pi-gcs-test.log 2>&1
+          status=$?
+          tail -n 120 pi-gcs-test.log
+          exit $status
+
+      - name: Upload Gradle test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-gcs-test-log
+          path: pi-gcs-test.log
+          if-no-files-found: error
+          retention-days: 7
