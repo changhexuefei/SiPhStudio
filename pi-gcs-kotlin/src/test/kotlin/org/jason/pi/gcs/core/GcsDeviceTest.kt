@@ -25,8 +25,8 @@ class GcsDeviceTest {
     }
 
     @Test
-    fun commandThrowsWhenControllerReportsError() = runBlocking {
-        val transport = ScriptedTransport(responses = listOf("5"))
+    fun commandExposesStructuredControllerError() = runBlocking {
+        val transport = ScriptedTransport(responses = listOf("-1024"))
         val device = GcsDevice(GcsClient(transport))
 
         val exception = assertFailsWith<PiGcsCommandException> {
@@ -34,7 +34,23 @@ class GcsDeviceTest {
         }
 
         assertEquals("SVO X 1", exception.command)
-        assertEquals(5, exception.errorCode)
+        assertEquals(-1024, exception.errorCode)
+        assertEquals("E_1024_PI_MOTION_ERROR", exception.descriptor.symbol)
+        assertEquals(PiGcsErrorCategory.Motion, exception.descriptor.category)
+        assertTrue(exception.message.orEmpty().contains("position error too large"))
+    }
+
+    @Test
+    fun unknownControllerErrorKeepsOriginalCode() = runBlocking {
+        val transport = ScriptedTransport(responses = listOf("5"))
+        val device = GcsDevice(GcsClient(transport))
+
+        val exception = assertFailsWith<PiGcsCommandException> {
+            device.servoOn(PiAxis.X)
+        }
+
+        assertEquals(5, exception.descriptor.code)
+        assertEquals(PiGcsErrorCategory.Unknown, exception.descriptor.category)
     }
 
     @Test
@@ -55,6 +71,25 @@ class GcsDeviceTest {
         assertEquals(1.0, positions.getValue(PiAxis.X))
         assertEquals(2.5, positions.getValue(PiAxis.Y))
         assertEquals(-3.0, positions.getValue(PiAxis.Z))
+    }
+
+    @Test
+    fun dynamicAxisPositionSupportsNumericAndGcs3Names() = runBlocking {
+        val axis1 = PiAxisId.of("1")
+        val axis2 = PiAxisId.of("AXIS_2")
+        val transport = ScriptedTransport(
+            responses = listOf(
+                "1=0.125",
+                "AXIS_2=-2.5"
+            )
+        )
+        val device = GcsDevice(GcsClient(transport))
+
+        val positions = device.qPOSIds(listOf(axis1, axis2))
+
+        assertEquals(listOf("POS? 1 AXIS_2"), transport.writes)
+        assertEquals(0.125, positions.getValue(axis1))
+        assertEquals(-2.5, positions.getValue(axis2))
     }
 
     @Test
@@ -91,15 +126,18 @@ class GcsDeviceTest {
     }
 
     @Test
-    fun referenceAllUsesSingleBatchCommand() = runBlocking {
+    fun referenceAllUsesConfiguredReferenceMode() = runBlocking {
         val transport = ScriptedTransport(responses = listOf("0"))
         val device = GcsDevice(GcsClient(transport))
 
-        device.referenceAll(listOf(PiAxis.X, PiAxis.Y, PiAxis.Z))
+        device.referenceAll(
+            axes = listOf(PiAxis.X, PiAxis.Y, PiAxis.Z),
+            mode = PiReferenceCommand.FNL
+        )
 
         assertEquals(
             expected = listOf(
-                "FRF X Y Z",
+                "FNL X Y Z",
                 "ERR?"
             ),
             actual = transport.writes
@@ -134,6 +172,57 @@ class GcsDeviceTest {
         assertEquals(
             expected = PiAxis.HEXAPOD_AXES,
             actual = device.qAxes()
+        )
+    }
+
+    @Test
+    fun qAxisIdsKeepsControllerSpecificAxisNames() = runBlocking {
+        val transport = ScriptedTransport(
+            responses = listOf("1 2 AXIS_3")
+        )
+        val device = GcsDevice(GcsClient(transport))
+
+        assertEquals(
+            expected = listOf(
+                PiAxisId.of("1"),
+                PiAxisId.of("2"),
+                PiAxisId.of("AXIS_3")
+            ),
+            actual = device.qAxisIds()
+        )
+    }
+
+    @Test
+    fun controllerInspectionUsesOnlyReadOnlyCommandsByDefault() = runBlocking {
+        val transport = ScriptedTransport(
+            responses = listOf(
+                "Physik Instrumente, C-887.52, SN 12345",
+                "GCS 2.0 Firmware 1.2.3",
+                "X Y Z U V W"
+            )
+        )
+        val device = GcsDevice(GcsClient(transport))
+
+        val profile = device.inspectController(
+            PiControllerProbeOptions(
+                connectionType = PiConnectionType.TcpIp,
+                assumedReferenceModes = setOf(PiReferenceCommand.FRF)
+            )
+        )
+
+        assertEquals(
+            listOf("*IDN?", "VER?", "SAI?"),
+            transport.writes
+        )
+        assertEquals(PiConnectionType.TcpIp, profile.info.connectionType)
+        assertEquals(PiAxis.HEXAPOD_AXES, profile.knownHexapodAxes)
+        assertTrue(profile.capabilities.supports(PiGcsFeature.Identify))
+        assertTrue(profile.capabilities.supports(PiGcsFeature.AxisDiscovery))
+        assertTrue(profile.capabilities.supports(PiGcsFeature.ReferenceFRF))
+        assertFalse(profile.capabilities.supports(PiGcsFeature.ReferenceFNL))
+        assertEquals(
+            PiCapabilityStatus.NotProbed,
+            profile.capabilities[PiGcsFeature.PositionQuery].status
         )
     }
 }
