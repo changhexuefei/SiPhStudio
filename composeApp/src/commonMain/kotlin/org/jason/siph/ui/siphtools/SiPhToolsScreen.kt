@@ -34,6 +34,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.jason.siph.domain.runtime.HardwareRuntimeMode
 import org.jason.siph.ui.autonomy.AutonomousAssistantPanel
+import org.jason.siph.ui.autonomy.AutonomousWorkflowAction
+import org.jason.siph.ui.autonomy.AutonomousWorkflowUiState
 import org.jason.siph.ui.coupling.CouplingWorkspace
 import org.jason.siph.ui.coupling.PivotSetupPanel
 import org.jason.siph.ui.model.CouplingToolAction
@@ -52,8 +54,10 @@ import org.jason.siph.ui.theme.TelemetryPill
 fun CouplingToolScreen(
     state: CouplingToolUiState,
     safetyState: MotionSafetyUiState,
+    autonomousState: AutonomousWorkflowUiState,
     onAction: (CouplingToolAction) -> Unit,
     onSafetyAction: (MotionSafetyAction) -> Unit,
+    onAutonomousAction: (AutonomousWorkflowAction) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val motionEnabled = safetyState.interlockReady
@@ -138,7 +142,9 @@ fun CouplingToolScreen(
                             CouplingToolPage.AutonomousAssistant -> AutonomousAssistantPanel(
                                 state = state,
                                 safetyState = safetyState,
+                                workflowState = autonomousState,
                                 onAction = onAction,
+                                onWorkflowAction = onAutonomousAction,
                                 modifier = Modifier.fillMaxSize()
                             )
 
