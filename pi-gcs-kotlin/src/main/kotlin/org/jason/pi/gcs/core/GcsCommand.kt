@@ -57,12 +57,16 @@ sealed interface GcsCommand {
             enabled: Boolean
         ): GcsCommand = servo(linkedMapOf(axis to enabled))
 
-        /**
-         * 一次发送多轴 Servo 状态，避免逐轴命令产生多次网络往返。
-         */
+        /** 一次发送多轴 Servo 状态。 */
         fun servo(states: Map<PiAxis, Boolean>): GcsCommand {
             require(states.isNotEmpty()) { "SVO states 不能为空" }
             return RawCommand("SVO ${states.toAxisBooleanText()}")
+        }
+
+        /** 动态轴版本，支持数字轴和 AXIS_1 等 GCS 3.0 轴名。 */
+        fun servoIds(states: Map<PiAxisId, Boolean>): GcsCommand {
+            require(states.isNotEmpty()) { "SVO states 不能为空" }
+            return RawCommand("SVO ${states.toAxisIdBooleanText()}")
         }
 
         fun qServo(axis: PiAxis): GcsCommand = RawQuery("SVO? ${axis.code}")
@@ -75,6 +79,14 @@ sealed interface GcsCommand {
             )
         }
 
+        fun qServoIds(axes: List<PiAxisId>): GcsCommand {
+            require(axes.isNotEmpty()) { "SVO? axes 不能为空" }
+            return RawQuery(
+                text = "SVO? ${axes.toAxisIdListText()}",
+                responseLines = axes.size
+            )
+        }
+
         fun moveAbsolute(
             axis: PiAxis,
             target: Double
@@ -83,6 +95,11 @@ sealed interface GcsCommand {
         fun moveAbsolute(targets: Map<PiAxis, Double>): GcsCommand {
             require(targets.isNotEmpty()) { "MOV targets 不能为空" }
             return RawCommand("MOV ${targets.toAxisValueText()}")
+        }
+
+        fun moveAbsoluteIds(targets: Map<PiAxisId, Double>): GcsCommand {
+            require(targets.isNotEmpty()) { "MOV targets 不能为空" }
+            return RawCommand("MOV ${targets.toAxisIdValueText()}")
         }
 
         fun moveRelative(
@@ -98,6 +115,14 @@ sealed interface GcsCommand {
             return RawCommand("MVR ${nonZero.toAxisValueText()}")
         }
 
+        fun moveRelativeIds(deltas: Map<PiAxisId, Double>): GcsCommand {
+            val nonZero = deltas.filterValues { it != 0.0 }
+            require(nonZero.isNotEmpty()) {
+                "MVR deltas 不能为空，或者所有 delta 都为 0"
+            }
+            return RawCommand("MVR ${nonZero.toAxisIdValueText()}")
+        }
+
         fun qPosition(axis: PiAxis): GcsCommand = RawQuery("POS? ${axis.code}")
 
         fun qPosition(axes: List<PiAxis>): GcsCommand {
@@ -108,12 +133,28 @@ sealed interface GcsCommand {
             )
         }
 
+        fun qPositionIds(axes: List<PiAxisId>): GcsCommand {
+            require(axes.isNotEmpty()) { "POS? axes 不能为空" }
+            return RawQuery(
+                text = "POS? ${axes.toAxisIdListText()}",
+                responseLines = axes.size
+            )
+        }
+
         fun qOnTarget(axis: PiAxis): GcsCommand = RawQuery("ONT? ${axis.code}")
 
         fun qOnTarget(axes: List<PiAxis>): GcsCommand {
             require(axes.isNotEmpty()) { "ONT? axes 不能为空" }
             return RawQuery(
                 text = "ONT? ${axes.toAxisListText()}",
+                responseLines = axes.size
+            )
+        }
+
+        fun qOnTargetIds(axes: List<PiAxisId>): GcsCommand {
+            require(axes.isNotEmpty()) { "ONT? axes 不能为空" }
+            return RawQuery(
+                text = "ONT? ${axes.toAxisIdListText()}",
                 responseLines = axes.size
             )
         }
@@ -138,12 +179,43 @@ sealed interface GcsCommand {
             )
         }
 
-        fun reference(axis: PiAxis): GcsCommand = RawCommand("FRF ${axis.code}")
+        fun qTravelMinIds(axes: List<PiAxisId>): GcsCommand {
+            require(axes.isNotEmpty()) { "TMN? axes 不能为空" }
+            return RawQuery(
+                text = "TMN? ${axes.toAxisIdListText()}",
+                responseLines = axes.size
+            )
+        }
 
-        /** 一次发送相同参考模式下的多轴 FRF。 */
-        fun reference(axes: List<PiAxis>): GcsCommand {
-            require(axes.isNotEmpty()) { "FRF axes 不能为空" }
-            return RawCommand("FRF ${axes.toAxisListText()}")
+        fun qTravelMaxIds(axes: List<PiAxisId>): GcsCommand {
+            require(axes.isNotEmpty()) { "TMX? axes 不能为空" }
+            return RawQuery(
+                text = "TMX? ${axes.toAxisIdListText()}",
+                responseLines = axes.size
+            )
+        }
+
+        fun reference(
+            axis: PiAxis,
+            mode: PiReferenceCommand = PiReferenceCommand.FRF
+        ): GcsCommand {
+            return RawCommand("${mode.gcsCode} ${axis.code}")
+        }
+
+        fun reference(
+            axes: List<PiAxis>,
+            mode: PiReferenceCommand = PiReferenceCommand.FRF
+        ): GcsCommand {
+            require(axes.isNotEmpty()) { "reference axes 不能为空" }
+            return RawCommand("${mode.gcsCode} ${axes.toAxisListText()}")
+        }
+
+        fun referenceIds(
+            axes: List<PiAxisId>,
+            mode: PiReferenceCommand = PiReferenceCommand.FRF
+        ): GcsCommand {
+            require(axes.isNotEmpty()) { "reference axes 不能为空" }
+            return RawCommand("${mode.gcsCode} ${axes.toAxisIdListText()}")
         }
 
         fun qAxes(): GcsCommand = RawQuery("SAI?")
@@ -191,6 +263,12 @@ internal fun List<PiAxis>.toAxisListText(): String {
     return joinToString(" ") { it.code }
 }
 
+internal fun List<PiAxisId>.toAxisIdListText(): String {
+    require(isNotEmpty()) { "axes 不能为空" }
+    require(size == distinct().size) { "axes 不能包含重复轴: $this" }
+    return joinToString(" ") { it.value }
+}
+
 internal fun Map<PiAxis, Double>.toAxisValueText(): String {
     return entries
         .sortedBy { it.key.ordinal }
@@ -199,10 +277,22 @@ internal fun Map<PiAxis, Double>.toAxisValueText(): String {
         }
 }
 
+internal fun Map<PiAxisId, Double>.toAxisIdValueText(): String {
+    return entries.joinToString(" ") { (axis, value) ->
+        "${axis.value} ${value.toGcsNumber()}"
+    }
+}
+
 private fun Map<PiAxis, Boolean>.toAxisBooleanText(): String {
     return entries
         .sortedBy { it.key.ordinal }
         .joinToString(" ") { (axis, enabled) ->
             "${axis.code} ${enabled.toGcsInt()}"
         }
+}
+
+private fun Map<PiAxisId, Boolean>.toAxisIdBooleanText(): String {
+    return entries.joinToString(" ") { (axis, enabled) ->
+        "${axis.value} ${enabled.toGcsInt()}"
+    }
 }
