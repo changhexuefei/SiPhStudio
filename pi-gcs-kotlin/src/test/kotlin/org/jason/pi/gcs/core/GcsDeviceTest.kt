@@ -6,15 +6,14 @@ import org.jason.pi.gcs.transport.GcsTransport
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class GcsDeviceTest {
 
     @Test
     fun commandChecksErrorCodeAfterWrite() = runBlocking {
-        val transport = ScriptedTransport(
-            responses = listOf("0")
-        )
+        val transport = ScriptedTransport(responses = listOf("0"))
         val device = GcsDevice(GcsClient(transport))
 
         device.moveAbsolute(PiAxis.X, 1.25)
@@ -27,9 +26,7 @@ class GcsDeviceTest {
 
     @Test
     fun commandThrowsWhenControllerReportsError() = runBlocking {
-        val transport = ScriptedTransport(
-            responses = listOf("5")
-        )
+        val transport = ScriptedTransport(responses = listOf("5"))
         val device = GcsDevice(GcsClient(transport))
 
         val exception = assertFailsWith<PiGcsCommandException> {
@@ -41,34 +38,90 @@ class GcsDeviceTest {
     }
 
     @Test
-    fun qPositionUsesSingleMultiAxisQuery() = runBlocking {
+    fun qPositionReadsOneResponseLinePerAxis() = runBlocking {
         val transport = ScriptedTransport(
-            responses = listOf("X=1.0 Y=2.5 Z=-3.0")
+            responses = listOf(
+                "X=1.0",
+                "Y=2.5",
+                "Z=-3.0"
+            )
         )
         val device = GcsDevice(GcsClient(transport))
 
         val positions = device.qPOS(listOf(PiAxis.X, PiAxis.Y, PiAxis.Z))
 
-        assertEquals(
-            expected = listOf("POS? X Y Z"),
-            actual = transport.writes
-        )
+        assertEquals(listOf("POS? X Y Z"), transport.writes)
+        assertEquals(3, transport.readCount)
         assertEquals(1.0, positions.getValue(PiAxis.X))
         assertEquals(2.5, positions.getValue(PiAxis.Y))
         assertEquals(-3.0, positions.getValue(PiAxis.Z))
     }
 
     @Test
-    fun qOnTargetParsesBooleanMap() = runBlocking {
+    fun qOnTargetReadsAndParsesMultiLineBooleanMap() = runBlocking {
         val transport = ScriptedTransport(
-            responses = listOf("X=1 Y=0")
+            responses = listOf(
+                "X=1",
+                "Y=0"
+            )
         )
         val device = GcsDevice(GcsClient(transport))
 
         val states = device.qONT(listOf(PiAxis.X, PiAxis.Y))
 
         assertTrue(states.getValue(PiAxis.X))
-        assertEquals(false, states.getValue(PiAxis.Y))
+        assertFalse(states.getValue(PiAxis.Y))
+        assertEquals(2, transport.readCount)
+    }
+
+    @Test
+    fun servoOnAllUsesSingleBatchCommand() = runBlocking {
+        val transport = ScriptedTransport(responses = listOf("0"))
+        val device = GcsDevice(GcsClient(transport))
+
+        device.servoOnAll(listOf(PiAxis.X, PiAxis.Y, PiAxis.Z))
+
+        assertEquals(
+            expected = listOf(
+                "SVO X 1 Y 1 Z 1",
+                "ERR?"
+            ),
+            actual = transport.writes
+        )
+    }
+
+    @Test
+    fun referenceAllUsesSingleBatchCommand() = runBlocking {
+        val transport = ScriptedTransport(responses = listOf("0"))
+        val device = GcsDevice(GcsClient(transport))
+
+        device.referenceAll(listOf(PiAxis.X, PiAxis.Y, PiAxis.Z))
+
+        assertEquals(
+            expected = listOf(
+                "FRF X Y Z",
+                "ERR?"
+            ),
+            actual = transport.writes
+        )
+    }
+
+    @Test
+    fun qServoReadsOneLinePerAxis() = runBlocking {
+        val transport = ScriptedTransport(
+            responses = listOf(
+                "X=1",
+                "Y=1",
+                "Z=0"
+            )
+        )
+        val device = GcsDevice(GcsClient(transport))
+
+        val states = device.qServo(listOf(PiAxis.X, PiAxis.Y, PiAxis.Z))
+
+        assertTrue(states.getValue(PiAxis.X))
+        assertTrue(states.getValue(PiAxis.Y))
+        assertFalse(states.getValue(PiAxis.Z))
     }
 
     @Test
@@ -93,6 +146,9 @@ private class ScriptedTransport(
 
     val writes: MutableList<String> = mutableListOf()
 
+    var readCount: Int = 0
+        private set
+
     override var isOpen: Boolean = false
         private set
 
@@ -108,6 +164,7 @@ private class ScriptedTransport(
         check(pendingResponses.isNotEmpty()) {
             "No scripted response left for writes=$writes"
         }
+        readCount += 1
         return pendingResponses.removeFirst()
     }
 
