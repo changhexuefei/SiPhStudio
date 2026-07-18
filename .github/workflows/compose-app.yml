@@ -26,7 +26,7 @@ permissions:
 
 jobs:
   validate:
-    name: Compile Compose JVM
+    name: Compile and test Compose JVM
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -47,10 +47,10 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
 
-      - name: Compile Compose JVM
+      - name: Compile and run offline tests
         run: |
           set -o pipefail
-          ./gradlew :composeApp:compileKotlinJvm --stacktrace 2>&1 | tee compose-build.log
+          ./gradlew :composeApp:compileKotlinJvm :composeApp:jvmTest --stacktrace 2>&1 | tee compose-build.log
 
       - name: Upload Compose build log
         if: always()
@@ -58,5 +58,14 @@ jobs:
         with:
           name: compose-build-log
           path: compose-build.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compose-test-reports
+          path: composeApp/build/reports/tests
           if-no-files-found: ignore
           retention-days: 7
