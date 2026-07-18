@@ -1,5 +1,8 @@
 package org.jason.siph.domain.safety
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.jason.siph.domain.positioner.OpticalPose
 import kotlin.math.abs
 import kotlin.math.hypot
@@ -12,8 +15,8 @@ data class AxisSoftLimit(
     init {
         require(minimum.isFinite()) { "minimum must be finite" }
         require(maximum.isFinite()) { "maximum must be finite" }
-        require(minimum <= maximum) {
-            "minimum must be <= maximum, actual=$minimum..$maximum"
+        require(minimum < maximum) {
+            "minimum must be < maximum, actual=$minimum..$maximum"
         }
     }
 
@@ -86,26 +89,50 @@ class MotionSafetyException(
     ) { it.message }
 ) : IllegalArgumentException(message)
 
+/** 在安全配置未加载或已被撤销时拒绝一切运动。 */
+class MotionSafetyInterlockException(
+    message: String = "Motion safety interlock is not ready"
+) : IllegalStateException(message)
+
 /**
- * 负责软限位检查和大范围转移路径规划。
+ * 负责安全配置生命周期、软限位检查和大范围转移路径规划。
  *
- * 小范围耦光扫描直接移动；超过阈值的横向或角度移动按以下顺序执行：
- * 当前点 -> 安全 Z -> 安全 Z 平面横移/转角 -> 目标 Z。
+ * 配置通过 [updateConfig] 原子替换。传入 null 会立即解除互锁就绪状态，之后所有运动规划都会失败。
  */
 class MotionSafetyPlanner(
-    val config: MotionSafetyConfig
+    initialConfig: MotionSafetyConfig?
 ) {
+    private val _configuredConfig = MutableStateFlow(initialConfig)
+    val configuredConfig: StateFlow<MotionSafetyConfig?> = _configuredConfig.asStateFlow()
+
+    val isConfigured: Boolean
+        get() = _configuredConfig.value != null
+
+    val config: MotionSafetyConfig
+        get() = requireConfigured()
+
+    fun updateConfig(config: MotionSafetyConfig?) {
+        _configuredConfig.value = config
+    }
+
+    fun requireConfigured(): MotionSafetyConfig {
+        return _configuredConfig.value
+            ?: throw MotionSafetyInterlockException(
+                "Motion rejected: no validated soft limits and clearance Z are applied"
+            )
+    }
 
     fun validate(pose: OpticalPose): List<MotionSafetyViolation> {
-        if (!config.enabled) return emptyList()
+        val currentConfig = requireConfigured()
+        if (!currentConfig.enabled) return emptyList()
 
         return buildList {
-            addViolation("X", pose.xUm, config.xLimitUm)
-            addViolation("Y", pose.yUm, config.yLimitUm)
-            addViolation("Z", pose.zUm, config.zLimitUm)
-            addViolation("U", pose.uDeg, config.uLimitDeg)
-            addViolation("V", pose.vDeg, config.vLimitDeg)
-            addViolation("W", pose.wDeg, config.wLimitDeg)
+            addViolation("X", pose.xUm, currentConfig.xLimitUm)
+            addViolation("Y", pose.yUm, currentConfig.yLimitUm)
+            addViolation("Z", pose.zUm, currentConfig.zLimitUm)
+            addViolation("U", pose.uDeg, currentConfig.uLimitDeg)
+            addViolation("V", pose.vDeg, currentConfig.vLimitDeg)
+            addViolation("W", pose.wDeg, currentConfig.wLimitDeg)
         }
     }
 
@@ -120,7 +147,8 @@ class MotionSafetyPlanner(
         current: OpticalPose,
         target: OpticalPose
     ): Boolean {
-        if (!config.enabled || !config.protectedTransferEnabled) return false
+        val currentConfig = requireConfigured()
+        if (!currentConfig.enabled || !currentConfig.protectedTransferEnabled) return false
 
         val linearDistanceUm = hypot(
             target.xUm - current.xUm,
@@ -132,14 +160,15 @@ class MotionSafetyPlanner(
             abs(target.wDeg - current.wDeg)
         )
 
-        return linearDistanceUm > config.protectedLinearThresholdUm ||
-            maxAngleDeltaDeg > config.protectedAngleThresholdDeg
+        return linearDistanceUm > currentConfig.protectedLinearThresholdUm ||
+            maxAngleDeltaDeg > currentConfig.protectedAngleThresholdDeg
     }
 
     fun planMove(
         current: OpticalPose,
         target: OpticalPose
     ): List<OpticalPose> {
+        val currentConfig = requireConfigured()
         requireValid(current)
         requireValid(target)
 
@@ -147,8 +176,8 @@ class MotionSafetyPlanner(
             return listOf(target)
         }
 
-        val clearanceAtCurrent = current.copy(zUm = config.clearanceZUm)
-        val clearanceAtTarget = target.copy(zUm = config.clearanceZUm)
+        val clearanceAtCurrent = current.copy(zUm = currentConfig.clearanceZUm)
+        val clearanceAtTarget = target.copy(zUm = currentConfig.clearanceZUm)
 
         return listOf(
             clearanceAtCurrent,
