@@ -73,6 +73,21 @@ class MotionSafetyTest {
     }
 
     @Test
+    fun missingConfigurationRejectsBeforeDelegateStartup() = runBlocking {
+        val raw = RecordingPositioner()
+        raw.connect()
+        val safe = SafetyCheckedOpticalPositioner(
+            delegate = raw,
+            planner = MotionSafetyPlanner(initialConfig = null)
+        )
+
+        assertFailsWith<MotionSafetyInterlockException> {
+            safe.startup(reference = true)
+        }
+        assertEquals(0, raw.startupCalls)
+    }
+
+    @Test
     fun wrapperExecutesProtectedWaypointsInOrder() = runBlocking {
         val raw = RecordingPositioner()
         raw.connect()
@@ -98,6 +113,7 @@ class MotionSafetyTest {
     private class RecordingPositioner : PivotAwareOpticalPositionerPort {
         var connected = false
         var pose = OpticalPose.ZERO
+        var startupCalls = 0
         val commandedPoses = mutableListOf<OpticalPose>()
 
         override suspend fun connect() {
@@ -110,7 +126,9 @@ class MotionSafetyTest {
 
         override suspend fun identify(): String = "Recording Positioner"
 
-        override suspend fun startup(reference: Boolean) = Unit
+        override suspend fun startup(reference: Boolean) {
+            startupCalls += 1
+        }
 
         override suspend fun moveTo(pose: OpticalPose, wait: Boolean) {
             check(connected)
