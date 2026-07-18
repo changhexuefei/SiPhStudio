@@ -2,8 +2,8 @@ package org.jason.siph.ui.state
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -13,12 +13,13 @@ import org.jason.siph.domain.coupling.AdaptiveCouplingRunner
 import org.jason.siph.domain.coupling.CouplingConfig
 import org.jason.siph.domain.coupling.CouplingResult
 import org.jason.siph.domain.coupling.CouplingResultStatus
+import org.jason.siph.domain.coupling.CouplingRunner
 import org.jason.siph.domain.coupling.CouplingSample
 import org.jason.siph.domain.coupling.CouplingSpiralPlane
 import org.jason.siph.domain.coupling.CouplingStage
-import org.jason.siph.domain.coupling.CouplingRunner
 import org.jason.siph.domain.optical.OpticalPowerMeterPort
 import org.jason.siph.domain.positioner.OpticalCoordinateFrame
+import org.jason.siph.domain.positioner.OpticalPose
 import org.jason.siph.domain.positioner.OpticalPositionerPort
 import org.jason.siph.domain.positioner.VirtualPivotPoint
 import org.jason.siph.domain.simulation.DemoOpticalPositioner
@@ -27,10 +28,12 @@ import org.jason.siph.ui.model.CouplingConfigUiState
 import org.jason.siph.ui.model.CouplingPlane
 import org.jason.siph.ui.model.CouplingSampleUi
 import org.jason.siph.ui.model.CouplingStageUi
+import org.jason.siph.ui.model.CouplingStartMode
 import org.jason.siph.ui.model.CouplingState
 import org.jason.siph.ui.model.CouplingToolAction
 import org.jason.siph.ui.model.CouplingToolRunState
 import org.jason.siph.ui.model.CouplingToolUiState
+import org.jason.siph.ui.model.PositionerUiState
 import kotlin.math.PI
 import kotlin.math.ceil
 import kotlin.time.TimeSource
@@ -184,21 +187,40 @@ class CouplingToolStore(
             runCatching { powerMeter.disconnect() }
             powerMeterConnected = false
 
-            updateState {
+            updateState { current ->
                 CouplingToolUiState(
-                    selectedPage = it.selectedPage,
-                    coupling = it.coupling.copy(
+                    selectedPage = current.selectedPage,
+                    positioner = PositionerUiState(
+                        linearStepUm = current.positioner.linearStepUm,
+                        angleStepDeg = current.positioner.angleStepDeg
+                    ),
+                    coupling = current.coupling.copy(
+                        config = current.coupling.config.copy(
+                            startMode = CouplingStartMode.CurrentPose
+                        ),
                         isRunning = false,
                         stopRequested = false,
                         state = CouplingState.Idle,
                         currentStage = null,
-                        progress = 0f
+                        currentPowerDbm = null,
+                        bestPowerDbm = null,
+                        bestPose = null,
+                        activeRunStartPose = null,
+                        previousRunStartPose = null,
+                        samples = emptyList(),
+                        logs = emptyList(),
+                        progress = 0f,
+                        estimatedSamples = 0,
+                        startedAtMs = null,
+                        finishedAtMs = null,
+                        message = null,
+                        errorMessage = null
                     ),
-                    status = it.status.copy(
+                    status = current.status.copy(
                         deviceText = "PI: Disconnected | PowerMeter: Disconnected",
                         powerText = "Power: -- dBm",
                         stateText = "State: Idle",
-                        message = "Devices disconnected",
+                        message = "Devices disconnected; run-start history cleared",
                         isError = false
                     )
                 )
@@ -225,7 +247,8 @@ class CouplingToolStore(
         launchDeviceOperation("Moving to safe pose") {
             setMoving(true)
             try {
-                positioner.moveToSafePose()
+                val safePose = _state.value.positioner.safePose
+                positioner.moveTo(safePose, wait = true)
                 val pose = positioner.currentPose()
                 updateState {
                     it.copy(
@@ -234,7 +257,7 @@ class CouplingToolStore(
                             isMoving = false
                         ),
                         status = it.status.copy(
-                            message = "Moved to safe pose",
+                            message = "Moved to safe pose: ${formatPose(pose)}",
                             isError = false
                         )
                     )
@@ -285,16 +308,26 @@ class CouplingToolStore(
     private fun updateConfig(config: CouplingConfigUiState) {
         if (_state.value.coupling.isRunning) return
 
-        val validation = runCatching { config.toDomain() }
+        val domainValidation = runCatching { config.toDomain() }
+        val startModeError = when {
+            config.startMode == CouplingStartMode.PreviousRunStart &&
+                _state.value.coupling.previousRunStartPose == null -> {
+                "Previous run start is unavailable until at least one run has started"
+            }
+
+            else -> null
+        }
+        val errorMessage = domainValidation.exceptionOrNull()?.message ?: startModeError
+
         updateState {
             it.copy(
                 coupling = it.coupling.copy(
                     config = config,
-                    errorMessage = validation.exceptionOrNull()?.message
+                    errorMessage = errorMessage
                 ),
                 status = it.status.copy(
-                    message = validation.exceptionOrNull()?.message ?: "Coupling config updated",
-                    isError = validation.isFailure
+                    message = errorMessage ?: "Coupling config updated",
+                    isError = errorMessage != null
                 )
             )
         }
@@ -335,7 +368,7 @@ class CouplingToolStore(
 
     private fun startCoupling() {
         val snapshot = _state.value
-        if (snapshot.coupling.isRunning) return
+        if (snapshot.coupling.isRunning || couplingJob?.isActive == true) return
 
         if (!snapshot.positioner.connected || !powerMeterConnected) {
             updateError("Connect the positioner and power meter before starting")
@@ -348,49 +381,82 @@ class CouplingToolStore(
             return
         }
 
-        couplingJob?.cancel()
-        couplingJob = scope.launch {
-            val estimatedSamples = estimateSamples(config)
-            val startedAt = nowMs()
+        if (
+            snapshot.coupling.config.startMode == CouplingStartMode.PreviousRunStart &&
+            snapshot.coupling.previousRunStartPose == null
+        ) {
+            updateError("Previous run start is unavailable; choose Current or Safe Pose")
+            return
+        }
 
-            updateState {
-                it.copy(
-                    runState = CouplingToolRunState.Running,
-                    coupling = it.coupling.copy(
-                        state = CouplingState.Initializing,
-                        currentStage = null,
-                        currentPowerDbm = null,
-                        bestPowerDbm = null,
-                        bestPose = null,
-                        samples = emptyList(),
-                        logs = listOf(
-                            "Starting adaptive coupling",
-                            "Plane=${config.spiralPlane}, step=${config.spiralStepUm} um, radius=${config.maxRadiusUm} um",
-                            "Power average=${config.powerAverageCount}, target=${config.targetPowerDbm} dBm"
-                        ),
-                        isRunning = true,
-                        stopRequested = false,
-                        progress = 0f,
-                        estimatedSamples = estimatedSamples,
-                        startedAtMs = startedAt,
-                        finishedAtMs = null,
-                        message = "Initializing coupling task",
-                        errorMessage = null
+        val estimatedSamples = estimateSamples(config)
+        val startedAt = nowMs()
+
+        updateState {
+            it.copy(
+                runState = CouplingToolRunState.Running,
+                coupling = it.coupling.copy(
+                    state = CouplingState.Initializing,
+                    currentStage = null,
+                    currentPowerDbm = null,
+                    bestPowerDbm = null,
+                    bestPose = null,
+                    activeRunStartPose = null,
+                    samples = emptyList(),
+                    logs = listOf(
+                        "Starting adaptive coupling",
+                        "Start mode=${snapshot.coupling.config.startMode.name}",
+                        "Plane=${config.spiralPlane}, step=${config.spiralStepUm} um, radius=${config.maxRadiusUm} um",
+                        "Power average=${config.powerAverageCount}, target=${config.targetPowerDbm} dBm"
                     ),
-                    status = it.status.copy(
-                        stateText = "State: Running",
-                        message = "Adaptive coupling started",
-                        isError = false
-                    )
+                    isRunning = true,
+                    stopRequested = false,
+                    progress = 0f,
+                    estimatedSamples = estimatedSamples,
+                    startedAtMs = startedAt,
+                    finishedAtMs = null,
+                    message = "Resolving run start pose",
+                    errorMessage = null
+                ),
+                positioner = it.positioner.copy(isMoving = false),
+                status = it.status.copy(
+                    stateText = "State: Running",
+                    message = "Resolving ${snapshot.coupling.config.startMode.text} start pose",
+                    isError = false
                 )
-            }
+            )
+        }
 
+        val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
+                val initialPose = resolveRunStartPose(snapshot)
+
+                updateState {
+                    it.copy(
+                        coupling = it.coupling.copy(
+                            activeRunStartPose = initialPose,
+                            previousRunStartPose = initialPose,
+                            logs = appendLog(
+                                it.coupling.logs,
+                                "Run start: ${formatPose(initialPose)}"
+                            ),
+                            message = "Starting search from selected pose"
+                        ),
+                        positioner = it.positioner.copy(
+                            currentPose = initialPose,
+                            isMoving = false
+                        ),
+                        status = it.status.copy(
+                            message = "Run start ready: ${formatPose(initialPose)}",
+                            isError = false
+                        )
+                    )
+                }
+
                 powerMeter.setWavelengthNm(
                     wavelengthNm = config.wavelengthNm,
                     channel = config.powerMeterChannel
                 )
-                val initialPose = positioner.currentPose()
 
                 val result = runner.run(
                     initialPose = initialPose,
@@ -404,7 +470,59 @@ class CouplingToolStore(
                 throw cancelled
             } catch (error: Throwable) {
                 applyFailure(error)
+            } finally {
+                setMoving(false)
             }
+        }
+
+        couplingJob = job
+        job.invokeOnCompletion {
+            if (couplingJob === job) {
+                couplingJob = null
+            }
+        }
+        job.start()
+    }
+
+    private suspend fun resolveRunStartPose(snapshot: CouplingToolUiState): OpticalPose {
+        return when (snapshot.coupling.config.startMode) {
+            CouplingStartMode.CurrentPose -> {
+                positioner.currentPose()
+            }
+
+            CouplingStartMode.PreviousRunStart -> {
+                val target = requireNotNull(snapshot.coupling.previousRunStartPose) {
+                    "Previous run start is unavailable"
+                }
+                moveToRunStart(target, "previous run start")
+            }
+
+            CouplingStartMode.SafePose -> {
+                moveToRunStart(snapshot.positioner.safePose, "safe pose")
+            }
+        }
+    }
+
+    private suspend fun moveToRunStart(
+        target: OpticalPose,
+        label: String
+    ): OpticalPose {
+        updateState {
+            it.copy(
+                positioner = it.positioner.copy(isMoving = true),
+                coupling = it.coupling.copy(message = "Moving to $label"),
+                status = it.status.copy(
+                    message = "Moving to $label: ${formatPose(target)}",
+                    isError = false
+                )
+            )
+        }
+
+        return try {
+            positioner.moveTo(target, wait = true)
+            positioner.currentPose()
+        } finally {
+            setMoving(false)
         }
     }
 
@@ -432,7 +550,9 @@ class CouplingToolStore(
             job.cancel(CancellationException("Device disconnect"))
         }
         runCatching { job.join() }
-        couplingJob = null
+        if (couplingJob === job) {
+            couplingJob = null
+        }
     }
 
     private suspend fun onSample(sample: CouplingSample, estimatedSamples: Int) {
@@ -599,6 +719,7 @@ class CouplingToolStore(
                     currentPowerDbm = null,
                     bestPowerDbm = null,
                     bestPose = null,
+                    activeRunStartPose = null,
                     samples = emptyList(),
                     logs = emptyList(),
                     progress = 0f,
@@ -611,7 +732,11 @@ class CouplingToolStore(
                 status = it.status.copy(
                     powerText = "Power: -- dBm",
                     stateText = "State: Idle",
-                    message = "Coupling data cleared",
+                    message = if (it.coupling.previousRunStartPose != null) {
+                        "Coupling data cleared; previous run start retained"
+                    } else {
+                        "Coupling data cleared"
+                    },
                     isError = false
                 )
             )
@@ -766,8 +891,10 @@ private fun CouplingStageUi.toCouplingState(): CouplingState {
 }
 
 private fun estimateSamples(config: CouplingConfig): Int {
-    val coarse = ceil(PI * config.maxRadiusUm * config.maxRadiusUm /
-        (config.spiralStepUm * config.spiralStepUm)).toInt()
+    val coarse = ceil(
+        PI * config.maxRadiusUm * config.maxRadiusUm /
+            (config.spiralStepUm * config.spiralStepUm)
+    ).toInt()
     val fine = if (config.enableFineXyz) {
         config.fineStepsUm.size * config.maxFinePassesPerStep * 6
     } else {
@@ -800,7 +927,7 @@ private fun formatPower(value: Double): String {
     return if (value.isFinite()) "${round3(value)} dBm" else "-- dBm"
 }
 
-private fun formatPose(pose: org.jason.siph.domain.positioner.OpticalPose): String {
+private fun formatPose(pose: OpticalPose): String {
     return "X=${round3(pose.xUm)} um, Y=${round3(pose.yUm)} um, " +
         "Z=${round3(pose.zUm)} um, U=${round3(pose.uDeg)} deg, " +
         "V=${round3(pose.vDeg)} deg, W=${round3(pose.wDeg)} deg"
