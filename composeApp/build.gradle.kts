@@ -65,6 +65,7 @@ kotlin {
             implementation(compose.components.uiToolingPreview)
             implementation(compose.preview)
 
+            implementation(libs.kotlinx.coroutines.core)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
 
@@ -90,28 +91,11 @@ kotlin {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
 
-            // =====================================================
-            // JavaFX
-            //
-            // JavaFX 在桌面端需要平台 classifier：
-            // Windows: win
-            // macOS x64: mac
-            // macOS ARM64: mac-aarch64
-            // Linux: linux
-            // =====================================================
             implementation("org.openjfx:javafx-base:$javafxVersion:$javafxPlatform")
             implementation("org.openjfx:javafx-controls:$javafxVersion:$javafxPlatform")
             implementation("org.openjfx:javafx-graphics:$javafxVersion:$javafxPlatform")
             implementation("org.openjfx:javafx-swing:$javafxVersion:$javafxPlatform")
 
-            // =====================================================
-            // LWJGL
-            //
-            // 1. 用 BOM 统一 org.lwjgl:* 的版本。
-            // 2. lwjgl / opengl / jawt 用普通 implementation。
-            // 3. native jar 用 runtimeOnly，并且显式写版本 + classifier。
-            // 4. 不要写 ${lwjgl.natives}。
-            // =====================================================
             implementation(
                 project.dependencies.platform("org.lwjgl:lwjgl-bom:$lwjglVersion")
             )
