@@ -28,7 +28,27 @@ jobs:
   validate:
     name: Compile and test Compose JVM
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: siphstudio_test
+          POSTGRES_USER: siphstudio
+          POSTGRES_PASSWORD: siphstudio_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U siphstudio -d siphstudio_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      SIPH_TEST_POSTGRES_URL: jdbc:postgresql://127.0.0.1:5432/siphstudio_test
+      SIPH_TEST_POSTGRES_USER: siphstudio
+      SIPH_TEST_POSTGRES_PASSWORD: siphstudio_test
 
     steps:
       - name: Checkout
@@ -47,7 +67,7 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
 
-      - name: Compile and run offline tests
+      - name: Compile and run offline and PostgreSQL integration tests
         run: |
           set -o pipefail
           ./gradlew :composeApp:compileKotlinJvm :composeApp:jvmTest --stacktrace 2>&1 | tee compose-build.log
