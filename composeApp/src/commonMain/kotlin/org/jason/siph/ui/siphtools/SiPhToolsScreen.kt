@@ -33,18 +33,26 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.jason.siph.domain.runtime.HardwareRuntimeMode
-import org.jason.siph.ui.autonomy.AutonomousAssistantPanel
+import org.jason.siph.ui.autonomy.AutonomousAssistantOperationsPanel
 import org.jason.siph.ui.autonomy.AutonomousWorkflowAction
 import org.jason.siph.ui.autonomy.AutonomousWorkflowUiState
 import org.jason.siph.ui.coupling.CouplingWorkspace
 import org.jason.siph.ui.coupling.PivotSetupPanel
+import org.jason.siph.ui.inspection.InspectionCalibrationAction
+import org.jason.siph.ui.inspection.InspectionCalibrationUiState
 import org.jason.siph.ui.model.CouplingToolAction
 import org.jason.siph.ui.model.CouplingToolPage
 import org.jason.siph.ui.model.CouplingToolUiState
 import org.jason.siph.ui.model.MotionSafetyAction
 import org.jason.siph.ui.model.MotionSafetyUiState
 import org.jason.siph.ui.model.SafetyInterlockStatus
+import org.jason.siph.ui.oo.OoMeasurementAction
+import org.jason.siph.ui.oo.OoMeasurementUiState
 import org.jason.siph.ui.positioner.PositionerControlPanel
+import org.jason.siph.ui.production.ProductionClusterAction
+import org.jason.siph.ui.production.ProductionClusterUiState
+import org.jason.siph.ui.production.ProductionControlAction
+import org.jason.siph.ui.production.ProductionControlUiState
 import org.jason.siph.ui.safety.MotionSafetyConfigPanel
 import org.jason.siph.ui.theme.AerospaceBackdrop
 import org.jason.siph.ui.theme.AerospacePalette
@@ -55,9 +63,17 @@ fun CouplingToolScreen(
     state: CouplingToolUiState,
     safetyState: MotionSafetyUiState,
     autonomousState: AutonomousWorkflowUiState,
+    productionState: ProductionControlUiState,
+    productionClusterState: ProductionClusterUiState,
+    inspectionState: InspectionCalibrationUiState,
+    ooState: OoMeasurementUiState,
     onAction: (CouplingToolAction) -> Unit,
     onSafetyAction: (MotionSafetyAction) -> Unit,
     onAutonomousAction: (AutonomousWorkflowAction) -> Unit,
+    onProductionAction: (ProductionControlAction) -> Unit,
+    onProductionClusterAction: (ProductionClusterAction) -> Unit,
+    onInspectionAction: (InspectionCalibrationAction) -> Unit,
+    onOoAction: (OoMeasurementAction) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val motionEnabled = safetyState.interlockReady
@@ -139,12 +155,20 @@ fun CouplingToolScreen(
                         contentAlignment = Alignment.TopCenter
                     ) {
                         when (state.selectedPage) {
-                            CouplingToolPage.AutonomousAssistant -> AutonomousAssistantPanel(
+                            CouplingToolPage.AutonomousAssistant -> AutonomousAssistantOperationsPanel(
                                 state = state,
                                 safetyState = safetyState,
                                 workflowState = autonomousState,
+                                productionState = productionState,
+                                productionClusterState = productionClusterState,
+                                inspectionState = inspectionState,
+                                ooState = ooState,
                                 onAction = onAction,
                                 onWorkflowAction = onAutonomousAction,
+                                onProductionAction = onProductionAction,
+                                onProductionClusterAction = onProductionClusterAction,
+                                onInspectionAction = onInspectionAction,
+                                onOoAction = onOoAction,
                                 modifier = Modifier.fillMaxSize()
                             )
 
