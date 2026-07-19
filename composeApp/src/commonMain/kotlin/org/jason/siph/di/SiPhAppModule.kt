@@ -24,6 +24,27 @@ import org.jason.siph.domain.autonomy.WaferStagePort
 import org.jason.siph.domain.autonomy.WorkflowCheckpointRepository
 import org.jason.siph.domain.coupling.AdaptiveCouplingRunner
 import org.jason.siph.domain.coupling.CouplingRunner
+import org.jason.siph.domain.oo.DefaultOoMeasurementRunner
+import org.jason.siph.domain.oo.InMemoryOoMeasurementRepository
+import org.jason.siph.domain.oo.OoAlignmentPort
+import org.jason.siph.domain.oo.OoMeasurementRepository
+import org.jason.siph.domain.oo.OoMeasurementRunner
+import org.jason.siph.domain.oo.OoOpticalPowerMeterPort
+import org.jason.siph.domain.oo.SimulatedOoAlignmentPort
+import org.jason.siph.domain.oo.SimulatedOoEnvironment
+import org.jason.siph.domain.oo.SimulatedOoPowerMeter
+import org.jason.siph.domain.oo.SimulatedTemperatureController
+import org.jason.siph.domain.oo.SimulatedTunableLaser
+import org.jason.siph.domain.oo.SimulatedWaferProber
+import org.jason.siph.domain.oo.TemperatureControllerPort
+import org.jason.siph.domain.oo.TunableLaserPort
+import org.jason.siph.domain.oo.UnavailableOoAlignmentPort
+import org.jason.siph.domain.oo.UnavailableOoPowerMeter
+import org.jason.siph.domain.oo.UnavailableTemperatureController
+import org.jason.siph.domain.oo.UnavailableTunableLaser
+import org.jason.siph.domain.oo.UnavailableWaferProber
+import org.jason.siph.domain.oo.WaferProberPort
+import org.jason.siph.domain.oo.WaferTraversalPlanner
 import org.jason.siph.domain.optical.OpticalPowerMeterPort
 import org.jason.siph.domain.positioner.OpticalPose
 import org.jason.siph.domain.positioner.OpticalPositionerPort
@@ -51,14 +72,20 @@ data class RealHardwarePorts(
     val waferStage: WaferStagePort? = null,
     val probeTracking: ProbeTrackingPort? = null,
     val calibrationProfiles: CalibrationProfileRepository? = null,
-    val autonomyRepositories: AutonomyRepositoryBundle? = null
+    val autonomyRepositories: AutonomyRepositoryBundle? = null,
+    val ooPowerMeter: OoOpticalPowerMeterPort? = null,
+    val tunableLaser: TunableLaserPort? = null,
+    val waferProber: WaferProberPort? = null,
+    val temperatureController: TemperatureControllerPort? = null,
+    val ooAlignment: OoAlignmentPort? = null,
+    val ooMeasurements: OoMeasurementRepository? = null
 )
 
 /**
  * SiPh Studio 的公共 Koin 模块。
  *
  * Real 模式没有传入对应硬件端口时，使用明确失败的未配置实现，绝不回退到 Demo。
- * 工作流数据仓储与硬件模式无关，Desktop 可在 Demo/Real 下共同使用 JVM JSON 实现。
+ * 第一阶段与 O-O 第二阶段分别使用独立端口，避免扫描能力破坏现有自动耦光契约。
  */
 fun createSiPhAppModule(
     scope: CoroutineScope,
@@ -70,6 +97,8 @@ fun createSiPhAppModule(
     val epochClock = { Clock.System.now().toEpochMilliseconds() }
     val autonomyRepository = realHardwarePorts?.autonomyRepositories
         ?: InMemoryAutonomyRepository()
+    val ooRepository = realHardwarePorts?.ooMeasurements
+        ?: InMemoryOoMeasurementRepository()
 
     return module {
         single { runtimeMode }
@@ -231,6 +260,57 @@ fun createSiPhAppModule(
                 trainer = get(),
                 calibrationVerifier = get(),
                 workflowRunner = get(),
+                nowEpochMs = epochClock
+            )
+        }
+
+        if (runtimeMode == HardwareRuntimeMode.Demo) {
+            single { SimulatedOoEnvironment() }
+        }
+
+        single<OoMeasurementRepository> { ooRepository }
+        single<TunableLaserPort> {
+            when (runtimeMode) {
+                HardwareRuntimeMode.Demo -> SimulatedTunableLaser(get())
+                HardwareRuntimeMode.Real -> realHardwarePorts?.tunableLaser ?: UnavailableTunableLaser()
+            }
+        }
+        single<OoOpticalPowerMeterPort> {
+            when (runtimeMode) {
+                HardwareRuntimeMode.Demo -> SimulatedOoPowerMeter(get())
+                HardwareRuntimeMode.Real -> realHardwarePorts?.ooPowerMeter ?: UnavailableOoPowerMeter()
+            }
+        }
+        single<WaferProberPort> {
+            when (runtimeMode) {
+                HardwareRuntimeMode.Demo -> SimulatedWaferProber(get())
+                HardwareRuntimeMode.Real -> realHardwarePorts?.waferProber ?: UnavailableWaferProber()
+            }
+        }
+        single<TemperatureControllerPort> {
+            when (runtimeMode) {
+                HardwareRuntimeMode.Demo -> SimulatedTemperatureController(get())
+                HardwareRuntimeMode.Real ->
+                    realHardwarePorts?.temperatureController ?: UnavailableTemperatureController()
+            }
+        }
+        single<OoAlignmentPort> {
+            when (runtimeMode) {
+                HardwareRuntimeMode.Demo -> SimulatedOoAlignmentPort(get())
+                HardwareRuntimeMode.Real ->
+                    realHardwarePorts?.ooAlignment ?: UnavailableOoAlignmentPort()
+            }
+        }
+        single { WaferTraversalPlanner() }
+        single<OoMeasurementRunner> {
+            DefaultOoMeasurementRunner(
+                laser = get(),
+                powerMeter = get(),
+                prober = get(),
+                temperatureController = get(),
+                alignment = get(),
+                repository = get(),
+                traversalPlanner = get(),
                 nowEpochMs = epochClock
             )
         }
