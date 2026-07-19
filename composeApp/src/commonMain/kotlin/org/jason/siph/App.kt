@@ -24,6 +24,8 @@ import org.jason.siph.ui.inspection.InspectionCalibrationStore
 import org.jason.siph.ui.model.CouplingToolPage
 import org.jason.siph.ui.oo.OoMeasurementPanel
 import org.jason.siph.ui.oo.OoMeasurementStore
+import org.jason.siph.ui.production.ProductionClusterPanel
+import org.jason.siph.ui.production.ProductionClusterStore
 import org.jason.siph.ui.production.ProductionControlPanel
 import org.jason.siph.ui.production.ProductionControlStore
 import org.jason.siph.ui.safety.MotionSafetySettingsStore
@@ -82,12 +84,14 @@ fun App(
             val ooStore = koinInject<OoMeasurementStore>()
             val inspectionStore = koinInject<InspectionCalibrationStore>()
             val productionStore = koinInject<ProductionControlStore>()
+            val productionClusterStore = koinInject<ProductionClusterStore>()
             val couplingState by couplingStore.state.collectAsState()
             val safetyState by safetyStore.state.collectAsState()
             val autonomousState by autonomousStore.state.collectAsState()
             val ooState by ooStore.state.collectAsState()
             val inspectionState by inspectionStore.state.collectAsState()
             val productionState by productionStore.state.collectAsState()
+            val productionClusterState by productionClusterStore.state.collectAsState()
 
             Surface(
                 modifier = Modifier.fillMaxSize(),
@@ -99,6 +103,11 @@ fun App(
                         ProductionControlPanel(
                             state = productionState,
                             onAction = productionStore::dispatch,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        ProductionClusterPanel(
+                            state = productionClusterState,
+                            onAction = productionClusterStore::dispatch,
                             modifier = Modifier.fillMaxWidth()
                         )
                         InspectionCalibrationPanel(
