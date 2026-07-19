@@ -57,7 +57,7 @@ internal actual fun LwjglPowerSurface3d(
             modifier = Modifier.fillMaxSize(),
             config = config,
             onPointHovered = {},
-            tooltipText = ::gpuTooltipText
+            tooltipText = { point -> gpuTooltipText(scene, point) }
         )
 
         if (mesh == null) {
@@ -154,15 +154,25 @@ internal fun buildGpuSurfaceScene(
     )
 }
 
-private fun gpuTooltipText(point: GpuSurfacePoint): String {
-    val value = point.position
+private fun gpuTooltipText(
+    scene: GpuScene,
+    point: GpuSurfacePoint
+): String {
+    val dataPosition = scene.layers
+        .firstOrNull { it.id == point.layerId }
+        ?.mesh
+        ?.vertices
+        ?.getOrNull(point.vertexIndex)
+        ?.dataPosition
+        ?: point.position
+
     return buildString {
         append("X = ")
-        append(formatGpuValue(value.x))
+        append(formatGpuValue(dataPosition.x))
         append(" um\nY = ")
-        append(formatGpuValue(value.y))
+        append(formatGpuValue(dataPosition.y))
         append(" um\nPower = ")
-        append(formatGpuValue(value.z))
+        append(formatGpuValue(dataPosition.z))
         append(" dBm")
     }
 }
