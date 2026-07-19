@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import org.jason.siph.di.RealHardwarePorts
 import org.jason.siph.di.createSiPhAppModule
 import org.jason.siph.domain.runtime.HardwareRuntimeMode
 import org.jason.siph.ui.autonomy.AutonomousWorkflowStore
@@ -24,14 +25,16 @@ import org.koin.dsl.koinConfiguration
 @Composable
 @androidx.compose.ui.tooling.preview.Preview
 fun App(
-    runtimeMode: HardwareRuntimeMode = HardwareRuntimeMode.Demo
+    runtimeMode: HardwareRuntimeMode = HardwareRuntimeMode.Demo,
+    realHardwarePorts: RealHardwarePorts? = null
 ) {
     AerospaceTheme {
         val scope = rememberCoroutineScope()
-        val appModule = remember(scope, runtimeMode) {
+        val appModule = remember(scope, runtimeMode, realHardwarePorts) {
             createSiPhAppModule(
                 scope = scope,
-                runtimeMode = runtimeMode
+                runtimeMode = runtimeMode,
+                realHardwarePorts = realHardwarePorts
             )
         }
 
