@@ -29,6 +29,7 @@ import org.jason.siph.domain.production.ReplicatingProductionAuditService
 import org.jason.siph.domain.production.RoleBasedProductionAuthorizationService
 import org.jason.siph.domain.production.RuleBasedProductionAnomalyClassifier
 import org.jason.siph.domain.production.SimulatedProductionMeasurementExecutor
+import org.jason.siph.domain.production.StrictDistributedProductionCoordinator
 import org.jason.siph.domain.production.UnavailableMesGateway
 import org.jason.siph.domain.production.UnavailableProductionMeasurementExecutor
 import org.jason.siph.domain.production.UnavailableRemoteAuditSink
@@ -63,8 +64,9 @@ fun createProductionModule(
     } else {
         emptySet()
     }
+    val strictCoordinator = StrictDistributedProductionCoordinator(distributedCoordinator)
     val coordinator = AutoRegisteringDistributedProductionCoordinator(
-        delegate = distributedCoordinator,
+        delegate = strictCoordinator,
         registrationFactory = { workerId, nowEpochMs ->
             workerCapabilities.takeIf { it.isNotEmpty() }?.let { capabilities ->
                 ProductionWorkerRegistration(
