@@ -19,14 +19,12 @@ import org.jason.siph.domain.oo.TemperatureControllerPort
 import org.jason.siph.domain.oo.TemperatureStabilityPolicy
 import org.jason.siph.domain.positioner.OpticalCoordinateFrame
 import org.jason.siph.domain.positioner.OpticalDelta
-import org.jason.siph.domain.positioner.OpticalPose
 import org.jason.siph.domain.positioner.OpticalPositionerPort
 import org.jason.siph.domain.positioner.VirtualPivotPoint
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.hypot
-import kotlin.math.max
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -186,10 +184,12 @@ class ProbeHeightTrainer(
                 zUm = contactPose.zUm - request.approachDirectionSign *
                     (request.approachGapUm - request.contactGapUm)
             )
-            val safePose = contactPose.copy(
-                zUm = contactPose.zUm - request.approachDirectionSign * request.safeClearanceUm
-            )
             val surfaceZ = contactPose.zUm + request.approachDirectionSign * request.contactGapUm
+
+            // The verified system safe pose owns the Z direction and clearance convention.
+            // Never infer a safe direction from the training approach sign.
+            positioner.moveToSafePose()
+            val safePose = positioner.currentPose()
             val profile = ProbeHeightProfile(
                 id = request.id,
                 site = request.site,
@@ -202,15 +202,15 @@ class ProbeHeightTrainer(
                 trainedAtEpochMs = nowEpochMs(),
                 verified = true,
                 sampleCount = sampleCount,
-                message = "Probe height trained with displacement feedback"
+                message = "Probe height trained with displacement feedback and returned to verified safe pose"
             )
             repository.saveHeightProfile(profile)
-            positioner.moveTo(safePose, wait = true)
             profile
         } catch (error: Throwable) {
             withContext(NonCancellable) {
                 runCatching { positioner.stop() }
-                runCatching { positioner.moveTo(startPose, wait = true) }
+                runCatching { positioner.moveToSafePose() }
+                    .recoverCatching { positioner.moveTo(startPose, wait = true) }
             }
             throw error
         }
@@ -226,7 +226,9 @@ class ProbeHeightTrainer(
     private suspend fun averageGap(request: ProbeHeightTrainingRequest): Double {
         val samples = List(request.samplesPerStep) {
             sensor.sample().also { sample ->
-                check(sample.valid && !sample.saturated) { sample.message ?: "Invalid Z displacement sample" }
+                check(sample.valid && !sample.saturated) {
+                    sample.message ?: "Invalid Z displacement sample"
+                }
                 check(sample.confidence >= request.minimumSensorConfidence) {
                     "Z sensor confidence ${sample.confidence} is below ${request.minimumSensorConfidence}"
                 }
@@ -251,7 +253,6 @@ class PivotCalibrationService(
         val basePose = positioner.currentPose()
         val baseline = detectCenter(request.featureKind)
         val samples = mutableListOf<PivotCalibrationSample>()
-        val pivotDistances = mutableListOf<Double>()
 
         try {
             listOf("U", "V").forEach { axis ->
@@ -269,23 +270,15 @@ class PivotCalibrationService(
                             deltaX = center.x - baseline.x,
                             deltaY = center.y - baseline.y
                         )
-                        val actualPose = positioner.currentPose()
                         samples += PivotCalibrationSample(
                             axis = axis,
                             commandedAngleDeg = angle,
                             featureCenterPx = center,
                             observedShiftXUm = shiftX,
                             observedShiftYUm = shiftY,
-                            pose = actualPose,
+                            pose = positioner.currentPose(),
                             timestampEpochMs = nowEpochMs()
                         )
-                        val sine = sin(angle * PI / 180.0)
-                        if (abs(sine) > 1e-9) {
-                            pivotDistances += when (axis) {
-                                "U" -> -shiftY / sine
-                                else -> shiftX / sine
-                            }
-                        }
                     }
                 }
             }
@@ -295,11 +288,32 @@ class PivotCalibrationService(
             }
         }
 
-        require(pivotDistances.isNotEmpty()) { "Pivot calibration produced no valid samples" }
-        val meanDistance = pivotDistances.average()
+        val observations = samples.mapNotNull { sample ->
+            val sine = sin(sample.commandedAngleDeg * PI / 180.0)
+            if (abs(sine) <= 1e-9) {
+                null
+            } else {
+                PivotObservation(
+                    sine = sine,
+                    displacementUm = when (sample.axis) {
+                        "U" -> -sample.observedShiftYUm
+                        else -> sample.observedShiftXUm
+                    }
+                )
+            }
+        }
+        require(observations.isNotEmpty()) { "Pivot calibration produced no valid samples" }
+
+        // Fit displacement = distance * sin(angle) through the origin. This avoids
+        // amplifying sub-pixel quantization by dividing every small-angle sample separately.
+        val denominator = observations.sumOf { it.sine * it.sine }
+        require(denominator > 1e-12) { "Pivot calibration angular span is too small" }
+        val meanDistance = observations.sumOf { it.sine * it.displacementUm } / denominator
         val rmsResidual = sqrt(
-            pivotDistances.sumOf { (it - meanDistance) * (it - meanDistance) } /
-                pivotDistances.size
+            observations.sumOf {
+                val residual = it.displacementUm - meanDistance * it.sine
+                residual * residual
+            } / observations.size
         )
         val verified = rmsResidual <= request.maximumResidualUm
         val result = PivotCalibrationResult(
@@ -317,9 +331,9 @@ class PivotCalibrationService(
             calibratedAtEpochMs = nowEpochMs(),
             verified = verified,
             message = if (verified) {
-                "Pivot calibration verified"
+                "Pivot calibration verified by least-squares image-displacement fit"
             } else {
-                "Pivot residual $rmsResidual um exceeds ${request.maximumResidualUm} um"
+                "Pivot image residual $rmsResidual um exceeds ${request.maximumResidualUm} um"
             }
         )
         repository.savePivotCalibration(result)
@@ -335,6 +349,11 @@ class PivotCalibrationService(
         check(detection.found) { detection.message }
         return requireNotNull(detection.centerPx)
     }
+
+    private data class PivotObservation(
+        val sine: Double,
+        val displacementUm: Double
+    )
 }
 
 data class InspectionCalibrationRunRequest(
@@ -417,7 +436,9 @@ class DefaultInspectionCalibrationRunner(
                 temperatureController.startControl()
                 val stability = temperatureController.waitUntilStable(request.temperatureStability)
                 check(stability.stable) { stability.message }
-                check(!stability.finalSnapshot.alarmActive) { "Temperature controller alarm is active" }
+                check(!stability.finalSnapshot.alarmActive) {
+                    "Temperature controller alarm is active"
+                }
 
                 val pointStartedAt = nowEpochMs()
                 setStage(
@@ -555,12 +576,17 @@ class DefaultInspectionCalibrationRunner(
 
     override suspend fun requestStop() {
         stopRequested.value = true
-        mutableState.update { it.copy(stopRequested = true, message = "Inspection stop requested") }
+        mutableState.update {
+            it.copy(stopRequested = true, message = "Inspection stop requested")
+        }
         safeShutdown()
     }
 
     private suspend fun connectDevices() {
-        setStage(InspectionCalibrationStage.ConnectDevices, "Connecting camera, Z sensor and temperature controller")
+        setStage(
+            InspectionCalibrationStage.ConnectDevices,
+            "Connecting camera, Z sensor and temperature controller"
+        )
         positioner.connect()
         positioner.startup(reference = false)
         camera.connect()
@@ -598,7 +624,9 @@ class DefaultInspectionCalibrationRunner(
     }
 
     private fun ensureRunning() {
-        if (stopRequested.value) throw CancellationException("Inspection calibration stop requested")
+        if (stopRequested.value) {
+            throw CancellationException("Inspection calibration stop requested")
+        }
     }
 
     private fun requireUsable(descriptor: DeviceDescriptor) {
