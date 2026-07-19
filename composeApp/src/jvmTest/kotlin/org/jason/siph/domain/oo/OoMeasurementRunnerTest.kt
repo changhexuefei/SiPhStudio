@@ -39,13 +39,13 @@ class OoMeasurementRunnerTest {
     }
 
     @Test
-    fun injectedMoveFailureIsRetriedAndRecorded() {
+    fun injectedContactFailureIsRetriedAndRecorded() {
         runBlocking {
             var now = 2_000L
             val repository = InMemoryOoMeasurementRepository()
             val environment = SimulatedOoEnvironment(
                 DeviceFaultPlan(
-                    failOperationCounts = mapOf("prober.moveToSite" to 1)
+                    failOperationCounts = mapOf("prober.contact" to 1)
                 )
             )
             val runner = runner(environment, repository) { now++ }
@@ -65,7 +65,7 @@ class OoMeasurementRunnerTest {
 
             assertTrue(result.completed)
             assertTrue(result.failures.any {
-                it.stage == OoMeasurementStage.MoveToSite && it.recoverable
+                it.stage == OoMeasurementStage.Contact && it.recoverable
             })
             assertNull(repository.findCheckpoint("run-retry"))
         }
