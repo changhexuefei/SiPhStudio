@@ -12,13 +12,6 @@ plugins {
 val currentOs = OperatingSystem.current()
 val currentArch = System.getProperty("os.arch").lowercase()
 
-val javafxPlatform = when {
-    currentOs.isWindows -> "win"
-    currentOs.isMacOsX -> if (currentArch == "aarch64" || currentArch == "arm64") "mac-aarch64" else "mac"
-    currentOs.isLinux -> "linux"
-    else -> error("Unsupported JavaFX platform: ${currentOs.name}")
-}
-
 val lwjglPlatform = when {
     currentOs.isWindows -> "natives-windows"
     currentOs.isMacOsX -> if (currentArch == "aarch64" || currentArch == "arm64") "natives-macos-arm64" else "natives-macos"
@@ -26,7 +19,6 @@ val lwjglPlatform = when {
     else -> error("Unsupported LWJGL platform: ${currentOs.name}")
 }
 
-val javafxVersion = libs.versions.javafx.get()
 val lwjglVersion = libs.versions.lwjgl.get()
 val surfacePlotComposeAbiVersion = "1.11.1"
 
@@ -87,11 +79,6 @@ kotlin {
             implementation(libs.kotlinx.coroutinesSwing)
             implementation(files("libs/surface-plot-jvm-1.0.0.jar"))
             implementation(files("libs/surface-plot-opengl-jvm-1.0.0.jar"))
-
-            implementation("org.openjfx:javafx-base:$javafxVersion:$javafxPlatform")
-            implementation("org.openjfx:javafx-controls:$javafxVersion:$javafxPlatform")
-            implementation("org.openjfx:javafx-graphics:$javafxVersion:$javafxPlatform")
-            implementation("org.openjfx:javafx-swing:$javafxVersion:$javafxPlatform")
 
             implementation(project.dependencies.platform("org.lwjgl:lwjgl-bom:$lwjglVersion"))
             implementation(libs.lwjgl)

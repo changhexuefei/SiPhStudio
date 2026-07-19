@@ -31,9 +31,6 @@ lets-plot-compose = "3.2.2"
 # Logging
 slf4j = "2.0.17"
 
-# Desktop JVM
-javafx = "21.0.5"
-
 # LWJGL
 lwjgl = "3.4.1"
 lwjgl3-awt = "0.2.4"
@@ -94,18 +91,6 @@ lets-plot-compose = { module = "org.jetbrains.lets-plot:lets-plot-compose", vers
 # Logging
 # =========================================================
 slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
-
-# =========================================================
-# JavaFX
-#
-# 注意：
-# JavaFX 在 Desktop 里通常需要平台 classifier：
-# win / mac / mac-aarch64 / linux
-# =========================================================
-javafx-base = { module = "org.openjfx:javafx-base", version.ref = "javafx" }
-javafx-controls = { module = "org.openjfx:javafx-controls", version.ref = "javafx" }
-javafx-graphics = { module = "org.openjfx:javafx-graphics", version.ref = "javafx" }
-javafx-swing = { module = "org.openjfx:javafx-swing", version.ref = "javafx" }
 
 # =========================================================
 # LWJGL

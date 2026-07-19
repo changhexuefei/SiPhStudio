@@ -4,7 +4,7 @@ import androidx.compose.ui.graphics.Color
 import org.jason.siph.ui.theme.AerospacePalette
 
 /**
- * JavaFX 与 GPU OpenGL 共享的三维曲面视觉和相机配置。
+ * Surface Plot 与 GPU OpenGL 共享的三维曲面视觉和相机配置。
  *
  * 数据坐标：
  * - X/Y：真实位移，单位 um；

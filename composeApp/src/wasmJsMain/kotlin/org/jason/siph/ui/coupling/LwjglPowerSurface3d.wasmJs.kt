@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 internal actual fun LwjglPowerSurface3d(
     mesh: SurfaceMesh?,
+    active: Boolean,
     modifier: Modifier
 ) {
     Surface(

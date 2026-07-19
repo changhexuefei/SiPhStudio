@@ -1,19 +1,26 @@
 package org.jason.siph.ui.coupling
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -33,12 +40,6 @@ internal enum class AerospaceSurfaceBackend(
         caption = "Cached mesh renderer with orbit, zoom and contours",
         enabled = true
     ),
-    JavaFx3d(
-        label = "JAVAFX",
-        caption = "Persistent JavaFX scene with textured TriangleMesh",
-        enabled = true
-    ),
-
     /** 枚举名为兼容旧状态保留，实际实现已经替换为 GPU OpenGL JAR。 */
     Lwjgl(
         label = "GPU OPENGL",
@@ -73,24 +74,50 @@ internal fun AerospacePowerSurface3d(
             modifier = Modifier.fillMaxWidth()
         )
 
-        when (selectedBackend) {
-            AerospaceSurfaceBackend.SurfacePlot -> SurfacePlotPowerSurface3d(
-                mesh = mesh,
-                title = "POWER SURFACE",
-                initialAzimuthDegrees = spec.initialAzimuthDegrees,
-                initialElevationDegrees = spec.initialElevationDegrees,
-                modifier = Modifier.fillMaxWidth().weight(1f)
-            )
+        val retainedBackends = remember { mutableStateListOf(selectedBackend) }
+        LaunchedEffect(selectedBackend) {
+            if (selectedBackend !in retainedBackends) retainedBackends += selectedBackend
+        }
 
-            AerospaceSurfaceBackend.JavaFx3d -> JavaFxPowerSurface3d(
-                mesh = mesh,
-                modifier = Modifier.fillMaxWidth().weight(1f)
-            )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .background(AerospacePlotBackground)
+        ) {
+            retainedBackends.forEach { backend ->
+                key(backend) {
+                    val isActive = backend == selectedBackend
+                    val showingComposeSurface = selectedBackend == AerospaceSurfaceBackend.SurfacePlot
+                    val hideInteropLayer = backend != AerospaceSurfaceBackend.SurfacePlot && showingComposeSurface
+                    val backendModifier = when {
+                        backend == AerospaceSurfaceBackend.SurfacePlot && !isActive ->
+                            Modifier.size(0.dp).zIndex(0f)
 
-            AerospaceSurfaceBackend.Lwjgl -> LwjglPowerSurface3d(
-                mesh = mesh,
-                modifier = Modifier.fillMaxWidth().weight(1f)
-            )
+                        hideInteropLayer ->
+                            Modifier.size(0.dp).zIndex(0f)
+
+                        else ->
+                            Modifier.fillMaxSize().zIndex(if (isActive) 1f else 0f)
+                    }
+
+                    when (backend) {
+                        AerospaceSurfaceBackend.SurfacePlot -> SurfacePlotPowerSurface3d(
+                            mesh = mesh,
+                            title = "POWER SURFACE",
+                            initialAzimuthDegrees = spec.initialAzimuthDegrees,
+                            initialElevationDegrees = spec.initialElevationDegrees,
+                            modifier = backendModifier
+                        )
+
+                        AerospaceSurfaceBackend.Lwjgl -> LwjglPowerSurface3d(
+                            mesh = mesh,
+                            active = isActive,
+                            modifier = backendModifier
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -318,14 +345,9 @@ internal data class SurfacePoint(
 )
 
 @Composable
-internal expect fun JavaFxPowerSurface3d(
-    mesh: SurfaceMesh?,
-    modifier: Modifier = Modifier
-)
-
-@Composable
 internal expect fun LwjglPowerSurface3d(
     mesh: SurfaceMesh?,
+    active: Boolean = true,
     modifier: Modifier = Modifier
 )
 

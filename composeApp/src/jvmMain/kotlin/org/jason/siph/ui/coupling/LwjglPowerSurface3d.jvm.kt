@@ -2,6 +2,7 @@ package org.jason.siph.ui.coupling
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.background
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -33,6 +34,7 @@ import java.util.Locale
 @Composable
 internal actual fun LwjglPowerSurface3d(
     mesh: SurfaceMesh?,
+    active: Boolean,
     modifier: Modifier
 ) {
     val spec = CouplingSurfaceRenderSpec
@@ -53,11 +55,12 @@ internal actual fun LwjglPowerSurface3d(
         )
     }
 
-    Box(modifier = modifier) {
+    Box(modifier = modifier.background(AerospacePlotBackground)) {
         GpuSurfacePlot(
             scene = scene,
             modifier = Modifier.fillMaxSize(),
             config = config,
+            active = active,
             onPointHovered = {},
             tooltipText = { point -> gpuTooltipText(scene, point) }
         )
