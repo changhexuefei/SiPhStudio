@@ -18,7 +18,6 @@ import org.jason.siph.domain.coupling.CouplingRunner
 import org.jason.siph.domain.optical.OpticalPowerMeterPort
 import org.jason.siph.domain.positioner.OpticalPositionerPort
 import kotlin.math.min
-import kotlin.math.pow
 
 interface SiPhWorkflowRunner {
     val state: StateFlow<SiPhWorkflowState>
@@ -33,11 +32,10 @@ interface SiPhWorkflowRunner {
 }
 
 /**
- * 不依赖视觉、晶圆台和位移传感器的第一阶段自主工作流。
+ * 第一阶段自主硅光工作流。
  *
- * 所有运动均经过现有 [OpticalPositionerPort]，因此真实模式仍受统一软件限位、
- * 控制器行程和安全位保护。每个成功阶段都会落检查点，失败阶段按策略自动停止、
- * 恢复到训练位置并重试。
+ * 不依赖视觉、晶圆台或位移传感器。所有运动均通过 [OpticalPositionerPort]，
+ * 因而继续受现有软件限位、控制器行程和安全位保护。
  */
 class DefaultSiPhWorkflowRunner(
     private val positioner: OpticalPositionerPort,
@@ -56,8 +54,9 @@ class DefaultSiPhWorkflowRunner(
 
     private val runMutex = Mutex()
     private val mutableState = MutableStateFlow(SiPhWorkflowState())
-    override val state: StateFlow<SiPhWorkflowState> = mutableState.asStateFlow()
     private val stopRequested = MutableStateFlow(false)
+
+    override val state: StateFlow<SiPhWorkflowState> = mutableState.asStateFlow()
 
     override suspend fun run(
         recipe: SiPhWorkflowRecipe,
@@ -67,263 +66,120 @@ class DefaultSiPhWorkflowRunner(
         require(runId.isNotBlank()) { "runId must not be blank" }
         stopRequested.value = false
 
-        val stageOrder = buildList {
-            add(SiPhWorkflowStage.InspectHardware)
-            add(SiPhWorkflowStage.VerifyCalibration)
-            add(SiPhWorkflowStage.ResolveMeasurementPosition)
-            add(SiPhWorkflowStage.MoveToMeasurementPosition)
-            add(SiPhWorkflowStage.AutoCoupling)
-            if (recipe.enableVerification) add(SiPhWorkflowStage.VerifyReturnRepeatability)
-            if (recipe.enableDriftAssessment) add(SiPhWorkflowStage.AssessDrift)
-            add(SiPhWorkflowStage.PersistMeasurement)
-        }
+        val stageOrder = stageOrder(recipe)
         val startedAt = nowEpochMs()
-        var checkpoint = if (resumeFromCheckpoint) checkpoints.findCheckpoint(runId) else null
-        if (checkpoint != null && checkpoint.recipe.id != recipe.id) {
-            error("Checkpoint recipe mismatch: ${checkpoint.recipe.id} != ${recipe.id}")
+        val restored = if (resumeFromCheckpoint) checkpoints.findCheckpoint(runId) else null
+        if (restored != null && restored.recipe.id != recipe.id) {
+            error("Checkpoint recipe mismatch: ${restored.recipe.id} != ${recipe.id}")
         }
-        if (checkpoint == null) {
-            checkpoint = SiPhWorkflowCheckpoint(
-                runId = runId,
-                recipe = recipe,
-                completedStages = emptySet(),
-                currentStage = SiPhWorkflowStage.Idle,
-                updatedAtEpochMs = startedAt
+
+        var checkpoint: SiPhWorkflowCheckpoint = restored ?: SiPhWorkflowCheckpoint(
+            runId = runId,
+            recipe = recipe,
+            completedStages = emptySet(),
+            currentStage = SiPhWorkflowStage.Idle,
+            updatedAtEpochMs = startedAt
+        )
+        if (restored == null) checkpoints.saveCheckpoint(checkpoint)
+
+        val context = WorkflowRunContext(
+            trainedPosition = checkpoint.trainedPosition,
+            record = checkpoint.measurementRecordId?.let { records.findRecord(it) }
+        )
+
+        /*
+         * 检查点尚未产生测量记录时，恢复后必须重新构建设备身份、校准和训练位置上下文。
+         * 这些阶段都是只读或安全绝对移动，可重复执行。
+         */
+        val completedStages = checkpoint.completedStages.toMutableSet()
+        if (context.record == null) {
+            completedStages.removeAll(
+                setOf(
+                    SiPhWorkflowStage.InspectHardware,
+                    SiPhWorkflowStage.VerifyCalibration,
+                    SiPhWorkflowStage.ResolveMeasurementPosition,
+                    SiPhWorkflowStage.MoveToMeasurementPosition,
+                    SiPhWorkflowStage.AutoCoupling
+                )
             )
-            checkpoints.saveCheckpoint(checkpoint)
         }
 
         val progress = stageOrder.map { stage ->
             WorkflowStageProgress(
                 stage = stage,
-                status = if (stage in checkpoint.completedStages) {
+                status = if (stage in completedStages) {
                     WorkflowStageStatus.Succeeded
                 } else {
                     WorkflowStageStatus.Pending
                 }
             )
         }.toMutableList()
+
         mutableState.value = SiPhWorkflowState(
             runId = runId,
             recipeId = recipe.id,
             stage = checkpoint.currentStage,
             stageProgress = progress,
-            message = if (checkpoint.completedStages.isEmpty()) {
+            message = if (restored == null) {
                 "Workflow started"
             } else {
-                "Workflow resumed from ${checkpoint.currentStage}"
+                "Workflow restored from checkpoint"
             },
             running = true,
-            completedStageCount = checkpoint.completedStages.size,
+            completedStageCount = completedStages.size,
             totalStageCount = stageOrder.size,
-            measurementRecordId = checkpoint.measurementRecordId,
+            measurementRecordId = context.record?.id,
             startedAtEpochMs = startedAt
         )
-
-        var calibration: CalibrationProfile? = null
-        var trainedPosition: TrainedMeasurementPosition? = checkpoint.trainedPosition
-        var positionerIdentity: String? = null
-        var powerMeterIdentity: String? = null
-        var couplingResult: CouplingResult? = null
-        var record: SiPhMeasurementRecord? = checkpoint.measurementRecordId
-            ?.let { records.findRecord(it) }
-        var verification = record?.verification
-        var driftAssessment = record?.driftAssessment
 
         try {
             for (stage in stageOrder) {
                 currentCoroutineContext().ensureActive()
                 ensureNotStopped()
-                if (stage in checkpoint.completedStages) continue
+                if (stage in completedStages) continue
 
                 executeStageWithRetry(
                     stage = stage,
                     retryPolicy = recipe.retryPolicy,
                     progress = progress,
-                    trainedPositionProvider = { trainedPosition }
-                ) {
-                    when (stage) {
-                        SiPhWorkflowStage.InspectHardware -> {
-                            if (recipe.manageDeviceConnections) {
-                                positioner.connect()
-                                powerMeter.connect()
-                                positioner.startup(reference = false)
-                            }
-                            positionerIdentity = positioner.identify().also {
-                                require(it.isNotBlank()) { "Positioner identity is blank" }
-                            }
-                            powerMeterIdentity = powerMeter.identify().also {
-                                require(it.isNotBlank()) { "Power meter identity is blank" }
-                            }
-                            powerMeter.setWavelengthNm(
-                                wavelengthNm = recipe.couplingConfig.wavelengthNm,
-                                channel = recipe.couplingConfig.powerMeterChannel
-                            )
-                        }
-
-                        SiPhWorkflowStage.VerifyCalibration -> {
-                            calibration = resolveCalibration(recipe)
-                            val expectedController = calibration?.controllerIdentity
-                            if (!expectedController.isNullOrBlank() &&
-                                positionerIdentity != null &&
-                                !positionerIdentity!!.contains(expectedController, ignoreCase = true)
-                            ) {
-                                throw WorkflowStageException(
-                                    "Controller identity does not match calibration profile",
-                                    recoverable = false
-                                )
-                            }
-                        }
-
-                        SiPhWorkflowStage.ResolveMeasurementPosition -> {
-                            trainedPosition = resolvePosition(recipe)
-                            if (trainedPosition!!.calibrationProfileId != calibration!!.id) {
-                                throw WorkflowStageException(
-                                    "Trained position belongs to calibration ${trainedPosition!!.calibrationProfileId}, " +
-                                        "active calibration is ${calibration!!.id}",
-                                    recoverable = false
-                                )
-                            }
-                        }
-
-                        SiPhWorkflowStage.MoveToMeasurementPosition -> {
-                            positioner.moveTo(trainedPosition!!.pose, wait = true)
-                            val actual = positioner.currentPose()
-                            val errorUm = actual.linearDistanceTo(trainedPosition!!.pose)
-                            if (errorUm > recipe.verificationConfig.maxReturnPositionErrorUm) {
-                                throw WorkflowStageException(
-                                    "Initial move position error $errorUm um exceeds allowed value",
-                                    recoverable = true
-                                )
-                            }
-                        }
-
-                        SiPhWorkflowStage.AutoCoupling -> {
-                            val startPose = positioner.currentPose()
-                            val result = couplingRunner.run(
-                                initialPose = startPose,
-                                config = recipe.couplingConfig,
-                                shouldStop = { stopRequested.value }
-                            )
-                            when (result.status) {
-                                CouplingResultStatus.Success,
-                                CouplingResultStatus.TargetNotReached -> Unit
-                                CouplingResultStatus.Stopped -> throw CancellationException(
-                                    result.message ?: "Coupling stopped"
-                                )
-                                CouplingResultStatus.FirstLightNotFound -> throw WorkflowStageException(
-                                    result.message ?: "First light was not found",
-                                    recoverable = true
-                                )
-                                CouplingResultStatus.Failed -> throw WorkflowStageException(
-                                    result.message ?: "Coupling failed",
-                                    recoverable = true
-                                )
-                            }
-                            couplingResult = result
-                            record = createPartialRecord(
-                                runId = runId,
-                                recipe = recipe,
-                                calibration = calibration!!,
-                                trainedPosition = trainedPosition!!,
-                                positionerIdentity = requireNotNull(positionerIdentity),
-                                powerMeterIdentity = requireNotNull(powerMeterIdentity),
-                                result = result,
-                                startedAt = startedAt
-                            )
-                            records.saveRecord(record!!)
-                        }
-
-                        SiPhWorkflowStage.VerifyReturnRepeatability -> {
-                            val result = requireCouplingResult(couplingResult, record)
-                            verification = verifier.verify(
-                                bestPose = result.bestPose,
-                                powerMeterChannel = recipe.couplingConfig.powerMeterChannel,
-                                config = recipe.verificationConfig
-                            )
-                            record = requireNotNull(record).copy(verification = verification)
-                            records.saveRecord(record!!)
-                            if (verification?.passed != true) {
-                                throw WorkflowStageException(
-                                    "Optical return verification failed: ${verification?.failures?.joinToString()}",
-                                    recoverable = true
-                                )
-                            }
-                        }
-
-                        SiPhWorkflowStage.AssessDrift -> {
-                            val currentRecord = requireNotNull(record)
-                            val baseline = baselines.findBaseline(recipe.site)
-                            if (baseline == null) {
-                                baselines.saveBaseline(
-                                    DriftBaseline(
-                                        id = "baseline-${recipe.site.stableId}",
-                                        site = recipe.site,
-                                        referencePose = currentRecord.provenance.bestPose,
-                                        referencePowerDbm = currentRecord.bestPowerDbm,
-                                        calibrationProfileId = calibration!!.id,
-                                        createdAtEpochMs = nowEpochMs()
-                                    )
-                                )
-                                driftAssessment = null
-                            } else {
-                                driftAssessment = driftEvaluator.assess(
-                                    baseline = baseline,
-                                    currentPose = currentRecord.provenance.bestPose,
-                                    currentPowerDbm = currentRecord.bestPowerDbm,
-                                    currentTemperatureC = null,
-                                    policy = recipe.driftPolicy
-                                )
-                                record = currentRecord.copy(driftAssessment = driftAssessment)
-                                records.saveRecord(record!!)
-                                when (driftAssessment?.action) {
-                                    DriftAction.StopWorkflow -> throw WorkflowStageException(
-                                        "Drift policy requested workflow stop",
-                                        recoverable = false
-                                    )
-                                    DriftAction.FullRecalibration -> throw WorkflowStageException(
-                                        "Drift requires full recalibration",
-                                        recoverable = false
-                                    )
-                                    DriftAction.LocalRealign,
-                                    DriftAction.Continue,
-                                    null -> Unit
-                                }
-                            }
-                        }
-
-                        SiPhWorkflowStage.PersistMeasurement -> {
-                            val current = requireNotNull(record)
-                            record = current.copy(
-                                verification = verification,
-                                driftAssessment = driftAssessment,
-                                completed = true,
-                                provenance = current.provenance.copy(
-                                    finalPose = positioner.currentPose(),
-                                    finishedAtEpochMs = nowEpochMs()
-                                )
-                            )
-                            records.saveRecord(record!!)
-                        }
-
-                        else -> Unit
+                    trainedPositionProvider = { context.trainedPosition },
+                    onAttemptFailure = { failure ->
+                        checkpoint = checkpoint.copy(
+                            currentStage = stage,
+                            failures = checkpoint.failures + failure,
+                            trainedPosition = context.trainedPosition,
+                            measurementRecordId = context.record?.id ?: checkpoint.measurementRecordId,
+                            updatedAtEpochMs = nowEpochMs()
+                        )
+                        checkpoints.saveCheckpoint(checkpoint)
                     }
+                ) {
+                    executeStage(
+                        stage = stage,
+                        recipe = recipe,
+                        runId = runId,
+                        workflowStartedAt = startedAt,
+                        context = context
+                    )
                 }
 
+                completedStages += stage
                 checkpoint = checkpoint.copy(
-                    completedStages = checkpoint.completedStages + stage,
+                    completedStages = completedStages.toSet(),
                     currentStage = stage,
-                    trainedPosition = trainedPosition,
-                    bestPose = record?.provenance?.bestPose ?: checkpoint.bestPose,
-                    bestPowerDbm = record?.bestPowerDbm ?: checkpoint.bestPowerDbm,
-                    measurementRecordId = record?.id ?: checkpoint.measurementRecordId,
+                    trainedPosition = context.trainedPosition,
+                    bestPose = context.record?.provenance?.bestPose ?: checkpoint.bestPose,
+                    bestPowerDbm = context.record?.bestPowerDbm ?: checkpoint.bestPowerDbm,
+                    measurementRecordId = context.record?.id ?: checkpoint.measurementRecordId,
                     updatedAtEpochMs = nowEpochMs()
                 )
                 checkpoints.saveCheckpoint(checkpoint)
-                updateCompletedStage(stage, progress, checkpoint.completedStages.size)
+                updateCompletedStage(stage, progress, completedStages.size)
             }
 
-            val completed = requireNotNull(record) { "Workflow completed without measurement record" }
+            val completed = requireNotNull(context.record) {
+                "Workflow completed without a measurement record"
+            }
             checkpoints.deleteCheckpoint(runId)
             mutableState.update {
                 it.copy(
@@ -351,26 +207,30 @@ class DefaultSiPhWorkflowRunner(
             throw cancelled
         } catch (error: Throwable) {
             stopSafely()
-            val failure = WorkflowFailure(
+            val existingFailure = mutableState.value.lastFailure
+            val failure = existingFailure ?: WorkflowFailure(
                 stage = mutableState.value.stage,
                 attempt = mutableState.value.attempt,
                 message = error.message ?: error::class.simpleName ?: "Workflow failure",
-                recoverable = false,
+                recoverable = (error as? WorkflowStageException)?.recoverable ?: false,
                 occurredAtEpochMs = nowEpochMs()
             )
-            checkpoint = checkpoint.copy(
-                currentStage = failure.stage,
-                failures = checkpoint.failures + failure,
-                measurementRecordId = record?.id ?: checkpoint.measurementRecordId,
-                updatedAtEpochMs = nowEpochMs()
-            )
-            checkpoints.saveCheckpoint(checkpoint)
-            record?.let {
+            if (checkpoint.failures.lastOrNull() != failure) {
+                checkpoint = checkpoint.copy(
+                    currentStage = failure.stage,
+                    failures = checkpoint.failures + failure,
+                    trainedPosition = context.trainedPosition,
+                    measurementRecordId = context.record?.id ?: checkpoint.measurementRecordId,
+                    updatedAtEpochMs = nowEpochMs()
+                )
+                checkpoints.saveCheckpoint(checkpoint)
+            }
+            context.record?.let { partial ->
                 records.saveRecord(
-                    it.copy(
+                    partial.copy(
                         completed = false,
                         failureMessage = failure.message,
-                        provenance = it.provenance.copy(finishedAtEpochMs = nowEpochMs())
+                        provenance = partial.provenance.copy(finishedAtEpochMs = nowEpochMs())
                     )
                 )
             }
@@ -380,7 +240,7 @@ class DefaultSiPhWorkflowRunner(
                     message = failure.message,
                     running = false,
                     lastFailure = failure,
-                    measurementRecordId = record?.id,
+                    measurementRecordId = context.record?.id,
                     finishedAtEpochMs = nowEpochMs()
                 )
             }
@@ -401,14 +261,255 @@ class DefaultSiPhWorkflowRunner(
         stopSafely()
     }
 
+    private suspend fun executeStage(
+        stage: SiPhWorkflowStage,
+        recipe: SiPhWorkflowRecipe,
+        runId: String,
+        workflowStartedAt: Long,
+        context: WorkflowRunContext
+    ) {
+        when (stage) {
+            SiPhWorkflowStage.InspectHardware -> inspectHardware(recipe, context)
+            SiPhWorkflowStage.VerifyCalibration -> verifyCalibration(recipe, context)
+            SiPhWorkflowStage.ResolveMeasurementPosition -> resolveMeasurementPosition(recipe, context)
+            SiPhWorkflowStage.MoveToMeasurementPosition -> moveToMeasurementPosition(recipe, context)
+            SiPhWorkflowStage.AutoCoupling -> runCoupling(
+                recipe = recipe,
+                runId = runId,
+                workflowStartedAt = workflowStartedAt,
+                context = context
+            )
+            SiPhWorkflowStage.VerifyReturnRepeatability -> verifyReturnRepeatability(recipe, context)
+            SiPhWorkflowStage.AssessDrift -> assessDrift(recipe, context)
+            SiPhWorkflowStage.PersistMeasurement -> persistCompletedMeasurement(context)
+            else -> Unit
+        }
+    }
+
+    private suspend fun inspectHardware(
+        recipe: SiPhWorkflowRecipe,
+        context: WorkflowRunContext
+    ) {
+        if (recipe.manageDeviceConnections) {
+            positioner.connect()
+            powerMeter.connect()
+            positioner.startup(reference = false)
+        }
+        context.positionerIdentity = positioner.identify().also {
+            require(it.isNotBlank()) { "Positioner identity is blank" }
+        }
+        context.powerMeterIdentity = powerMeter.identify().also {
+            require(it.isNotBlank()) { "Power meter identity is blank" }
+        }
+        powerMeter.setWavelengthNm(
+            wavelengthNm = recipe.couplingConfig.wavelengthNm,
+            channel = recipe.couplingConfig.powerMeterChannel
+        )
+    }
+
+    private suspend fun verifyCalibration(
+        recipe: SiPhWorkflowRecipe,
+        context: WorkflowRunContext
+    ) {
+        val calibration = resolveCalibration(recipe)
+        val expectedController = calibration.controllerIdentity
+        val actualController = context.positionerIdentity ?: positioner.identify().also {
+            context.positionerIdentity = it
+        }
+        if (!expectedController.isNullOrBlank() &&
+            !actualController.contains(expectedController, ignoreCase = true)
+        ) {
+            throw WorkflowStageException(
+                "Controller identity does not match calibration profile",
+                recoverable = false
+            )
+        }
+        context.calibration = calibration
+    }
+
+    private suspend fun resolveMeasurementPosition(
+        recipe: SiPhWorkflowRecipe,
+        context: WorkflowRunContext
+    ) {
+        val calibration = context.calibration ?: resolveCalibration(recipe).also {
+            context.calibration = it
+        }
+        val trained = resolvePosition(recipe)
+        if (trained.calibrationProfileId != calibration.id) {
+            throw WorkflowStageException(
+                "Trained position belongs to calibration ${trained.calibrationProfileId}, " +
+                    "active calibration is ${calibration.id}",
+                recoverable = false
+            )
+        }
+        context.trainedPosition = trained
+    }
+
+    private suspend fun moveToMeasurementPosition(
+        recipe: SiPhWorkflowRecipe,
+        context: WorkflowRunContext
+    ) {
+        val trained = context.trainedPosition ?: resolvePosition(recipe).also {
+            context.trainedPosition = it
+        }
+        positioner.moveTo(trained.pose, wait = true)
+        val actual = positioner.currentPose()
+        val errorUm = actual.linearDistanceTo(trained.pose)
+        if (errorUm > recipe.verificationConfig.maxReturnPositionErrorUm) {
+            throw WorkflowStageException(
+                "Initial move position error $errorUm um exceeds allowed value",
+                recoverable = true
+            )
+        }
+    }
+
+    private suspend fun runCoupling(
+        recipe: SiPhWorkflowRecipe,
+        runId: String,
+        workflowStartedAt: Long,
+        context: WorkflowRunContext
+    ) {
+        val calibration = context.calibration ?: resolveCalibration(recipe).also {
+            context.calibration = it
+        }
+        val trained = context.trainedPosition ?: resolvePosition(recipe).also {
+            context.trainedPosition = it
+        }
+        val positionerIdentity = context.positionerIdentity ?: positioner.identify().also {
+            context.positionerIdentity = it
+        }
+        val powerMeterIdentity = context.powerMeterIdentity ?: powerMeter.identify().also {
+            context.powerMeterIdentity = it
+        }
+        val startPose = positioner.currentPose()
+        val result = couplingRunner.run(
+            initialPose = startPose,
+            config = recipe.couplingConfig,
+            shouldStop = { stopRequested.value }
+        )
+        when (result.status) {
+            CouplingResultStatus.Success,
+            CouplingResultStatus.TargetNotReached -> Unit
+            CouplingResultStatus.Stopped -> throw CancellationException(
+                result.message ?: "Coupling stopped"
+            )
+            CouplingResultStatus.FirstLightNotFound -> throw WorkflowStageException(
+                result.message ?: "First light was not found",
+                recoverable = true
+            )
+            CouplingResultStatus.Failed -> throw WorkflowStageException(
+                result.message ?: "Coupling failed",
+                recoverable = true
+            )
+        }
+        context.couplingResult = result
+        context.record = createPartialRecord(
+            runId = runId,
+            recipe = recipe,
+            calibration = calibration,
+            trainedPosition = trained,
+            positionerIdentity = positionerIdentity,
+            powerMeterIdentity = powerMeterIdentity,
+            result = result,
+            startedAt = workflowStartedAt
+        )
+        records.saveRecord(requireNotNull(context.record))
+    }
+
+    private suspend fun verifyReturnRepeatability(
+        recipe: SiPhWorkflowRecipe,
+        context: WorkflowRunContext
+    ) {
+        val record = requireNotNull(context.record) { "Measurement record is unavailable" }
+        val bestPose = context.couplingResult?.bestPose ?: record.provenance.bestPose
+        val result = verifier.verify(
+            bestPose = bestPose,
+            powerMeterChannel = recipe.couplingConfig.powerMeterChannel,
+            config = recipe.verificationConfig
+        )
+        context.verification = result
+        context.record = record.copy(verification = result)
+        records.saveRecord(requireNotNull(context.record))
+        if (!result.passed) {
+            throw WorkflowStageException(
+                "Optical return verification failed: ${result.failures.joinToString()}",
+                recoverable = true
+            )
+        }
+    }
+
+    private suspend fun assessDrift(
+        recipe: SiPhWorkflowRecipe,
+        context: WorkflowRunContext
+    ) {
+        val record = requireNotNull(context.record) { "Measurement record is unavailable" }
+        val calibrationId = context.calibration?.id ?: record.provenance.calibrationProfileId
+        val baseline = baselines.findBaseline(recipe.site)
+        if (baseline == null) {
+            baselines.saveBaseline(
+                DriftBaseline(
+                    id = "baseline-${recipe.site.stableId}",
+                    site = recipe.site,
+                    referencePose = record.provenance.bestPose,
+                    referencePowerDbm = record.bestPowerDbm,
+                    calibrationProfileId = calibrationId,
+                    createdAtEpochMs = nowEpochMs()
+                )
+            )
+            context.driftAssessment = null
+            return
+        }
+
+        val assessment = driftEvaluator.assess(
+            baseline = baseline,
+            currentPose = record.provenance.bestPose,
+            currentPowerDbm = record.bestPowerDbm,
+            currentTemperatureC = null,
+            policy = recipe.driftPolicy
+        )
+        context.driftAssessment = assessment
+        context.record = record.copy(driftAssessment = assessment)
+        records.saveRecord(requireNotNull(context.record))
+
+        when (assessment.action) {
+            DriftAction.StopWorkflow -> throw WorkflowStageException(
+                "Drift policy requested workflow stop",
+                recoverable = false
+            )
+            DriftAction.FullRecalibration -> throw WorkflowStageException(
+                "Drift requires full recalibration",
+                recoverable = false
+            )
+            DriftAction.LocalRealign,
+            DriftAction.Continue -> Unit
+        }
+    }
+
+    private suspend fun persistCompletedMeasurement(context: WorkflowRunContext) {
+        val record = requireNotNull(context.record) { "Measurement record is unavailable" }
+        val completed = record.copy(
+            verification = context.verification ?: record.verification,
+            driftAssessment = context.driftAssessment ?: record.driftAssessment,
+            completed = true,
+            failureMessage = null,
+            provenance = record.provenance.copy(
+                finalPose = positioner.currentPose(),
+                finishedAtEpochMs = nowEpochMs()
+            )
+        )
+        context.record = completed
+        records.saveRecord(completed)
+    }
+
     private suspend fun executeStageWithRetry(
         stage: SiPhWorkflowStage,
         retryPolicy: WorkflowRetryPolicy,
         progress: MutableList<WorkflowStageProgress>,
         trainedPositionProvider: () -> TrainedMeasurementPosition?,
+        onAttemptFailure: suspend (WorkflowFailure) -> Unit,
         block: suspend () -> Unit
     ) {
-        var delayMs = retryPolicy.initialDelayMs
+        var retryDelayMs = retryPolicy.initialDelayMs
         var lastError: Throwable? = null
 
         for (attempt in 1..retryPolicy.maxAttempts) {
@@ -423,9 +524,9 @@ class DefaultSiPhWorkflowRunner(
                 throw cancelled
             } catch (error: Throwable) {
                 lastError = error
-                val stageRecoverable = stage in retryPolicy.retryableStages
-                val errorRecoverable = (error as? WorkflowStageException)?.recoverable ?: true
-                val canRetry = stageRecoverable && errorRecoverable && attempt < retryPolicy.maxAttempts
+                val stageRetryable = stage in retryPolicy.retryableStages
+                val errorRetryable = (error as? WorkflowStageException)?.recoverable ?: true
+                val canRetry = stageRetryable && errorRetryable && attempt < retryPolicy.maxAttempts
                 val failure = WorkflowFailure(
                     stage = stage,
                     attempt = attempt,
@@ -435,17 +536,18 @@ class DefaultSiPhWorkflowRunner(
                 )
                 mutableState.update { it.copy(lastFailure = failure) }
                 updateStage(stage, WorkflowStageStatus.Failed, attempt, progress, failure.message)
+                onAttemptFailure(failure)
                 if (!canRetry) throw error
 
                 stopSafely()
                 trainedPositionProvider()?.let { trained ->
                     runCatching { positioner.moveTo(trained.pose, wait = true) }
                 }
-                if (delayMs > 0L) delay(delayMs)
-                delayMs = min(
-                    retryPolicy.maximumDelayMs.toDouble(),
-                    delayMs.toDouble() * retryPolicy.backoffMultiplier.pow(1.0)
-                ).toLong()
+                if (retryDelayMs > 0L) delay(retryDelayMs)
+                retryDelayMs = min(
+                    retryPolicy.maximumDelayMs,
+                    (retryDelayMs.toDouble() * retryPolicy.backoffMultiplier).toLong()
+                )
             }
         }
         throw lastError ?: error("Stage failed without an exception")
@@ -468,10 +570,16 @@ class DefaultSiPhWorkflowRunner(
             ?: positions.findPosition(recipe.site)
             ?: error("No trained measurement position exists for ${recipe.site.stableId}")
         if (position.site != recipe.site) {
-            throw WorkflowStageException("Trained position site does not match recipe site", recoverable = false)
+            throw WorkflowStageException(
+                "Trained position site does not match recipe site",
+                recoverable = false
+            )
         }
         if (recipe.requireVerifiedMeasurementPosition && !position.verified) {
-            throw WorkflowStageException("Trained measurement position is not verified", recoverable = false)
+            throw WorkflowStageException(
+                "Trained measurement position is not verified",
+                recoverable = false
+            )
         }
         return position
     }
@@ -525,26 +633,6 @@ class DefaultSiPhWorkflowRunner(
         )
     }
 
-    private fun requireCouplingResult(
-        result: CouplingResult?,
-        record: SiPhMeasurementRecord?
-    ): CouplingResult {
-        if (result != null) return result
-        val persisted = requireNotNull(record) { "Coupling result and persisted record are unavailable" }
-        return CouplingResult(
-            status = runCatching { CouplingResultStatus.valueOf(persisted.couplingStatus) }
-                .getOrDefault(CouplingResultStatus.TargetNotReached),
-            bestPose = persisted.provenance.bestPose,
-            bestPowerDbm = persisted.bestPowerDbm,
-            finalPose = persisted.provenance.finalPose,
-            finalPowerDbm = persisted.finalPowerDbm,
-            samples = emptyList(),
-            message = "Restored from persisted measurement record",
-            startedAtMs = persisted.provenance.startedAtEpochMs,
-            finishedAtMs = persisted.provenance.finishedAtEpochMs
-        )
-    }
-
     private fun updateStage(
         stage: SiPhWorkflowStage,
         status: WorkflowStageStatus,
@@ -553,6 +641,7 @@ class DefaultSiPhWorkflowRunner(
         message: String
     ) {
         val index = progress.indexOfFirst { it.stage == stage }
+        check(index >= 0) { "Unknown workflow stage: $stage" }
         val previous = progress[index]
         progress[index] = previous.copy(
             status = status,
@@ -588,6 +677,17 @@ class DefaultSiPhWorkflowRunner(
         }
     }
 
+    private fun stageOrder(recipe: SiPhWorkflowRecipe): List<SiPhWorkflowStage> = buildList {
+        add(SiPhWorkflowStage.InspectHardware)
+        add(SiPhWorkflowStage.VerifyCalibration)
+        add(SiPhWorkflowStage.ResolveMeasurementPosition)
+        add(SiPhWorkflowStage.MoveToMeasurementPosition)
+        add(SiPhWorkflowStage.AutoCoupling)
+        if (recipe.enableVerification) add(SiPhWorkflowStage.VerifyReturnRepeatability)
+        if (recipe.enableDriftAssessment) add(SiPhWorkflowStage.AssessDrift)
+        add(SiPhWorkflowStage.PersistMeasurement)
+    }
+
     private fun ensureNotStopped() {
         if (stopRequested.value) throw CancellationException("Workflow stop requested")
     }
@@ -595,6 +695,17 @@ class DefaultSiPhWorkflowRunner(
     private suspend fun stopSafely() {
         withContext(NonCancellable) { runCatching { positioner.stop() } }
     }
+
+    private class WorkflowRunContext(
+        var calibration: CalibrationProfile? = null,
+        var trainedPosition: TrainedMeasurementPosition? = null,
+        var positionerIdentity: String? = null,
+        var powerMeterIdentity: String? = null,
+        var couplingResult: CouplingResult? = null,
+        var record: SiPhMeasurementRecord? = null,
+        var verification: OpticalAlignmentVerificationResult? = record?.verification,
+        var driftAssessment: DriftAssessment? = record?.driftAssessment
+    )
 }
 
 private class WorkflowStageException(
