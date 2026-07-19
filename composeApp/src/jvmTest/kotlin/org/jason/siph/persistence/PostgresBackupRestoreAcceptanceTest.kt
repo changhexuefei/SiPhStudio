@@ -28,8 +28,9 @@ class PostgresBackupRestoreAcceptanceTest {
         createDatabase(adminUrl, environment, databaseName)
         val output = createTempDirectory("siph-postgres-backup")
         try {
+            val sourceUri = postgresCommandUri(environment.url, environment.user)
             val service = PostgresBackupService(
-                databaseUri = environment.url.removePrefix("jdbc:"),
+                databaseUri = sourceUri,
                 password = environment.password
             )
             val result = service.createAndVerifyBackup(output)
@@ -40,14 +41,13 @@ class PostgresBackupRestoreAcceptanceTest {
             assertTrue(Files.readString(result.manifestFile).contains("verifiedWith=pg_restore --list"))
             assertTrue(service.verifyExistingBackup(result.backupFile, result.sha256))
 
-            val targetUri = environment.url.substringBeforeLast('/')
-                .removePrefix("jdbc:") + "/$databaseName"
+            val targetJdbc = environment.url.substringBeforeLast('/') + "/$databaseName"
+            val targetUri = postgresCommandUri(targetJdbc, environment.user)
             service.restoreBackup(
                 backup = result.backupFile,
                 targetDatabaseUri = targetUri,
                 destructiveRestoreApproved = true
             )
-            val targetJdbc = "jdbc:$targetUri"
             DriverManager.getConnection(targetJdbc, environment.user, environment.password).use { connection ->
                 connection.createStatement().use { statement ->
                     statement.executeQuery("SELECT value FROM backup_acceptance_marker WHERE id=1").use { resultSet ->
@@ -59,6 +59,11 @@ class PostgresBackupRestoreAcceptanceTest {
         } finally {
             dropDatabase(adminUrl, environment, databaseName)
         }
+    }
+
+    private fun postgresCommandUri(jdbcUrl: String, username: String): String {
+        val uri = jdbcUrl.removePrefix("jdbc:")
+        return uri.replace("postgresql://", "postgresql://$username@")
     }
 
     private fun createDatabase(adminUrl: String, environment: PostgresEnvironment, databaseName: String) {
