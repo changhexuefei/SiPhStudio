@@ -1,8 +1,6 @@
 package org.jason.siph
 
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -19,14 +17,9 @@ import org.jason.siph.di.createProductionModule
 import org.jason.siph.di.createSiPhAppModule
 import org.jason.siph.domain.runtime.HardwareRuntimeMode
 import org.jason.siph.ui.autonomy.AutonomousWorkflowStore
-import org.jason.siph.ui.inspection.InspectionCalibrationPanel
 import org.jason.siph.ui.inspection.InspectionCalibrationStore
-import org.jason.siph.ui.model.CouplingToolPage
-import org.jason.siph.ui.oo.OoMeasurementPanel
 import org.jason.siph.ui.oo.OoMeasurementStore
-import org.jason.siph.ui.production.ProductionClusterPanel
 import org.jason.siph.ui.production.ProductionClusterStore
-import org.jason.siph.ui.production.ProductionControlPanel
 import org.jason.siph.ui.production.ProductionControlStore
 import org.jason.siph.ui.safety.MotionSafetySettingsStore
 import org.jason.siph.ui.siphtools.CouplingToolScreen
@@ -85,6 +78,7 @@ fun App(
             val inspectionStore = koinInject<InspectionCalibrationStore>()
             val productionStore = koinInject<ProductionControlStore>()
             val productionClusterStore = koinInject<ProductionClusterStore>()
+
             val couplingState by couplingStore.state.collectAsState()
             val safetyState by safetyStore.state.collectAsState()
             val autonomousState by autonomousStore.state.collectAsState()
@@ -98,39 +92,23 @@ fun App(
                 color = AerospacePalette.Void,
                 contentColor = MaterialTheme.colorScheme.onBackground
             ) {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    if (couplingState.selectedPage == CouplingToolPage.AutonomousAssistant) {
-                        ProductionControlPanel(
-                            state = productionState,
-                            onAction = productionStore::dispatch,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        ProductionClusterPanel(
-                            state = productionClusterState,
-                            onAction = productionClusterStore::dispatch,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        InspectionCalibrationPanel(
-                            state = inspectionState,
-                            onAction = inspectionStore::dispatch,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OoMeasurementPanel(
-                            state = ooState,
-                            onAction = ooStore::dispatch,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                    CouplingToolScreen(
-                        state = couplingState,
-                        safetyState = safetyState,
-                        autonomousState = autonomousState,
-                        onAction = couplingStore::dispatch,
-                        onSafetyAction = safetyStore::dispatch,
-                        onAutonomousAction = autonomousStore::dispatch,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+                CouplingToolScreen(
+                    state = couplingState,
+                    safetyState = safetyState,
+                    autonomousState = autonomousState,
+                    productionState = productionState,
+                    productionClusterState = productionClusterState,
+                    inspectionState = inspectionState,
+                    ooState = ooState,
+                    onAction = couplingStore::dispatch,
+                    onSafetyAction = safetyStore::dispatch,
+                    onAutonomousAction = autonomousStore::dispatch,
+                    onProductionAction = productionStore::dispatch,
+                    onProductionClusterAction = productionClusterStore::dispatch,
+                    onInspectionAction = inspectionStore::dispatch,
+                    onOoAction = ooStore::dispatch,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         }
     }
