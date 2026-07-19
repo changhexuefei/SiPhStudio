@@ -101,7 +101,7 @@ class KtorTcpGcsTransport(
                 }
 
                 if (!installed) {
-                    runCatching { connectedSocket.close() }
+                    runCatching { connectedSocket?.close() }
                     runCatching { manager.close() }
                     error("PI GCS TCP connection was closed while opening")
                 }
