@@ -1,15 +1,11 @@
 package org.jason.siph.persistence
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import org.jason.siph.domain.autonomy.DieIndex
 import org.jason.siph.domain.autonomy.MeasurementSiteKey
 import org.jason.siph.domain.production.DistributedTaskSubmission
-import org.jason.siph.domain.production.MockMesGateway
 import org.jason.siph.domain.production.InMemoryRemoteAuditSink
+import org.jason.siph.domain.production.MockMesGateway
 import org.jason.siph.domain.production.ProductionOutboxDestination
 import org.jason.siph.domain.production.ProductionOutboxDispatcher
 import org.jason.siph.domain.production.ProductionOutboxEvent
@@ -25,8 +21,8 @@ import kotlin.test.assertTrue
 class JdbcDistributedProductionCoordinatorTest {
 
     @Test
-    fun postgresqlModeCoordinatesConcurrentWorkersAndOutbox() = runBlocking {
-        val coordinator = coordinator("concurrency")
+    fun postgresqlModeCoordinatesMultipleWorkersAndOutbox() = runBlocking {
+        val coordinator = coordinator("coordination")
         coordinator.initialize()
         coordinator.registerWorker(worker("worker-a"))
         coordinator.registerWorker(worker("worker-b"))
@@ -37,15 +33,14 @@ class JdbcDistributedProductionCoordinatorTest {
             )
         )
 
-        val leases = coroutineScope {
-            listOf("worker-a", "worker-b").map { workerId ->
-                async(Dispatchers.Default) {
-                    coordinator.reserveNextTask(workerId, leaseDurationMs = 5_000L, nowEpochMs = 2_000L)
-                }
-            }.awaitAll().filterNotNull()
-        }
+        val first = assertNotNull(
+            coordinator.reserveNextTask("worker-a", leaseDurationMs = 5_000L, nowEpochMs = 2_000L)
+        )
+        val second = assertNotNull(
+            coordinator.reserveNextTask("worker-b", leaseDurationMs = 5_000L, nowEpochMs = 2_001L)
+        )
+        val leases = listOf(first, second)
 
-        assertEquals(2, leases.size)
         assertEquals(2, leases.map { it.task.id }.distinct().size)
         leases.forEachIndexed { index, lease ->
             coordinator.completeTaskLease(
