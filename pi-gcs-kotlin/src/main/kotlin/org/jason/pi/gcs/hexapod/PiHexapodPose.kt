@@ -19,6 +19,15 @@ data class PiHexapodPose(
     val vDeg: Double,
     val wDeg: Double
 ) {
+    init {
+        requireFinite("xUm", xUm)
+        requireFinite("yUm", yUm)
+        requireFinite("zUm", zUm)
+        requireFinite("uDeg", uDeg)
+        requireFinite("vDeg", vDeg)
+        requireFinite("wDeg", wDeg)
+    }
+
     companion object {
         val ZERO = PiHexapodPose(
             xUm = 0.0,
@@ -33,6 +42,8 @@ data class PiHexapodPose(
 
 /**
  * PI 六轴增量。
+ *
+ * 业务层单位与 [PiHexapodPose] 一致：线性轴为 um，角度轴为 deg。
  */
 data class PiHexapodDelta(
     val dxUm: Double = 0.0,
@@ -41,7 +52,16 @@ data class PiHexapodDelta(
     val duDeg: Double = 0.0,
     val dvDeg: Double = 0.0,
     val dwDeg: Double = 0.0
-)
+) {
+    init {
+        requireFinite("dxUm", dxUm)
+        requireFinite("dyUm", dyUm)
+        requireFinite("dzUm", dzUm)
+        requireFinite("duDeg", duDeg)
+        requireFinite("dvDeg", dvDeg)
+        requireFinite("dwDeg", dwDeg)
+    }
+}
 
 operator fun PiHexapodPose.plus(
     delta: PiHexapodDelta
@@ -54,4 +74,10 @@ operator fun PiHexapodPose.plus(
         vDeg = vDeg + delta.dvDeg,
         wDeg = wDeg + delta.dwDeg
     )
+}
+
+private fun requireFinite(name: String, value: Double) {
+    require(value.isFinite()) {
+        "$name must be finite, actual=$value"
+    }
 }
