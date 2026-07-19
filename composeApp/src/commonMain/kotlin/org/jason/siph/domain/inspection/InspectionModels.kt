@@ -137,6 +137,7 @@ data class VisualPreAlignmentRequest(
     val targetPixel: VisionPointPx? = null,
     val regionOfInterest: VisionRectPx? = null,
     val maximumIterations: Int = 3,
+    val alignmentToleranceUm: Double = 1.0,
     val maximumCorrectionUm: Double = 250.0,
     val maximumRotationCorrectionDeg: Double = 1.0,
     val minimumConfidence: Double = 0.7,
@@ -148,6 +149,7 @@ data class VisualPreAlignmentRequest(
         }
         require(cameraCalibrationId.isNotBlank())
         require(maximumIterations in 1..20)
+        require(alignmentToleranceUm.isFinite() && alignmentToleranceUm > 0.0)
         require(maximumCorrectionUm.isFinite() && maximumCorrectionUm > 0.0)
         require(maximumRotationCorrectionDeg.isFinite() && maximumRotationCorrectionDeg >= 0.0)
         require(minimumConfidence.isFinite() && minimumConfidence in 0.0..1.0)
@@ -259,7 +261,7 @@ data class ProbeHeightProfile(
 data class PivotCalibrationRequest(
     val id: String,
     val cameraCalibrationId: String,
-    val featureKind: VisionFeatureKind = VisionFeatureKind.FiberTip,
+    val featureKind: VisionFeatureKind = VisionFeatureKind.Grating,
     val angularStepDeg: Double = 0.08,
     val samplesPerDirection: Int = 2,
     val maximumResidualUm: Double = 1.5,
