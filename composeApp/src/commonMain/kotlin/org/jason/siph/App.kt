@@ -13,6 +13,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import org.jason.siph.di.RealHardwarePorts
 import org.jason.siph.di.createPlatformAuditHasher
+import org.jason.siph.di.createPlatformDistributedProductionCoordinator
 import org.jason.siph.di.createPlatformProductionRepository
 import org.jason.siph.di.createProductionModule
 import org.jason.siph.di.createSiPhAppModule
@@ -51,17 +52,22 @@ fun App(
         }
         val productionRepository = remember { createPlatformProductionRepository() }
         val productionAuditHasher = remember { createPlatformAuditHasher() }
+        val distributedCoordinator = remember(runtimeMode) {
+            createPlatformDistributedProductionCoordinator(runtimeMode)
+        }
         val productionModule = remember(
             scope,
             runtimeMode,
             productionRepository,
-            productionAuditHasher
+            productionAuditHasher,
+            distributedCoordinator
         ) {
             createProductionModule(
                 scope = scope,
                 runtimeMode = runtimeMode,
                 repository = productionRepository,
-                auditHasher = productionAuditHasher
+                auditHasher = productionAuditHasher,
+                distributedCoordinator = distributedCoordinator
             )
         }
 
