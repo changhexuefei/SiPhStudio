@@ -52,7 +52,7 @@ internal fun AerospaceCouplingPlotPanelV2(
     modifier: Modifier = Modifier
 ) {
     var viewMode by remember { mutableStateOf(CouplingPlotViewModeV2.Planar) }
-    var rendererBackend by remember { mutableStateOf(AerospaceSurfaceBackend.ComposeCanvas) }
+    var rendererBackend by remember { mutableStateOf(AerospaceSurfaceBackend.SurfacePlot) }
     val summary = remember(samples) { buildPlotSummaryV2(samples) }
 
     AerospacePanel(
@@ -212,9 +212,11 @@ private fun LargePowerSurface3d(
         )
 
         when (selectedBackend) {
-            AerospaceSurfaceBackend.ComposeCanvas -> LargeSurfaceViewport(
-                view = selectedView,
+            AerospaceSurfaceBackend.SurfacePlot -> SurfacePlotPowerSurface3d(
                 mesh = mesh,
+                title = selectedView.label,
+                initialAzimuthDegrees = (selectedView.initialYaw * 180.0 / kotlin.math.PI).toFloat(),
+                initialElevationDegrees = (selectedView.initialPitch * 180.0 / kotlin.math.PI).toFloat(),
                 modifier = Modifier.fillMaxWidth().weight(1f).heightIn(min = 430.dp)
             )
 
@@ -305,7 +307,7 @@ private fun LargeRendererControlBar(
                 )
             }
 
-            if (selectedBackend == AerospaceSurfaceBackend.ComposeCanvas) {
+            if (selectedBackend == AerospaceSurfaceBackend.SurfacePlot) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -489,7 +491,7 @@ private fun buildLargeSurfaceMesh(
             )
         }
     }
-    return SurfaceMesh(points, pMin, pMax)
+    return SurfaceMesh(points, pMin, pMax, xMin, xMax, yMin, yMax)
 }
 
 private fun interpolateLargePower(samples: List<CouplingSampleUi>, x: Double, y: Double): Double {
@@ -771,7 +773,7 @@ private fun buildPlotSummaryV2(samples: List<CouplingSampleUi>): PlotSummaryV2 {
 }
 
 private fun roundAngleV2(radians: Double): Double =
-    round(Math.toDegrees(radians) * 10.0) / 10.0
+    round(radians * 180.0 / kotlin.math.PI * 10.0) / 10.0
 
 private data class LargeRawProjection(
     val x: Double,

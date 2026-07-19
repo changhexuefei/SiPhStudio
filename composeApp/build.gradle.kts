@@ -78,6 +78,7 @@ kotlin {
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
+            implementation(files("libs/surface-plot-jvm-1.0.0.jar"))
 
             implementation("org.openjfx:javafx-base:$javafxVersion:$javafxPlatform")
             implementation("org.openjfx:javafx-controls:$javafxVersion:$javafxPlatform")

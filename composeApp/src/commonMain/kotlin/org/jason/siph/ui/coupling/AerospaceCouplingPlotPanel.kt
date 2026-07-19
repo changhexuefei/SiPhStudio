@@ -42,7 +42,7 @@ internal fun AerospaceCouplingPlotPanel(
     modifier: Modifier = Modifier
 ) {
     var viewMode by remember { mutableStateOf(CouplingPlotViewMode.Planar) }
-    var rendererBackend by remember { mutableStateOf(AerospaceSurfaceBackend.ComposeCanvas) }
+    var rendererBackend by remember { mutableStateOf(AerospaceSurfaceBackend.SurfacePlot) }
     val summary = remember(samples) { buildPlotSummary(samples) }
 
     AerospacePanel(

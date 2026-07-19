@@ -49,9 +49,9 @@ internal enum class AerospaceSurfaceBackend(
     val caption: String,
     val enabled: Boolean
 ) {
-    ComposeCanvas(
-        label = "CANVAS",
-        caption = "Portable Compose renderer with interactive orbit controls",
+    SurfacePlot(
+        label = "SURFACE PLOT",
+        caption = "Reusable surface-plot JVM renderer with orbit, zoom and contours",
         enabled = true
     ),
     JavaFx3d(
@@ -94,28 +94,26 @@ internal fun AerospacePowerSurface3d(
             val stackViewports = this.maxWidth < 900.dp
 
             when (selectedBackend) {
-                AerospaceSurfaceBackend.ComposeCanvas -> {
+                AerospaceSurfaceBackend.SurfacePlot -> {
                     if (stackViewports) {
                         Column(
                             modifier = Modifier.fillMaxSize(),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            AerospaceSurfaceViewport(
+                            SurfacePlotPowerSurface3d(
                                 title = "PRIMARY ORBIT",
-                                subtitle = "Perspective optimization surface",
                                 mesh = mesh,
-                                initialYaw = -0.62,
-                                initialPitch = 0.58,
+                                initialAzimuthDegrees = -35.5f,
+                                initialElevationDegrees = 33.2f,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .weight(1f)
                             )
-                            AerospaceSurfaceViewport(
+                            SurfacePlotPowerSurface3d(
                                 title = "CROSS AXIS",
-                                subtitle = "Orthogonal field inspection",
                                 mesh = mesh,
-                                initialYaw = 0.58,
-                                initialPitch = 0.66,
+                                initialAzimuthDegrees = 33.2f,
+                                initialElevationDegrees = 37.8f,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .weight(1f)
@@ -126,22 +124,20 @@ internal fun AerospacePowerSurface3d(
                             modifier = Modifier.fillMaxSize(),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            AerospaceSurfaceViewport(
+                            SurfacePlotPowerSurface3d(
                                 title = "PRIMARY ORBIT",
-                                subtitle = "Perspective optimization surface",
                                 mesh = mesh,
-                                initialYaw = -0.62,
-                                initialPitch = 0.58,
+                                initialAzimuthDegrees = -35.5f,
+                                initialElevationDegrees = 33.2f,
                                 modifier = Modifier
                                     .weight(1f)
                                     .fillMaxHeight()
                             )
-                            AerospaceSurfaceViewport(
+                            SurfacePlotPowerSurface3d(
                                 title = "CROSS AXIS",
-                                subtitle = "Orthogonal field inspection",
                                 mesh = mesh,
-                                initialYaw = 0.58,
-                                initialPitch = 0.66,
+                                initialAzimuthDegrees = 33.2f,
+                                initialElevationDegrees = 37.8f,
                                 modifier = Modifier
                                     .weight(1f)
                                     .fillMaxHeight()
@@ -381,7 +377,7 @@ private fun AerospaceSurfaceViewport(
 }
 
 private fun roundAngle(radians: Double): Double =
-    kotlin.math.round(Math.toDegrees(radians) * 10.0) / 10.0
+    kotlin.math.round(radians * 180.0 / kotlin.math.PI * 10.0) / 10.0
 
 private fun buildSurfaceMesh(
     samples: List<CouplingSampleUi>,
@@ -421,7 +417,11 @@ private fun buildSurfaceMesh(
     return SurfaceMesh(
         points = points,
         minPower = pMin,
-        maxPower = pMax
+        maxPower = pMax,
+        xMin = xMin,
+        xMax = xMax,
+        yMin = yMin,
+        yMax = yMax
     )
 }
 
@@ -784,7 +784,11 @@ private fun ProjectedSurfacePoint.copy(
 internal data class SurfaceMesh(
     val points: List<List<SurfacePoint>>,
     val minPower: Double,
-    val maxPower: Double
+    val maxPower: Double,
+    val xMin: Double,
+    val xMax: Double,
+    val yMin: Double,
+    val yMax: Double
 )
 
 internal data class SurfacePoint(
@@ -816,5 +820,14 @@ internal expect fun JavaFxPowerSurface3d(
 @Composable
 internal expect fun LwjglPowerSurface3d(
     mesh: SurfaceMesh?,
+    modifier: Modifier = Modifier
+)
+
+@Composable
+internal expect fun SurfacePlotPowerSurface3d(
+    mesh: SurfaceMesh?,
+    title: String,
+    initialAzimuthDegrees: Float,
+    initialElevationDegrees: Float,
     modifier: Modifier = Modifier
 )
