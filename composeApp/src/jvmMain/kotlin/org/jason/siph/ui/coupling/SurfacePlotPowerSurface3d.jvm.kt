@@ -8,7 +8,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.jason.measure.uikit.surfaceplot.SurfaceColorStop
 import com.jason.measure.uikit.surfaceplot.SurfaceGrid
@@ -26,9 +25,11 @@ internal actual fun SurfacePlotPowerSurface3d(
     initialElevationDegrees: Float,
     modifier: Modifier
 ) {
+    val spec = CouplingSurfaceRenderSpec
+
     Surface(
         modifier = modifier,
-        color = AerospacePlotPanel,
+        color = spec.plotAreaColor,
         border = BorderStroke(1.dp, AerospacePalette.Border)
     ) {
         if (mesh == null) {
@@ -41,19 +42,13 @@ internal actual fun SurfacePlotPowerSurface3d(
             return@Surface
         }
 
-        // 网格数据只在 mesh 实例变化时构建，不参与视角拖动的逐帧绘制。
         val data = remember(mesh) {
-            val values = buildList(mesh.rowCount * mesh.columnCount) {
-                mesh.points.forEach { row ->
-                    row.forEach { point -> add(point.power.toFloat()) }
-                }
-            }
             SurfaceGrid(
                 columns = mesh.columnCount,
                 rows = mesh.rowCount,
-                values = values,
-                xRange = mesh.xMin.toFloat()..mesh.xMax.toFloat(),
-                yRange = mesh.yMin.toFloat()..mesh.yMax.toFloat()
+                values = mesh.powerValues(),
+                xRange = mesh.xRangeFloat,
+                yRange = mesh.yRangeFloat
             )
         }
         val state = remember(title, initialAzimuthDegrees, initialElevationDegrees) {
@@ -63,23 +58,23 @@ internal actual fun SurfacePlotPowerSurface3d(
                 zoom = 1f
             )
         }
-        val config = remember(title, mesh.minPower, mesh.maxPower) {
+        val config = remember(title, mesh.minPower, mesh.maxPower, spec) {
             SurfacePlotConfig(
                 title = title,
-                xAxisLabel = "X (um)",
-                yAxisLabel = "Y (um)",
-                zAxisLabel = "Power (dBm)",
-                zRange = mesh.minPower.toFloat()..mesh.maxPower.toFloat(),
-                verticalScale = 1.1f,
-                axisTickCount = 5,
-                contourLevelCount = 8,
+                xAxisLabel = spec.xAxisLabel,
+                yAxisLabel = spec.yAxisLabel,
+                zAxisLabel = spec.zAxisLabel,
+                zRange = mesh.powerRangeFloat,
+                verticalScale = spec.verticalScale,
+                axisTickCount = spec.axisTickCount,
+                contourLevelCount = spec.contourLevelCount,
                 style = SurfacePlotStyle(
-                    backgroundColor = AerospacePlotBackground,
-                    plotAreaColor = AerospacePlotBackground,
-                    axisColor = AerospacePalette.TextSecondary,
-                    gridColor = AerospacePlotGridMajor.copy(alpha = 0.75f),
-                    meshColor = Color.White.copy(alpha = 0.28f),
-                    textColor = AerospacePalette.TextSecondary,
+                    backgroundColor = spec.backgroundColor,
+                    plotAreaColor = spec.plotAreaColor,
+                    axisColor = spec.axisColor,
+                    gridColor = spec.gridColor,
+                    meshColor = spec.wireframeColor,
+                    textColor = spec.textColor,
                     tooltipBackgroundColor = AerospacePalette.PanelRaised,
                     tooltipTextColor = AerospacePalette.TextPrimary,
                     colorStops = AerospaceSurfaceColorScale.stops.map { stop ->
