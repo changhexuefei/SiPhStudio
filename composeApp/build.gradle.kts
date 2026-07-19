@@ -79,6 +79,7 @@ kotlin {
             implementation(project(":pi-gcs-kotlin"))
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
+            implementation(libs.hikari)
             implementation(files("libs/surface-plot-jvm-1.0.0.jar"))
             implementation(files("libs/surface-plot-opengl-jvm-1.0.0.jar"))
 
@@ -100,6 +101,7 @@ kotlin {
             implementation(kotlin("test"))
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.h2)
+            runtimeOnly(libs.postgresql)
         }
     }
 }
