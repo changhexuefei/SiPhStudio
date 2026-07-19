@@ -7,18 +7,26 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.jason.siph.domain.autonomy.DieIndex
 import org.jason.siph.domain.autonomy.MeasurementSiteKey
 import org.jason.siph.domain.production.DistributedTaskSubmission
 import org.jason.siph.domain.production.InMemoryRemoteAuditSink
 import org.jason.siph.domain.production.MockMesGateway
+import org.jason.siph.domain.production.ProductionAcceptanceCriteria
+import org.jason.siph.domain.production.ProductionAcceptanceEvaluator
+import org.jason.siph.domain.production.ProductionAcceptanceKind
 import org.jason.siph.domain.production.ProductionOutboxDestination
 import org.jason.siph.domain.production.ProductionOutboxDispatcher
 import org.jason.siph.domain.production.ProductionOutboxEvent
 import org.jason.siph.domain.production.ProductionOutboxState
 import org.jason.siph.domain.production.ProductionTask
 import org.jason.siph.domain.production.ProductionWorkerRegistration
+import java.nio.file.Files
+import java.nio.file.Path
 import java.sql.DriverManager
+import java.util.Collections
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -72,16 +80,19 @@ class PostgresDistributedProductionStressTest {
 
             val claimedByTask = ConcurrentHashMap<String, String>()
             val completed = AtomicInteger(0)
+            val taskLatenciesMs = Collections.synchronizedList(mutableListOf<Long>())
+            val startedAt = System.currentTimeMillis()
             coroutineScope {
                 (0 until workerCount).map { workerIndex ->
                     async(Dispatchers.IO) {
                         val workerId = "stress-worker-$workerIndex"
                         var idleRounds = 0
                         while (completed.get() < taskCount && idleRounds < 500) {
+                            val operationStartedAt = System.currentTimeMillis()
                             val lease = coordinator.reserveNextTask(
                                 workerId = workerId,
                                 leaseDurationMs = 30_000L,
-                                nowEpochMs = System.currentTimeMillis()
+                                nowEpochMs = operationStartedAt
                             )
                             if (lease == null) {
                                 idleRounds += 1
@@ -99,15 +110,48 @@ class PostgresDistributedProductionStressTest {
                                 passed = true,
                                 nowEpochMs = System.currentTimeMillis()
                             )
+                            taskLatenciesMs += (System.currentTimeMillis() - operationStartedAt).coerceAtLeast(0L)
                             completed.incrementAndGet()
                         }
                     }
                 }.awaitAll()
             }
+            val finishedAt = System.currentTimeMillis()
 
             assertEquals(taskCount, completed.get())
             assertEquals(taskCount, claimedByTask.size)
             assertEquals(taskCount, claimedByTask.keys.distinct().size)
+            val report = ProductionAcceptanceEvaluator().evaluate(
+                id = "postgres-concurrency-${System.currentTimeMillis()}",
+                kind = ProductionAcceptanceKind.PostgreSqlConcurrency,
+                environmentName = "GitHub Actions PostgreSQL 17 service",
+                startedAtEpochMs = startedAt,
+                finishedAtEpochMs = finishedAt,
+                submittedTasks = taskCount,
+                passedTasks = completed.get(),
+                failedTasks = 0,
+                duplicateResults = taskCount - claimedByTask.size,
+                taskLatenciesMs = taskLatenciesMs.toList(),
+                criteria = ProductionAcceptanceCriteria(
+                    minimumCompletedTasks = taskCount,
+                    minimumThroughputTasksPerHour = 1_000.0,
+                    minimumSuccessRate = 1.0,
+                    maximumDuplicateResults = 0,
+                    maximumP95TaskLatencyMs = 5_000L,
+                    minimumContinuousRunMs = 1L
+                ),
+                evidenceReferences = listOf(
+                    "github-actions://compose-app/postgresql-17",
+                    "test://PostgresDistributedProductionStressTest"
+                ),
+                limitations = listOf(
+                    "This is a database concurrency acceptance test, not a customer HA failover test",
+                    "No optical, electrical, motion, thermal, camera, prober, or wafer hardware was exercised",
+                    "The CI duration is intentionally short and is not a production hardware soak duration"
+                )
+            )
+            assertTrue(report.passed)
+            writeAcceptanceReport("postgres-concurrency.json", report)
         } finally {
             pool.close()
             dropSchema(environment, schema)
@@ -176,6 +220,27 @@ class PostgresDistributedProductionStressTest {
             pool.close()
             dropSchema(environment, schema)
         }
+    }
+
+    private fun writeAcceptanceReport(
+        fileName: String,
+        report: org.jason.siph.domain.production.ProductionAcceptanceReport
+    ) {
+        val working = Path.of(System.getProperty("user.dir"))
+        val moduleDirectory = if (working.fileName?.toString() == "composeApp") {
+            working
+        } else {
+            working.resolve("composeApp")
+        }
+        val directory = moduleDirectory.resolve("build/reports/production-acceptance")
+        Files.createDirectories(directory)
+        Files.writeString(
+            directory.resolve(fileName),
+            Json {
+                prettyPrint = true
+                encodeDefaults = true
+            }.encodeToString(report)
+        )
     }
 
     private fun task(index: Int) = ProductionTask(
