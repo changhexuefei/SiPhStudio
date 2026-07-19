@@ -18,6 +18,9 @@ import javafx.scene.SubScene
 import javafx.scene.canvas.Canvas
 import javafx.scene.control.Label
 import javafx.scene.image.WritableImage
+import javafx.scene.layout.Background
+import javafx.scene.layout.BackgroundFill
+import javafx.scene.layout.CornerRadii
 import javafx.scene.layout.StackPane
 import javafx.scene.paint.Color as FxColor
 import javafx.scene.paint.PhongMaterial
@@ -35,7 +38,11 @@ import kotlin.math.roundToInt
 
 /**
  * JavaFX 后端保持一个长期存活的 Scene/SubScene/Camera。
- * Compose 更新只替换 TriangleMesh 数据节点，不再重建整棵 JavaFX Scene Graph。
+ *
+ * Compose 更新时：
+ * - 相同的 SurfaceMesh 引用直接跳过；
+ * - 数据变化时只替换 TriangleMesh；
+ * - MeshView、材质、调色板纹理、相机、灯光和交互器均长期复用。
  */
 @Composable
 internal actual fun JavaFxPowerSurface3d(
@@ -83,6 +90,7 @@ private class PersistentJavaFxSurfaceRenderer(
 
     private val elevationRotate = Rotate(initialElevationAngle(), Rotate.X_AXIS)
     private val azimuthRotate = Rotate(spec.initialAzimuthDegrees.toDouble(), Rotate.Y_AXIS)
+    private val frameGroup = Group()
     private val dataGroup = Group()
     private val world = Group()
     private val camera = PerspectiveCamera(true)
@@ -90,6 +98,40 @@ private class PersistentJavaFxSurfaceRenderer(
         "NO JAVAFX SURFACE DATA\nAt least three samples spanning X, Y and power are required."
     )
     private val colorBar = Canvas(COLOR_BAR_WIDTH, COLOR_BAR_HEIGHT)
+
+    private val paletteTexture = createPaletteTexture()
+    private val surfaceMaterial = PhongMaterial().apply {
+        diffuseMap = paletteTexture
+        specularColor = FxColor.color(0.70, 0.82, 0.96, 0.48)
+        specularPower = 42.0
+    }
+    private val wireframeMaterial = PhongMaterial(spec.wireframeColor.toFxColor())
+    private val floorMaterial = PhongMaterial(spec.gridColor.copy(alpha = 0.44f).toFxColor())
+    private val peakMaterial = PhongMaterial(spec.peakColor.toFxColor()).apply {
+        specularColor = FxColor.WHITE
+        specularPower = 64.0
+    }
+
+    private val surfaceView = MeshView().apply {
+        material = surfaceMaterial
+        cullFace = CullFace.NONE
+        drawMode = DrawMode.FILL
+    }
+    private val wireframeView = MeshView().apply {
+        material = wireframeMaterial
+        cullFace = CullFace.NONE
+        drawMode = DrawMode.LINE
+    }
+    private val floorProjectionView = MeshView().apply {
+        material = floorMaterial
+        cullFace = CullFace.NONE
+        drawMode = DrawMode.LINE
+    }
+    private val peakMarker = Sphere(7.0).apply {
+        material = peakMaterial
+        isVisible = false
+    }
+
     private val subScene: SubScene
     private val root: StackPane
 
@@ -97,13 +139,22 @@ private class PersistentJavaFxSurfaceRenderer(
     private var dragStartY = 0.0
     private var dragStartElevation = elevationRotate.angle
     private var dragStartAzimuth = azimuthRotate.angle
+    private var renderedMesh: SurfaceMesh? = null
+    private var meshInitialized = false
 
     val scene: Scene
 
     init {
+        dataGroup.children.setAll(
+            floorProjectionView,
+            surfaceView,
+            wireframeView,
+            peakMarker
+        )
+        updateFrame(aspect = 1f)
+
         world.children.setAll(
-            createPlotBox(spec),
-            createAxes(spec),
+            frameGroup,
             dataGroup,
             AmbientLight(FxColor.color(0.72, 0.78, 0.86, 0.68)),
             PointLight(FxColor.color(0.82, 0.91, 1.0, 1.0)).apply {
@@ -152,7 +203,13 @@ private class PersistentJavaFxSurfaceRenderer(
 
         root = StackPane(subScene, statusLabel, colorBar).apply {
             padding = Insets(8.0, 16.0, 8.0, 8.0)
-            style = "-fx-background-color: #080D14;"
+            background = Background(
+                BackgroundFill(
+                    spec.plotAreaColor.toFxColor(),
+                    CornerRadii.EMPTY,
+                    Insets.EMPTY
+                )
+            )
         }
         StackPane.setAlignment(statusLabel, Pos.CENTER)
         StackPane.setAlignment(colorBar, Pos.CENTER_RIGHT)
@@ -171,46 +228,58 @@ private class PersistentJavaFxSurfaceRenderer(
         check(Platform.isFxApplicationThread()) {
             "JavaFX surface updates must run on the JavaFX application thread"
         }
+        if (meshInitialized && renderedMesh === mesh) return
 
-        dataGroup.children.clear()
-        statusLabel.isVisible = mesh == null
-        statusLabel.isManaged = mesh == null
-        colorBar.isVisible = mesh != null
+        meshInitialized = true
+        renderedMesh = mesh
+
+        val hasData = mesh != null
+        statusLabel.isVisible = !hasData
+        statusLabel.isManaged = !hasData
+        colorBar.isVisible = hasData
+        surfaceView.isVisible = hasData
+        wireframeView.isVisible = hasData
+        floorProjectionView.isVisible = hasData
+        peakMarker.isVisible = hasData
 
         if (mesh == null) {
+            surfaceView.mesh = null
+            wireframeView.mesh = null
+            floorProjectionView.mesh = null
             drawColorBar(null)
+            updateFrame(aspect = 1f)
             return
         }
 
-        val triangleMesh = createJavaFxTriangleMesh(mesh)
-        val surfaceMaterial = PhongMaterial().apply {
-            diffuseMap = createPaletteTexture()
-            specularColor = FxColor.color(0.70, 0.82, 0.96, 0.48)
-            specularPower = 42.0
-        }
-        val surface = MeshView(triangleMesh).apply {
-            material = surfaceMaterial
-            cullFace = CullFace.NONE
-            drawMode = DrawMode.FILL
-        }
-        val wireframe = MeshView(triangleMesh).apply {
-            material = PhongMaterial(spec.wireframeColor.toFxColor())
-            cullFace = CullFace.NONE
-            drawMode = DrawMode.LINE
-        }
-        val floorProjection = MeshView(createJavaFxTriangleMesh(mesh, flattened = true)).apply {
-            material = PhongMaterial(spec.gridColor.copy(alpha = 0.44f).toFxColor())
-            cullFace = CullFace.NONE
-            drawMode = DrawMode.LINE
-        }
+        val aspect = mesh.spatialAspectRatio()
+        val triangleMesh = createJavaFxTriangleMesh(mesh, aspect = aspect)
 
-        dataGroup.children.setAll(
-            floorProjection,
-            surface,
-            wireframe,
-            createPeakMarker(mesh, spec)
+        surfaceView.mesh = triangleMesh
+        wireframeView.mesh = triangleMesh
+        floorProjectionView.mesh = createJavaFxTriangleMesh(
+            mesh = mesh,
+            aspect = aspect,
+            flattened = true
         )
+        updatePeakMarker(mesh, aspect)
+        updateFrame(aspect)
         drawColorBar(mesh)
+    }
+
+    private fun updatePeakMarker(mesh: SurfaceMesh, aspect: Float) {
+        val peak = mesh.points.asSequence().flatten().maxBy { it.power }
+        val point = peak.toJavaFxPoint(aspect = aspect, flattened = false)
+        peakMarker.translateX = point[0].toDouble()
+        peakMarker.translateY = point[1].toDouble()
+        peakMarker.translateZ = point[2].toDouble()
+    }
+
+    private fun updateFrame(aspect: Float) {
+        frameGroup.children.setAll(
+            createPlotBox(spec, aspect),
+            createFloorGrid(spec, aspect),
+            createAxes(spec, aspect)
+        )
     }
 
     private fun installCameraControls() {
@@ -279,6 +348,7 @@ private class PersistentJavaFxSurfaceRenderer(
 
 private fun createJavaFxTriangleMesh(
     mesh: SurfaceMesh,
+    aspect: Float,
     flattened: Boolean = false
 ): TriangleMesh {
     val triangleMesh = TriangleMesh()
@@ -287,7 +357,7 @@ private fun createJavaFxTriangleMesh(
 
     rows.forEach { row ->
         row.forEach { point ->
-            val world = point.toJavaFxPoint(flattened)
+            val world = point.toJavaFxPoint(aspect, flattened)
             triangleMesh.points.addAll(world[0], world[1], world[2])
             val ratio = normalizePower(point.power, mesh.minPower, mesh.maxPower)
             triangleMesh.texCoords.addAll(ratio, 0.5f)
@@ -309,12 +379,14 @@ private fun createJavaFxTriangleMesh(
     return triangleMesh
 }
 
-private fun SurfacePoint.toJavaFxPoint(flattened: Boolean): FloatArray =
-    floatArrayOf(
-        (x * PLOT_HALF).toFloat(),
-        if (flattened) FLOOR_LIFT.toFloat() else (-z * POWER_SIZE).toFloat(),
-        (y * PLOT_HALF).toFloat()
-    )
+private fun SurfacePoint.toJavaFxPoint(
+    aspect: Float,
+    flattened: Boolean
+): FloatArray = floatArrayOf(
+    (x * PLOT_HALF).toFloat(),
+    if (flattened) FLOOR_LIFT.toFloat() else (-z * POWER_SIZE).toFloat(),
+    (y * PLOT_HALF * aspect).toFloat()
+)
 
 private fun createPaletteTexture(): WritableImage {
     val image = WritableImage(PALETTE_TEXTURE_WIDTH, 1)
@@ -326,22 +398,9 @@ private fun createPaletteTexture(): WritableImage {
     return image
 }
 
-private fun createPeakMarker(mesh: SurfaceMesh, spec: SurfaceRenderSpec): Sphere {
-    val peak = mesh.points.asSequence().flatten().maxBy { it.power }
-    val point = peak.toJavaFxPoint(flattened = false)
-    return Sphere(7.0).apply {
-        translateX = point[0].toDouble()
-        translateY = point[1].toDouble()
-        translateZ = point[2].toDouble()
-        material = PhongMaterial(spec.peakColor.toFxColor()).apply {
-            specularColor = FxColor.WHITE
-            specularPower = 64.0
-        }
-    }
-}
-
-private fun createPlotBox(spec: SurfaceRenderSpec): Group {
-    val frame = Box(PLOT_SIZE, POWER_SIZE, PLOT_SIZE).apply {
+private fun createPlotBox(spec: SurfaceRenderSpec, aspect: Float): Group {
+    val depth = PLOT_SIZE * aspect
+    val frame = Box(PLOT_SIZE, POWER_SIZE, depth).apply {
         translateY = -POWER_SIZE / 2.0
         material = PhongMaterial(spec.gridColor.copy(alpha = 0.50f).toFxColor())
         drawMode = DrawMode.LINE
@@ -350,51 +409,108 @@ private fun createPlotBox(spec: SurfaceRenderSpec): Group {
     return Group(frame)
 }
 
-private fun createAxes(spec: SurfaceRenderSpec): Group {
+private fun createFloorGrid(spec: SurfaceRenderSpec, aspect: Float): Group {
+    val grid = Group()
+    val depth = PLOT_SIZE * aspect
+    val halfDepth = depth / 2.0
+    val divisions = (spec.axisTickCount - 1).coerceAtLeast(1)
+    val color = spec.gridColor.copy(alpha = 0.36f).toFxColor()
+
+    for (index in 0..divisions) {
+        val fraction = index.toDouble() / divisions.toDouble()
+        val x = -PLOT_HALF + PLOT_SIZE * fraction
+        val z = -halfDepth + depth * fraction
+
+        grid.children += axisBar(
+            length = depth,
+            thickness = GRID_LINE_THICKNESS,
+            color = color,
+            x = x,
+            y = FLOOR_LIFT,
+            z = 0.0,
+            rotateY = 90.0
+        )
+        grid.children += axisBar(
+            length = PLOT_SIZE,
+            thickness = GRID_LINE_THICKNESS,
+            color = color,
+            x = 0.0,
+            y = FLOOR_LIFT,
+            z = z
+        )
+    }
+    return grid
+}
+
+private fun createAxes(spec: SurfaceRenderSpec, aspect: Float): Group {
+    val depth = PLOT_SIZE * aspect
+    val halfDepth = depth / 2.0
     val originX = -PLOT_HALF - 20.0
     val originY = 0.0
-    val originZ = PLOT_HALF + 20.0
+    val originZ = halfDepth + 20.0
     val axisColor = spec.axisColor.toFxColor()
 
     return Group().apply {
         children += axisBar(
             length = PLOT_SIZE + 54.0,
+            thickness = AXIS_THICKNESS,
             color = axisColor,
             x = originX + (PLOT_SIZE + 54.0) / 2.0,
             y = originY,
             z = originZ
         )
         children += axisBar(
-            length = PLOT_SIZE + 54.0,
+            length = depth + 54.0,
+            thickness = AXIS_THICKNESS,
             color = axisColor,
             x = originX,
             y = originY,
-            z = originZ - (PLOT_SIZE + 54.0) / 2.0,
+            z = originZ - (depth + 54.0) / 2.0,
             rotateY = 90.0
         )
         children += axisBar(
             length = POWER_SIZE + 54.0,
+            thickness = AXIS_THICKNESS,
             color = axisColor,
             x = originX,
             y = originY - (POWER_SIZE + 54.0) / 2.0,
             z = originZ,
             rotateZ = 90.0
         )
-        children += axisLabel(spec.xAxisLabel, spec.textColor.toFxColor(), PLOT_HALF + 48.0, 16.0, originZ)
-        children += axisLabel(spec.yAxisLabel, spec.textColor.toFxColor(), originX, 16.0, -PLOT_HALF - 48.0)
-        children += axisLabel(spec.zAxisLabel, spec.textColor.toFxColor(), originX - 70.0, -POWER_SIZE - 48.0, originZ)
+        children += axisLabel(
+            spec.xAxisLabel,
+            spec.textColor.toFxColor(),
+            PLOT_HALF + 48.0,
+            16.0,
+            originZ
+        )
+        children += axisLabel(
+            spec.yAxisLabel,
+            spec.textColor.toFxColor(),
+            originX,
+            16.0,
+            -halfDepth - 48.0
+        )
+        children += axisLabel(
+            spec.zAxisLabel,
+            spec.textColor.toFxColor(),
+            originX - 70.0,
+            -POWER_SIZE - 48.0,
+            originZ
+        )
     }
 }
 
 private fun axisBar(
     length: Double,
+    thickness: Double,
     color: FxColor,
     x: Double,
     y: Double,
     z: Double,
     rotateY: Double = 0.0,
     rotateZ: Double = 0.0
-): Box = Box(length, 3.2, 3.2).apply {
+): Box = Box(length, thickness, thickness).apply {
     translateX = x
     translateY = y
     translateZ = z
@@ -440,3 +556,5 @@ private const val POWER_SIZE = 215.0
 private const val FLOOR_LIFT = 1.2
 private const val CAMERA_DISTANCE_SCALE = 170.0
 private const val PALETTE_TEXTURE_WIDTH = 256
+private const val AXIS_THICKNESS = 3.2
+private const val GRID_LINE_THICKNESS = 0.72
