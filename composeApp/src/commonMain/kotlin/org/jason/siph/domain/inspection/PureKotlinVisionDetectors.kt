@@ -24,7 +24,7 @@ class CompositeVisionFeatureDetector(
     }
 }
 
-/** Detects the bright compact lobe produced by a fiber-tip illumination or reflection. */
+/** Detects the brightest compact lobe and rejects lower-contrast target structures. */
 class FiberTipIntensityDetector : VisionFeatureDetector {
     override val supportedKinds = setOf(VisionFeatureKind.FiberTip)
 
@@ -35,17 +35,24 @@ class FiberTipIntensityDetector : VisionFeatureDetector {
         require(request.kind == VisionFeatureKind.FiberTip)
         val roi = frame.normalizedRoi(request.regionOfInterest)
         val stats = frame.statistics(roi)
-        val threshold = (stats.mean + max(12.0, stats.standardDeviation * 1.25)).coerceAtMost(250.0)
+        var maximum = 0
+        for (y in roi.top until roi.bottomExclusive) {
+            for (x in roi.left until roi.rightExclusive) {
+                maximum = max(maximum, frame.grayAt(x, y))
+            }
+        }
+        val threshold = max(
+            stats.mean + max(12.0, stats.standardDeviation * 1.35),
+            maximum * 0.72
+        ).coerceAtMost(250.0)
 
         var weightSum = 0.0
         var weightedX = 0.0
         var weightedY = 0.0
         var brightCount = 0
-        var maximum = 0
         for (y in roi.top until roi.bottomExclusive) {
             for (x in roi.left until roi.rightExclusive) {
                 val gray = frame.grayAt(x, y)
-                maximum = max(maximum, gray)
                 if (gray >= threshold) {
                     val weight = gray - threshold + 1.0
                     weightSum += weight
@@ -87,15 +94,17 @@ class FiberTipIntensityDetector : VisionFeatureDetector {
         val minor = sqrt(max(0.0, (trace - discriminant) / 2.0)) * 4.0
         val compactness = if (major <= 1e-9) 0.0 else (minor / major).coerceIn(0.0, 1.0)
         val brightnessScore = ((maximum - stats.mean) / 180.0).coerceIn(0.0, 1.0)
-        val areaScore = (brightCount / max(12.0, roi.width * roi.height * 0.02)).coerceIn(0.0, 1.0)
-        val confidence = (0.45 * brightnessScore + 0.35 * compactness + 0.20 * areaScore)
+        val expectedArea = max(12.0, roi.width * roi.height * 0.008)
+        val areaScore = (brightCount / expectedArea).coerceIn(0.0, 1.0)
+        val confidence = (0.50 * brightnessScore + 0.38 * compactness + 0.12 * areaScore)
             .coerceIn(0.0, 1.0)
+        val found = confidence >= request.minimumConfidence
 
         return VisionFeatureDetection(
             kind = VisionFeatureKind.FiberTip,
-            found = confidence >= request.minimumConfidence,
+            found = found,
             confidence = confidence,
-            centerPx = VisionPointPx(centerX, centerY).takeIf { confidence >= request.minimumConfidence },
+            centerPx = VisionPointPx(centerX, centerY).takeIf { found },
             angleDeg = null,
             widthPx = major,
             heightPx = minor,
@@ -103,9 +112,10 @@ class FiberTipIntensityDetector : VisionFeatureDetector {
                 "brightness" to brightnessScore,
                 "compactness" to compactness,
                 "area" to areaScore,
-                "threshold" to threshold
+                "threshold" to threshold,
+                "maximum" to maximum.toDouble()
             ),
-            message = if (confidence >= request.minimumConfidence) {
+            message = if (found) {
                 "Fiber tip detected"
             } else {
                 "Fiber-tip candidate confidence is below threshold"
@@ -114,7 +124,7 @@ class FiberTipIntensityDetector : VisionFeatureDetector {
     }
 }
 
-/** Detects repeated high-contrast grating edges without depending on OpenCV. */
+/** Detects repeated high-contrast grating edges and localizes their 2D edge centroid. */
 class GratingEdgeDetector : VisionFeatureDetector {
     override val supportedKinds = setOf(VisionFeatureKind.Grating)
 
@@ -140,7 +150,11 @@ class GratingEdgeDetector : VisionFeatureDetector {
         val edgeThreshold = mean + max(2.0, deviation * 0.55)
         val peaks = mutableListOf<Int>()
         for (index in 1 until energy.lastIndex) {
-            if (energy[index] >= edgeThreshold && energy[index] >= energy[index - 1] && energy[index] >= energy[index + 1]) {
+            if (
+                energy[index] >= edgeThreshold &&
+                energy[index] >= energy[index - 1] &&
+                energy[index] >= energy[index + 1]
+            ) {
                 if (peaks.isEmpty() || index - peaks.last() >= 2) peaks += index
             }
         }
@@ -149,28 +163,63 @@ class GratingEdgeDetector : VisionFeatureDetector {
         val spacings = peaks.zipWithNext { left, right -> (right - left).toDouble() }
         val spacingMean = spacings.average()
         val spacingDeviation = sqrt(spacings.sumOf { (it - spacingMean) * (it - spacingMean) } / spacings.size)
-        val regularity = if (spacingMean <= 1e-9) 0.0 else (1.0 - spacingDeviation / spacingMean).coerceIn(0.0, 1.0)
+        val regularity = if (spacingMean <= 1e-9) 0.0 else {
+            (1.0 - spacingDeviation / spacingMean).coerceIn(0.0, 1.0)
+        }
         val edgeContrast = ((energy.maxOrNull() ?: mean) - mean).div(80.0).coerceIn(0.0, 1.0)
         val countScore = (peaks.size / 10.0).coerceIn(0.0, 1.0)
-        val confidence = (0.45 * regularity + 0.35 * edgeContrast + 0.20 * countScore).coerceIn(0.0, 1.0)
-        val centerX = roi.left + peaks.average() + 1.0
-        val centerY = roi.top + roi.height / 2.0
+
+        var rowWeightSum = 0.0
+        var weightedY = 0.0
+        var weightedYSquared = 0.0
+        for (y in roi.top until roi.bottomExclusive) {
+            var rowWeight = 0.0
+            peaks.forEach { peakIndex ->
+                val boundaryX = roi.left + peakIndex + 1
+                val gradient = abs(
+                    frame.grayAt(boundaryX, y) - frame.grayAt(boundaryX - 1, y)
+                ).toDouble()
+                rowWeight += (gradient - 6.0).coerceAtLeast(0.0)
+            }
+            if (rowWeight > 0.0) {
+                rowWeightSum += rowWeight
+                weightedY += y * rowWeight
+                weightedYSquared += y * y * rowWeight
+            }
+        }
+        if (rowWeightSum <= 0.0) return missing(request.kind, "Grating edges have no 2D support")
+
+        val firstBoundaryX = roi.left + peaks.first() + 1.0
+        val lastBoundaryX = roi.left + peaks.last() + 1.0
+        val centerX = (firstBoundaryX + lastBoundaryX) / 2.0
+        val centerY = weightedY / rowWeightSum
+        val yVariance = max(0.0, weightedYSquared / rowWeightSum - centerY * centerY)
+        val height = sqrt(yVariance) * 4.0
+        val supportScore = (height / max(4.0, roi.height * 0.12)).coerceIn(0.0, 1.0)
+        val confidence = (
+            0.40 * regularity +
+                0.30 * edgeContrast +
+                0.18 * countScore +
+                0.12 * supportScore
+            ).coerceIn(0.0, 1.0)
+        val found = confidence >= request.minimumConfidence
 
         return VisionFeatureDetection(
             kind = request.kind,
-            found = confidence >= request.minimumConfidence,
+            found = found,
             confidence = confidence,
-            centerPx = VisionPointPx(centerX, centerY).takeIf { confidence >= request.minimumConfidence },
+            centerPx = VisionPointPx(centerX, centerY).takeIf { found },
             angleDeg = 0.0,
-            widthPx = (peaks.last() - peaks.first()).toDouble(),
-            heightPx = roi.height.toDouble(),
+            widthPx = lastBoundaryX - firstBoundaryX,
+            heightPx = height,
             scoreDetails = mapOf(
                 "edgeCount" to peaks.size.toDouble(),
                 "regularity" to regularity,
                 "edgeContrast" to edgeContrast,
-                "meanSpacingPx" to spacingMean
+                "meanSpacingPx" to spacingMean,
+                "support" to supportScore
             ),
-            message = if (confidence >= request.minimumConfidence) {
+            message = if (found) {
                 "Grating edges detected"
             } else {
                 "Grating edge confidence is below threshold"
@@ -218,12 +267,13 @@ class FacetLineDetector : VisionFeatureDetector {
         val coverage = (points.size / max(16.0, roi.width * 0.8)).coerceIn(0.0, 1.0)
         val confidence = (0.55 * rSquared + 0.30 * contrast + 0.15 * coverage).coerceIn(0.0, 1.0)
         val angle = atan(slope) * 180.0 / PI
+        val found = confidence >= request.minimumConfidence
 
         return VisionFeatureDetection(
             kind = request.kind,
-            found = confidence >= request.minimumConfidence,
+            found = found,
             confidence = confidence,
-            centerPx = VisionPointPx(meanX, meanY).takeIf { confidence >= request.minimumConfidence },
+            centerPx = VisionPointPx(meanX, meanY).takeIf { found },
             angleDeg = angle,
             widthPx = roi.width.toDouble(),
             heightPx = sqrt(residual / points.size.coerceAtLeast(1)) * 2.0,
@@ -233,7 +283,7 @@ class FacetLineDetector : VisionFeatureDetector {
                 "coverage" to coverage,
                 "threshold" to threshold
             ),
-            message = if (confidence >= request.minimumConfidence) {
+            message = if (found) {
                 "Facet line detected"
             } else {
                 "Facet line confidence is below threshold"
