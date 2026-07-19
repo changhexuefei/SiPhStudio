@@ -213,7 +213,14 @@ fun createSiPhAppModule(
                 vision = get(),
                 waferStage = get(),
                 probeTracking = get(),
-                profiles = get()
+                profiles = get(),
+                positions = get(),
+                wafers = get(),
+                checkpoints = get(),
+                records = get(),
+                trainer = get(),
+                workflowRunner = get(),
+                nowEpochMs = epochClock
             )
         }
     }
