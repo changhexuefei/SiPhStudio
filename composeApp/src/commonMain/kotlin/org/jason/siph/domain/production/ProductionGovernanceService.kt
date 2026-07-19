@@ -31,11 +31,13 @@ class ProductionGovernanceService(
             require(current.approvalState in setOf(RecipeApprovalState.Draft, RecipeApprovalState.AwaitingApproval)) {
                 "Recipe cannot be approved from state ${current.approvalState}"
             }
-            current.copy(
+            val approved = current.copy(
                 approvalState = RecipeApprovalState.Approved,
                 approvedBy = actor.id,
                 approvedAtEpochMs = nowEpochMs()
-            ).also(repository::saveRecipe)
+            )
+            repository.saveRecipe(approved)
+            approved
         }
     }
 
@@ -60,10 +62,12 @@ class ProductionGovernanceService(
             require(current.state in setOf(LotState.Draft, LotState.AwaitingApproval)) {
                 "Lot cannot be approved from state ${current.state}"
             }
-            current.copy(
+            val approved = current.copy(
                 state = LotState.Queued,
                 approvedBy = actor.id
-            ).also(repository::saveLot)
+            )
+            repository.saveLot(approved)
+            approved
         }
     }
 
@@ -90,12 +94,14 @@ class ProductionGovernanceService(
             require(current.attemptCount < current.maximumAttempts) {
                 "Task has exhausted its maximum attempts"
             }
-            current.copy(
+            val retryPending = current.copy(
                 state = ProductionTaskState.RetryPending,
                 leaseOwner = null,
                 leaseExpiresAtEpochMs = null,
                 lastError = "Manual retry approved: $reason"
-            ).also(repository::saveTask)
+            )
+            repository.saveTask(retryPending)
+            retryPending
         }
     }
 
@@ -120,12 +126,14 @@ class ProductionGovernanceService(
         ) {
             authorization.requirePermission(actor, ProductionPermission.AnomalyOverride)
             require(reason.isNotBlank()) { "Anomaly override reason is required" }
-            current.copy(
+            val reviewed = current.copy(
                 reviewedClassification = classification,
                 reviewReason = reason,
                 reviewedBy = actor.id,
                 closedAtEpochMs = nowEpochMs().takeIf { closeCase }
-            ).also(repository::saveAnomalyCase)
+            )
+            repository.saveAnomalyCase(reviewed)
+            reviewed
         }
     }
 
