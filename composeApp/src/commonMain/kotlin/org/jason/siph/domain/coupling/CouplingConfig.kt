@@ -1,8 +1,10 @@
 package org.jason.siph.domain.coupling
 
+import kotlinx.serialization.Serializable
 import org.jason.siph.domain.positioner.VirtualPivotPoint
 
 /** 耦光模式。 */
+@Serializable
 enum class CouplingMode {
     VerticalGratingCoupler,
     HorizontalDieLevelEdgeCoupling,
@@ -10,6 +12,7 @@ enum class CouplingMode {
 }
 
 /** 螺旋搜索平面。 */
+@Serializable
 enum class CouplingSpiralPlane {
     XY,
     YZ,
@@ -19,11 +22,9 @@ enum class CouplingSpiralPlane {
 /**
  * 自动耦光配置。
  *
- * 单位：
- * - X/Y/Z：um
- * - U/V/W：deg
- * - 光功率：dBm
+ * 单位：X/Y/Z 为 um，U/V/W 为 deg，光功率为 dBm。
  */
+@Serializable
 data class CouplingConfig(
     val mode: CouplingMode = CouplingMode.VerticalGratingCoupler,
     val wavelengthNm: Double = 1550.0,
@@ -34,20 +35,12 @@ data class CouplingConfig(
     val spiralStepUm: Double = 2.0,
     val maxRadiusUm: Double = 50.0,
     val settleDelayMs: Long = 50L,
-
-    /** 每个位置读取几次功率并取平均值。 */
     val powerAverageCount: Int = 3,
-
-    /** 同一位置多次功率读取之间的间隔。 */
     val powerAverageDelayMs: Long = 5L,
-
     val enableFineXyz: Boolean = true,
     val fineStepsUm: List<Double> = listOf(2.0, 1.0, 0.5, 0.2, 0.1),
     val minImproveDb: Double = 0.02,
-
-    /** 每个精调步长最多执行的坐标下降轮数，避免噪声导致无限循环。 */
     val maxFinePassesPerStep: Int = 12,
-
     val enableIncidentAngleOptimization: Boolean = false,
     val uStepDeg: Double = 0.02,
     val vStepDeg: Double = 0.02,
@@ -56,11 +49,7 @@ data class CouplingConfig(
     val virtualPivotPoint: VirtualPivotPoint = VirtualPivotPoint.Disabled,
     val enableSoftwarePivotCompensation: Boolean = false,
     val enableCollisionAvoidance: Boolean = true,
-
-    /** 单次任务最大采样点数，作为算法和机械运动的硬保护。 */
     val maxTotalSamples: Int = 2500,
-
-    /** 达到目标功率后是否立即结束当前搜索。 */
     val stopWhenTargetReached: Boolean = true
 ) {
     init {
