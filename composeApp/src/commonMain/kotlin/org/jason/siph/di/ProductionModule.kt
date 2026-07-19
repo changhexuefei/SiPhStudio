@@ -11,6 +11,7 @@ import org.jason.siph.domain.production.DefaultProductionWorker
 import org.jason.siph.domain.production.DefaultQualitySpcEngine
 import org.jason.siph.domain.production.DistributedProductionCoordinator
 import org.jason.siph.domain.production.EnterpriseIdentityGateway
+import org.jason.siph.domain.production.EnterpriseSessionService
 import org.jason.siph.domain.production.MesGateway
 import org.jason.siph.domain.production.ProductionAnomalyClassifier
 import org.jason.siph.domain.production.ProductionAuditService
@@ -90,6 +91,7 @@ fun createProductionModule(
         single<AuditHasher> { auditHasher }
         single<DistributedProductionCoordinator> { coordinator }
         single<EnterpriseIdentityGateway> { platformIdentityGateway }
+        single { EnterpriseSessionService(gateway = get()) }
         single<MesGateway> { platformMesGateway }
         single<RemoteAuditSink> { platformRemoteAuditSink }
         single<ProductionScheduler> {
