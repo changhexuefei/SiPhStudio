@@ -149,7 +149,7 @@ private class FakeTransport(
 
     override suspend fun readLine(): String {
         check(isOpen)
-        return responseQueue.removeFirstOrNull()
+        return responseQueue.pollFirst()
             ?: error("No fake PI GCS response available")
     }
 
