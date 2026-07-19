@@ -11,6 +11,7 @@ import org.jason.siph.domain.production.ProductionAnomalyClassifier
 import org.jason.siph.domain.production.ProductionAuditService
 import org.jason.siph.domain.production.ProductionAuthorizationService
 import org.jason.siph.domain.production.ProductionCalibrationGate
+import org.jason.siph.domain.production.ProductionGovernanceService
 import org.jason.siph.domain.production.ProductionMeasurementExecutor
 import org.jason.siph.domain.production.ProductionRepository
 import org.jason.siph.domain.production.ProductionScheduler
@@ -62,6 +63,14 @@ fun createProductionModule(
                 idFactory = { "audit-${epochClock()}-${++auditSequence}" },
                 applicationVersion = "phase4-digital",
                 workstationId = "${runtimeMode.name.lowercase()}-workstation"
+            )
+        }
+        single {
+            ProductionGovernanceService(
+                repository = get(),
+                authorization = get(),
+                audit = get(),
+                nowEpochMs = epochClock
             )
         }
         single<ProductionMeasurementExecutor> {
