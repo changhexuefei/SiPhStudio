@@ -149,6 +149,10 @@ class JvmJsonAutonomyRepository(
         copy(driftBaselines = driftBaselines.filterNot { it.id == id })
     }
 
+    override suspend fun listCheckpoints(): List<SiPhWorkflowCheckpoint> = mutex.withLock {
+        database.checkpoints.sortedByDescending { it.updatedAtEpochMs }
+    }
+
     override suspend fun findCheckpoint(runId: String): SiPhWorkflowCheckpoint? = mutex.withLock {
         database.checkpoints.firstOrNull { it.runId == runId }
     }
