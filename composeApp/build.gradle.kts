@@ -76,6 +76,7 @@ kotlin {
         }
 
         jvmMain.dependencies {
+            implementation(project(":pi-gcs-kotlin"))
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
             implementation(files("libs/surface-plot-jvm-1.0.0.jar"))
