@@ -35,19 +35,20 @@ internal enum class AerospaceSurfaceBackend(
     ),
     JavaFx3d(
         label = "JAVAFX",
-        caption = "JavaFX accelerated surface renderer",
+        caption = "Persistent JavaFX scene with textured TriangleMesh",
         enabled = true
     ),
+
+    /** 枚举名为兼容旧状态保留，实际实现已经替换为 GPU OpenGL JAR。 */
     Lwjgl(
-        label = "LWJGL",
-        caption = "OpenGL production surface renderer",
+        label = "GPU OPENGL",
+        caption = "OpenGL 3.3 GPU renderer with lighting, picking and tooltips",
         enabled = true
     )
 }
 
 /**
- * 旧版 Compose Canvas 3D 会在每次拖动时重建二维列表、单元格、排序列表和 Path。
- * 这里仅在 samples 改变时构建一次 [SurfaceMesh]，视图旋转和绘制交给各后端维护。
+ * 仅在 samples 改变时构建一次 [SurfaceMesh]，视图旋转和绘制交给各后端维护。
  */
 @Composable
 internal fun AerospacePowerSurface3d(
@@ -56,6 +57,7 @@ internal fun AerospacePowerSurface3d(
     onSelectBackend: (AerospaceSurfaceBackend) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val spec = CouplingSurfaceRenderSpec
     val mesh = remember(samples) {
         buildAerospaceSurfaceMesh(samples)
     }
@@ -75,8 +77,8 @@ internal fun AerospacePowerSurface3d(
             AerospaceSurfaceBackend.SurfacePlot -> SurfacePlotPowerSurface3d(
                 mesh = mesh,
                 title = "POWER SURFACE",
-                initialAzimuthDegrees = -35.5f,
-                initialElevationDegrees = 33.2f,
+                initialAzimuthDegrees = spec.initialAzimuthDegrees,
+                initialElevationDegrees = spec.initialElevationDegrees,
                 modifier = Modifier.fillMaxWidth().weight(1f)
             )
 
