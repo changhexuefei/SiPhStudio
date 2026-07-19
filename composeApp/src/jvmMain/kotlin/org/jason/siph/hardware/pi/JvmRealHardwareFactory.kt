@@ -13,27 +13,41 @@ import org.jason.pi.gcs.transport.KtorTcpGcsTransport
 import org.jason.siph.di.RealHardwarePorts
 import org.jason.siph.domain.runtime.HardwareRuntimeMode
 import org.jason.siph.persistence.JvmJsonAutonomyRepository
+import org.jason.siph.persistence.JvmJsonOoMeasurementRepository
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 在 JVM 启动阶段组装真实 PI TCP/GCS 端口和本地工作流数据库。
  *
- * 数据库在 Demo/Real 模式下都启用，默认路径：
- * ~/.siphstudio/autonomy-workflow.json
+ * Demo/Real 模式都会启用：
+ * - ~/.siphstudio/autonomy-workflow.json
+ * - ~/.siphstudio/oo-measurements.json
  */
 fun createJvmRealHardwarePorts(
     runtimeMode: HardwareRuntimeMode
 ): RealHardwarePorts {
-    val autonomyRepository = JvmJsonAutonomyRepository(resolveAutonomyDatabasePath())
+    val dataDirectory = resolveDataDirectory()
+    val autonomyRepository = JvmJsonAutonomyRepository(
+        dataDirectory.resolve(AUTONOMY_DATABASE_FILE)
+    )
+    val ooRepository = JvmJsonOoMeasurementRepository(
+        dataDirectory.resolve(OO_DATABASE_FILE)
+    )
 
     if (runtimeMode != HardwareRuntimeMode.Real) {
-        return RealHardwarePorts(autonomyRepositories = autonomyRepository)
+        return RealHardwarePorts(
+            autonomyRepositories = autonomyRepository,
+            ooMeasurements = ooRepository
+        )
     }
 
     val host = System.getProperty(PROPERTY_HOST)?.trim().orEmpty()
     if (host.isEmpty()) {
-        return RealHardwarePorts(autonomyRepositories = autonomyRepository)
+        return RealHardwarePorts(
+            autonomyRepositories = autonomyRepository,
+            ooMeasurements = ooRepository
+        )
     }
 
     val config = PiJvmConnectionConfig.fromSystemProperties(host)
@@ -62,17 +76,17 @@ fun createJvmRealHardwarePorts(
 
     return RealHardwarePorts(
         positioner = PiOpticalPositionerAdapter(piPort),
-        autonomyRepositories = autonomyRepository
+        autonomyRepositories = autonomyRepository,
+        ooMeasurements = ooRepository
     )
 }
 
-private fun resolveAutonomyDatabasePath(): Path {
+private fun resolveDataDirectory(): Path {
     val configuredDirectory = System.getProperty(PROPERTY_DATA_DIRECTORY)
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
-    val directory = configuredDirectory?.let(Path::of)
+    return configuredDirectory?.let(Path::of)
         ?: Path.of(System.getProperty("user.home"), ".siphstudio")
-    return directory.resolve(AUTONOMY_DATABASE_FILE)
 }
 
 private data class PiJvmConnectionConfig(
@@ -163,5 +177,6 @@ private const val PROPERTY_LINEAR_UNIT = "siph.pi.linearUnit"
 private const val PROPERTY_SAFE_POSE = "siph.pi.safePose"
 private const val PROPERTY_DATA_DIRECTORY = "siph.data.dir"
 private const val AUTONOMY_DATABASE_FILE = "autonomy-workflow.json"
+private const val OO_DATABASE_FILE = "oo-measurements.json"
 private const val DEFAULT_PORT = 50_000
 private const val DEFAULT_TIMEOUT_MS = 5_000L
