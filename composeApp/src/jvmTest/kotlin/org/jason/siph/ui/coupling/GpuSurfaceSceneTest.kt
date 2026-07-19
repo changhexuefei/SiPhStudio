@@ -14,13 +14,15 @@ class GpuSurfaceSceneTest {
 
         val scene = buildGpuSurfaceScene(mesh)
 
-        assertEquals(1, scene.layers.size)
-        assertTrue(scene.layers.single().pickable)
-        assertEquals(mesh.rowCount * mesh.columnCount, scene.layers.single().mesh.vertices.size)
+        assertEquals(3, scene.layers.size)
+        assertEquals(listOf(false, false, true), scene.layers.map { it.pickable })
+        val surfaceLayer = scene.layers.single { it.pickable }
+        assertEquals(mesh.rowCount * mesh.columnCount, surfaceLayer.mesh.vertices.size)
         assertEquals(CouplingSurfaceRenderSpec.xAxisLabel, scene.axes?.xLabel)
         assertEquals(CouplingSurfaceRenderSpec.yAxisLabel, scene.axes?.yLabel)
         assertEquals(CouplingSurfaceRenderSpec.zAxisLabel, scene.axes?.zLabel)
         assertNotNull(scene.axes)
+        assertTrue(scene.labels.size >= CouplingSurfaceRenderSpec.axisTickCount * 3)
     }
 
     @Test
@@ -28,7 +30,7 @@ class GpuSurfaceSceneTest {
         val mesh = testMesh()
 
         val scene = buildGpuSurfaceScene(mesh)
-        val firstVertex = scene.layers.single().mesh.vertices.first()
+        val firstVertex = scene.layers.single { it.pickable }.mesh.vertices.first()
         val expectedAspect = 0.8f
 
         assertClose(-10f, firstVertex.dataPosition.x)
@@ -45,7 +47,8 @@ class GpuSurfaceSceneTest {
     fun emptyGpuSceneKeepsRendererAliveWithoutMeshLayer() {
         val scene = buildGpuSurfaceScene(null)
 
-        assertTrue(scene.layers.isEmpty())
+        assertEquals(2, scene.layers.size)
+        assertTrue(scene.layers.none { it.pickable })
         assertNotNull(scene.axes)
         assertEquals(CouplingSurfaceRenderSpec.backgroundColor.red, scene.backgroundColor.red)
     }

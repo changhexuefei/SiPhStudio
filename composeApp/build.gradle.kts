@@ -28,6 +28,12 @@ val lwjglPlatform = when {
 
 val javafxVersion = libs.versions.javafx.get()
 val lwjglVersion = libs.versions.lwjgl.get()
+val surfacePlotComposeAbiVersion = "1.11.1"
+
+check(libs.versions.composeMultiplatform.get() == surfacePlotComposeAbiVersion) {
+    "surface-plot JVM JARs were compiled against Compose $surfacePlotComposeAbiVersion. " +
+        "Rebuild the JARs before changing composeMultiplatform."
+}
 
 kotlin {
     jvm {
