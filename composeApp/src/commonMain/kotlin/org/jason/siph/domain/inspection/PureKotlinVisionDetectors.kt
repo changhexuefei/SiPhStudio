@@ -228,7 +228,7 @@ class GratingEdgeDetector : VisionFeatureDetector {
     }
 }
 
-/** Detects a bright facet edge by least-squares line fitting and residual scoring. */
+/** Detects the longest bright connected line and rejects compact fiber-tip blobs. */
 class FacetLineDetector : VisionFeatureDetector {
     override val supportedKinds = setOf(VisionFeatureKind.Facet)
 
@@ -239,16 +239,16 @@ class FacetLineDetector : VisionFeatureDetector {
         require(request.kind == VisionFeatureKind.Facet)
         val roi = frame.normalizedRoi(request.regionOfInterest)
         val stats = frame.statistics(roi)
-        val threshold = stats.mean + max(10.0, stats.standardDeviation)
-        val points = buildList {
-            for (y in roi.top until roi.bottomExclusive) {
-                for (x in roi.left until roi.rightExclusive) {
-                    if (frame.grayAt(x, y) >= threshold) add(VisionPointPx(x.toDouble(), y.toDouble()))
-                }
-            }
-        }
-        if (points.size < 8) return missing(request.kind, "No facet edge candidate")
+        val threshold = stats.mean + max(16.0, stats.standardDeviation * 1.10)
+        val components = brightComponents(frame, roi, threshold)
+        val candidate = components
+            .filter { it.points.size >= 8 && it.width >= 8 }
+            .maxWithOrNull(
+                compareBy<BrightComponent> { it.width }
+                    .thenBy { it.points.size }
+            ) ?: return missing(request.kind, "No elongated facet edge candidate")
 
+        val points = candidate.points
         val meanX = points.map { it.x }.average()
         val meanY = points.map { it.y }.average()
         val varianceX = points.sumOf { (it.x - meanX) * (it.x - meanX) }
@@ -261,11 +261,22 @@ class FacetLineDetector : VisionFeatureDetector {
             val predicted = slope * it.x + intercept
             (it.y - predicted) * (it.y - predicted)
         }
-        val rSquared = if (total <= 1e-9) 0.0 else (1.0 - residual / total).coerceIn(0.0, 1.0)
-        val contrast = ((points.maxOf { frame.grayAt(it.x.toInt(), it.y.toInt()) } - stats.mean) / 180.0)
-            .coerceIn(0.0, 1.0)
-        val coverage = (points.size / max(16.0, roi.width * 0.8)).coerceIn(0.0, 1.0)
-        val confidence = (0.55 * rSquared + 0.30 * contrast + 0.15 * coverage).coerceIn(0.0, 1.0)
+        val rSquared = if (total <= 1e-9) 0.0 else {
+            (1.0 - residual / total).coerceIn(0.0, 1.0)
+        }
+        val contrast = (
+            (points.maxOf { frame.grayAt(it.x.toInt(), it.y.toInt()) } - stats.mean) / 180.0
+            ).coerceIn(0.0, 1.0)
+        val spanScore = (candidate.width / max(12.0, roi.width * 0.35)).coerceIn(0.0, 1.0)
+        val elongation = (
+            candidate.width.toDouble() / max(1.0, candidate.height.toDouble() * 2.0)
+            ).coerceIn(0.0, 1.0)
+        val confidence = (
+            0.48 * rSquared +
+                0.22 * contrast +
+                0.18 * spanScore +
+                0.12 * elongation
+            ).coerceIn(0.0, 1.0)
         val angle = atan(slope) * 180.0 / PI
         val found = confidence >= request.minimumConfidence
 
@@ -275,12 +286,14 @@ class FacetLineDetector : VisionFeatureDetector {
             confidence = confidence,
             centerPx = VisionPointPx(meanX, meanY).takeIf { found },
             angleDeg = angle,
-            widthPx = roi.width.toDouble(),
+            widthPx = candidate.width.toDouble(),
             heightPx = sqrt(residual / points.size.coerceAtLeast(1)) * 2.0,
             scoreDetails = mapOf(
                 "rSquared" to rSquared,
                 "contrast" to contrast,
-                "coverage" to coverage,
+                "span" to spanScore,
+                "elongation" to elongation,
+                "componentPoints" to points.size.toDouble(),
                 "threshold" to threshold
             ),
             message = if (found) {
@@ -290,6 +303,79 @@ class FacetLineDetector : VisionFeatureDetector {
             }
         )
     }
+}
+
+private data class BrightComponent(
+    val points: List<VisionPointPx>,
+    val left: Int,
+    val top: Int,
+    val right: Int,
+    val bottom: Int
+) {
+    val width: Int get() = right - left + 1
+    val height: Int get() = bottom - top + 1
+}
+
+private fun brightComponents(
+    frame: CameraFrame,
+    roi: VisionRectPx,
+    threshold: Double
+): List<BrightComponent> {
+    val visited = BooleanArray(roi.width * roi.height)
+    val components = mutableListOf<BrightComponent>()
+
+    fun localIndex(x: Int, y: Int): Int = (y - roi.top) * roi.width + (x - roi.left)
+
+    for (startY in roi.top until roi.bottomExclusive) {
+        for (startX in roi.left until roi.rightExclusive) {
+            val startIndex = localIndex(startX, startY)
+            if (visited[startIndex] || frame.grayAt(startX, startY) < threshold) continue
+
+            val queue = ArrayDeque<Int>()
+            val points = mutableListOf<VisionPointPx>()
+            var left = startX
+            var right = startX
+            var top = startY
+            var bottom = startY
+            visited[startIndex] = true
+            queue.addLast(startIndex)
+
+            while (queue.isNotEmpty()) {
+                val index = queue.removeFirst()
+                val localY = index / roi.width
+                val localX = index % roi.width
+                val x = roi.left + localX
+                val y = roi.top + localY
+                points += VisionPointPx(x.toDouble(), y.toDouble())
+                left = min(left, x)
+                right = max(right, x)
+                top = min(top, y)
+                bottom = max(bottom, y)
+
+                for (dy in -1..1) {
+                    for (dx in -1..1) {
+                        if (dx == 0 && dy == 0) continue
+                        val nextX = x + dx
+                        val nextY = y + dy
+                        if (
+                            nextX !in roi.left until roi.rightExclusive ||
+                            nextY !in roi.top until roi.bottomExclusive
+                        ) continue
+                        val nextIndex = localIndex(nextX, nextY)
+                        if (
+                            !visited[nextIndex] &&
+                            frame.grayAt(nextX, nextY) >= threshold
+                        ) {
+                            visited[nextIndex] = true
+                            queue.addLast(nextIndex)
+                        }
+                    }
+                }
+            }
+            components += BrightComponent(points, left, top, right, bottom)
+        }
+    }
+    return components
 }
 
 private data class GrayStatistics(
