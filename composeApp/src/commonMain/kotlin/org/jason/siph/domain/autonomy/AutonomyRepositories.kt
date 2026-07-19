@@ -1,5 +1,8 @@
 package org.jason.siph.domain.autonomy
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -44,28 +47,69 @@ interface MeasurementRecordRepository {
     suspend fun deleteRecord(id: String)
 }
 
+/** 一个实例同时维护所有需要原子保存的自主工作流资产。 */
+interface AutonomyRepositoryBundle : CalibrationProfileRepository,
+    MeasurementPositionRepository,
+    WaferDefinitionRepository,
+    CalibrationVerificationRepository,
+    DriftBaselineRepository,
+    WorkflowCheckpointRepository,
+    MeasurementRecordRepository
+
 /** 测试、Wasm 和未启用文件系统持久化时使用的线程安全仓储。 */
 class InMemoryAutonomyRepository(
+    initialProfiles: List<CalibrationProfile> = emptyList(),
+    initialActiveProfileId: String? = null,
     initialPositions: List<TrainedMeasurementPosition> = emptyList(),
     initialWafers: List<SiPhWaferDefinition> = emptyList(),
     initialVerifications: List<CalibrationVerificationRecord> = emptyList(),
     initialBaselines: List<DriftBaseline> = emptyList(),
     initialCheckpoints: List<SiPhWorkflowCheckpoint> = emptyList(),
     initialRecords: List<SiPhMeasurementRecord> = emptyList()
-) : MeasurementPositionRepository,
-    WaferDefinitionRepository,
-    CalibrationVerificationRepository,
-    DriftBaselineRepository,
-    WorkflowCheckpointRepository,
-    MeasurementRecordRepository {
+) : AutonomyRepositoryBundle {
 
     private val mutex = Mutex()
+    private val profiles = initialProfiles.associateBy { it.id }.toMutableMap()
     private val positions = initialPositions.associateBy { it.id }.toMutableMap()
     private val wafers = initialWafers.associateBy { it.id }.toMutableMap()
     private val verifications = initialVerifications.toMutableList()
     private val baselines = initialBaselines.associateBy { it.id }.toMutableMap()
     private val checkpoints = initialCheckpoints.associateBy { it.runId }.toMutableMap()
     private val records = initialRecords.associateBy { it.id }.toMutableMap()
+    private val mutableActiveProfile = MutableStateFlow(initialActiveProfileId?.let(profiles::get))
+
+    override val activeProfile: StateFlow<CalibrationProfile?> = mutableActiveProfile.asStateFlow()
+
+    override suspend fun listProfiles(): List<CalibrationProfile> = mutex.withLock {
+        profiles.values.sortedBy { it.name.lowercase() }
+    }
+
+    override suspend fun findProfile(id: String): CalibrationProfile? = mutex.withLock { profiles[id] }
+
+    override suspend fun saveProfile(profile: CalibrationProfile) {
+        mutex.withLock {
+            profiles[profile.id] = profile
+            if (mutableActiveProfile.value?.id == profile.id) mutableActiveProfile.value = profile
+        }
+    }
+
+    override suspend fun deleteProfile(id: String) {
+        mutex.withLock {
+            profiles.remove(id)
+            if (mutableActiveProfile.value?.id == id) mutableActiveProfile.value = null
+        }
+    }
+
+    override suspend fun activateProfile(id: String) {
+        mutex.withLock {
+            mutableActiveProfile.value = profiles[id]
+                ?: error("Calibration profile not found: $id")
+        }
+    }
+
+    override suspend fun clearActiveProfile() {
+        mutex.withLock { mutableActiveProfile.value = null }
+    }
 
     override suspend fun listPositions(): List<TrainedMeasurementPosition> = mutex.withLock {
         positions.values.sortedByDescending { it.trainedAtEpochMs }
@@ -76,10 +120,7 @@ class InMemoryAutonomyRepository(
     }
 
     override suspend fun findPosition(site: MeasurementSiteKey): TrainedMeasurementPosition? = mutex.withLock {
-        positions.values
-            .asSequence()
-            .filter { it.site == site }
-            .maxByOrNull { it.trainedAtEpochMs }
+        positions.values.asSequence().filter { it.site == site }.maxByOrNull { it.trainedAtEpochMs }
     }
 
     override suspend fun savePosition(position: TrainedMeasurementPosition) {
@@ -94,9 +135,7 @@ class InMemoryAutonomyRepository(
         wafers.values.sortedBy { it.id.lowercase() }
     }
 
-    override suspend fun findWafer(id: String): SiPhWaferDefinition? = mutex.withLock {
-        wafers[id]
-    }
+    override suspend fun findWafer(id: String): SiPhWaferDefinition? = mutex.withLock { wafers[id] }
 
     override suspend fun saveWafer(wafer: SiPhWaferDefinition) {
         mutex.withLock { wafers[wafer.id] = wafer }
@@ -109,8 +148,7 @@ class InMemoryAutonomyRepository(
     override suspend fun listVerifications(
         profileId: String?
     ): List<CalibrationVerificationRecord> = mutex.withLock {
-        verifications
-            .asSequence()
+        verifications.asSequence()
             .filter { profileId == null || it.profileId == profileId }
             .sortedByDescending { it.verifiedAtEpochMs }
             .toList()
@@ -124,15 +162,10 @@ class InMemoryAutonomyRepository(
         baselines.values.sortedByDescending { it.createdAtEpochMs }
     }
 
-    override suspend fun findBaseline(id: String): DriftBaseline? = mutex.withLock {
-        baselines[id]
-    }
+    override suspend fun findBaseline(id: String): DriftBaseline? = mutex.withLock { baselines[id] }
 
     override suspend fun findBaseline(site: MeasurementSiteKey): DriftBaseline? = mutex.withLock {
-        baselines.values
-            .asSequence()
-            .filter { it.site == site }
-            .maxByOrNull { it.createdAtEpochMs }
+        baselines.values.asSequence().filter { it.site == site }.maxByOrNull { it.createdAtEpochMs }
     }
 
     override suspend fun saveBaseline(baseline: DriftBaseline) {
@@ -158,15 +191,11 @@ class InMemoryAutonomyRepository(
     override suspend fun listRecords(limit: Int): List<SiPhMeasurementRecord> {
         require(limit > 0) { "limit must be positive" }
         return mutex.withLock {
-            records.values
-                .sortedByDescending { it.provenance.finishedAtEpochMs }
-                .take(limit)
+            records.values.sortedByDescending { it.provenance.finishedAtEpochMs }.take(limit)
         }
     }
 
-    override suspend fun findRecord(id: String): SiPhMeasurementRecord? = mutex.withLock {
-        records[id]
-    }
+    override suspend fun findRecord(id: String): SiPhMeasurementRecord? = mutex.withLock { records[id] }
 
     override suspend fun saveRecord(record: SiPhMeasurementRecord) {
         mutex.withLock { records[record.id] = record }
