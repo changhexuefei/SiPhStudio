@@ -2,24 +2,36 @@ package org.jason.siph.di
 
 import kotlinx.coroutines.CoroutineScope
 import org.jason.siph.domain.production.AuditHasher
+import org.jason.siph.domain.production.AutoRegisteringDistributedProductionCoordinator
+import org.jason.siph.domain.production.CoordinatedProductionScheduler
 import org.jason.siph.domain.production.DefaultProductionAuditService
 import org.jason.siph.domain.production.DefaultProductionCalibrationGate
 import org.jason.siph.domain.production.DefaultProductionScheduler
 import org.jason.siph.domain.production.DefaultProductionWorker
 import org.jason.siph.domain.production.DefaultQualitySpcEngine
+import org.jason.siph.domain.production.DistributedProductionCoordinator
+import org.jason.siph.domain.production.InMemoryRemoteAuditSink
+import org.jason.siph.domain.production.MesGateway
+import org.jason.siph.domain.production.MockMesGateway
 import org.jason.siph.domain.production.ProductionAnomalyClassifier
 import org.jason.siph.domain.production.ProductionAuditService
 import org.jason.siph.domain.production.ProductionAuthorizationService
 import org.jason.siph.domain.production.ProductionCalibrationGate
 import org.jason.siph.domain.production.ProductionGovernanceService
 import org.jason.siph.domain.production.ProductionMeasurementExecutor
+import org.jason.siph.domain.production.ProductionOutboxDispatcher
 import org.jason.siph.domain.production.ProductionRepository
 import org.jason.siph.domain.production.ProductionScheduler
+import org.jason.siph.domain.production.ProductionWorkerRegistration
 import org.jason.siph.domain.production.QualitySpcEngine
+import org.jason.siph.domain.production.RemoteAuditSink
+import org.jason.siph.domain.production.ReplicatingProductionAuditService
 import org.jason.siph.domain.production.RoleBasedProductionAuthorizationService
 import org.jason.siph.domain.production.RuleBasedProductionAnomalyClassifier
 import org.jason.siph.domain.production.SimulatedProductionMeasurementExecutor
+import org.jason.siph.domain.production.UnavailableMesGateway
 import org.jason.siph.domain.production.UnavailableProductionMeasurementExecutor
+import org.jason.siph.domain.production.UnavailableRemoteAuditSink
 import org.jason.siph.domain.runtime.HardwareRuntimeMode
 import org.jason.siph.ui.production.ProductionControlStore
 import org.koin.core.module.Module
@@ -30,24 +42,62 @@ fun createProductionModule(
     scope: CoroutineScope,
     runtimeMode: HardwareRuntimeMode,
     repository: ProductionRepository,
-    auditHasher: AuditHasher
+    auditHasher: AuditHasher,
+    distributedCoordinator: DistributedProductionCoordinator
 ): Module {
     val epochClock = { Clock.System.now().toEpochMilliseconds() }
+    val workstationId = "${runtimeMode.name.lowercase()}-workstation"
     val equipmentIdentities = if (runtimeMode == HardwareRuntimeMode.Demo) {
         ProductionControlStore.DEMO_EQUIPMENT
     } else {
         emptyMap()
     }
+    val workerCapabilities = if (runtimeMode == HardwareRuntimeMode.Demo) {
+        setOf(
+            "fiberArray",
+            "laser",
+            "powerMeter",
+            "electricalAnalyzer",
+            "prober"
+        )
+    } else {
+        emptySet()
+    }
+    val coordinator = AutoRegisteringDistributedProductionCoordinator(
+        delegate = distributedCoordinator,
+        registrationFactory = { workerId, nowEpochMs ->
+            workerCapabilities.takeIf { it.isNotEmpty() }?.let { capabilities ->
+                ProductionWorkerRegistration(
+                    workerId = workerId,
+                    workstationId = workstationId,
+                    equipmentGroupId = if (runtimeMode == HardwareRuntimeMode.Demo) "digital-production" else "unverified-real",
+                    capabilities = capabilities,
+                    softwareVersion = "phase4.5-digital",
+                    maximumParallelTasks = 1,
+                    registeredAtEpochMs = nowEpochMs
+                )
+            }
+        }
+    )
     var auditSequence = 0L
 
     return module {
         single<ProductionRepository> { repository }
         single<AuditHasher> { auditHasher }
+        single<DistributedProductionCoordinator> { coordinator }
         single<ProductionScheduler> {
-            DefaultProductionScheduler(
-                repository = get(),
-                nowEpochMs = epochClock
-            )
+            if (coordinator.status.configured) {
+                CoordinatedProductionScheduler(
+                    repository = get(),
+                    coordinator = get(),
+                    nowEpochMs = epochClock
+                )
+            } else {
+                DefaultProductionScheduler(
+                    repository = get(),
+                    nowEpochMs = epochClock
+                )
+            }
         }
         single<ProductionCalibrationGate> {
             DefaultProductionCalibrationGate(repository = get())
@@ -55,15 +105,44 @@ fun createProductionModule(
         single<QualitySpcEngine> { DefaultQualitySpcEngine() }
         single<ProductionAnomalyClassifier> { RuleBasedProductionAnomalyClassifier() }
         single<ProductionAuthorizationService> { RoleBasedProductionAuthorizationService() }
+        single<MesGateway> {
+            when (runtimeMode) {
+                HardwareRuntimeMode.Demo -> MockMesGateway()
+                HardwareRuntimeMode.Real -> UnavailableMesGateway()
+            }
+        }
+        single<RemoteAuditSink> {
+            when (runtimeMode) {
+                HardwareRuntimeMode.Demo -> InMemoryRemoteAuditSink()
+                HardwareRuntimeMode.Real -> UnavailableRemoteAuditSink()
+            }
+        }
+        single {
+            ProductionOutboxDispatcher(
+                coordinator = get(),
+                mesGateway = get(),
+                remoteAuditSink = get(),
+                nowEpochMs = epochClock
+            )
+        }
         single<ProductionAuditService> {
-            DefaultProductionAuditService(
+            val localAudit = DefaultProductionAuditService(
                 repository = get(),
                 hasher = get(),
                 nowEpochMs = epochClock,
                 idFactory = { "audit-${epochClock()}-${++auditSequence}" },
-                applicationVersion = "phase4-digital",
-                workstationId = "${runtimeMode.name.lowercase()}-workstation"
+                applicationVersion = "phase4.5-distributed",
+                workstationId = workstationId
             )
+            if (coordinator.status.configured) {
+                ReplicatingProductionAuditService(
+                    delegate = localAudit,
+                    coordinator = get(),
+                    nowEpochMs = epochClock
+                )
+            } else {
+                localAudit
+            }
         }
         single {
             ProductionGovernanceService(
