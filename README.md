@@ -42,4 +42,39 @@ If you face any issues, please report them on [YouTrack](https://youtrack.jetbra
 
 ---
 
+
+第一阶段：不增加新硬件也能完成
+SiPhWorkflowRunner 状态机；
+校准模型和持久化；
+测量位置训练；
+光学验证与回位重复性测试；
+Wafer/Die/Sub-Die 数据模型；
+漂移检测策略；
+测量结果完整追溯；
+自动恢复和重试策略。
+第二阶段：接入已有设备
+真实光功率计适配器；
+探针台适配器；
+WaferMap/Die 走位；
+激光器控制；
+温控器联动；
+O-O 自动测量。
+第三阶段：需要新增视觉或传感器
+相机采集接口；
+Fiber tip 检测；
+Grating/facet 检测；
+视觉预对准；
+Z displacement sensor；
+Probe height training；
+自动 Pivot 校准；
+多温度自动复校。
+第四阶段：生产化
+Fiber Array 支持；
+O-E、O-E-O 测试；
+Calibration Wafer；
+Lot 级任务调度；
+质量趋势和 SPC；
+自动异常分类；
+可审计权限和操作记录。
+
 Learn more about [Compose Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/compose-multiplatform.html).
