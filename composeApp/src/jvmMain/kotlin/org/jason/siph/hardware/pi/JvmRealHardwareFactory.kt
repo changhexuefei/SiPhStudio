@@ -13,6 +13,7 @@ import org.jason.pi.gcs.transport.KtorTcpGcsTransport
 import org.jason.siph.di.RealHardwarePorts
 import org.jason.siph.domain.runtime.HardwareRuntimeMode
 import org.jason.siph.persistence.JvmJsonAutonomyRepository
+import org.jason.siph.persistence.JvmJsonInspectionCalibrationRepository
 import org.jason.siph.persistence.JvmJsonOoMeasurementRepository
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.milliseconds
@@ -23,6 +24,7 @@ import kotlin.time.Duration.Companion.milliseconds
  * Demo/Real 模式都会启用：
  * - ~/.siphstudio/autonomy-workflow.json
  * - ~/.siphstudio/oo-measurements.json
+ * - ~/.siphstudio/inspection-calibrations.json
  */
 fun createJvmRealHardwarePorts(
     runtimeMode: HardwareRuntimeMode
@@ -34,11 +36,15 @@ fun createJvmRealHardwarePorts(
     val ooRepository = JvmJsonOoMeasurementRepository(
         dataDirectory.resolve(OO_DATABASE_FILE)
     )
+    val inspectionRepository = JvmJsonInspectionCalibrationRepository(
+        dataDirectory.resolve(INSPECTION_DATABASE_FILE)
+    )
 
     if (runtimeMode != HardwareRuntimeMode.Real) {
         return RealHardwarePorts(
             autonomyRepositories = autonomyRepository,
-            ooMeasurements = ooRepository
+            ooMeasurements = ooRepository,
+            inspectionCalibrations = inspectionRepository
         )
     }
 
@@ -46,7 +52,8 @@ fun createJvmRealHardwarePorts(
     if (host.isEmpty()) {
         return RealHardwarePorts(
             autonomyRepositories = autonomyRepository,
-            ooMeasurements = ooRepository
+            ooMeasurements = ooRepository,
+            inspectionCalibrations = inspectionRepository
         )
     }
 
@@ -77,7 +84,8 @@ fun createJvmRealHardwarePorts(
     return RealHardwarePorts(
         positioner = PiOpticalPositionerAdapter(piPort),
         autonomyRepositories = autonomyRepository,
-        ooMeasurements = ooRepository
+        ooMeasurements = ooRepository,
+        inspectionCalibrations = inspectionRepository
     )
 }
 
@@ -178,5 +186,6 @@ private const val PROPERTY_SAFE_POSE = "siph.pi.safePose"
 private const val PROPERTY_DATA_DIRECTORY = "siph.data.dir"
 private const val AUTONOMY_DATABASE_FILE = "autonomy-workflow.json"
 private const val OO_DATABASE_FILE = "oo-measurements.json"
+private const val INSPECTION_DATABASE_FILE = "inspection-calibrations.json"
 private const val DEFAULT_PORT = 50_000
 private const val DEFAULT_TIMEOUT_MS = 5_000L
