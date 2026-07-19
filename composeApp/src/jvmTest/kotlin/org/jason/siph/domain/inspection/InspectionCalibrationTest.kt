@@ -24,7 +24,10 @@ class InspectionCalibrationTest {
             poseProvider = { positioner.currentPose() },
             temperatureProvider = { 25.0 }
         )
-        val camera = SimulatedCameraAcquisitionPort(environment) { now++ }
+        val camera = SimulatedCameraAcquisitionPort(
+            environment = environment,
+            nowEpochMs = { now++ }
+        )
         camera.connect()
         val frame = camera.capture()
         val detector = CompositeVisionFeatureDetector()
@@ -53,7 +56,10 @@ class InspectionCalibrationTest {
             poseProvider = { positioner.currentPose() },
             temperatureProvider = { 25.0 }
         )
-        val camera = SimulatedCameraAcquisitionPort(environment) { now++ }
+        val camera = SimulatedCameraAcquisitionPort(
+            environment = environment,
+            nowEpochMs = { now++ }
+        )
         camera.connect()
         val repository = repositoryWithCameraCalibration(now++)
         val service = VisualPreAlignmentService(
@@ -119,7 +125,10 @@ class InspectionCalibrationTest {
             poseProvider = { positioner.currentPose() },
             temperatureProvider = { 25.0 }
         )
-        val camera = SimulatedCameraAcquisitionPort(environment) { now++ }
+        val camera = SimulatedCameraAcquisitionPort(
+            environment = environment,
+            nowEpochMs = { now++ }
+        )
         camera.connect()
         val repository = repositoryWithCameraCalibration(now++)
         val service = PivotCalibrationService(
@@ -155,7 +164,10 @@ class InspectionCalibrationTest {
             poseProvider = { positioner.currentPose() },
             temperatureProvider = { temperature.readSnapshot().processValueC }
         )
-        val camera = SimulatedCameraAcquisitionPort(inspectionEnvironment) { now++ }
+        val camera = SimulatedCameraAcquisitionPort(
+            environment = inspectionEnvironment,
+            nowEpochMs = { now++ }
+        )
         val sensor = SimulatedZDisplacementSensorPort(inspectionEnvironment) { now++ }
         val repository = repositoryWithCameraCalibration(now++)
         val detector = CompositeVisionFeatureDetector()
