@@ -105,6 +105,14 @@ class ZSensorProbeTrackingAdapter(
     private var reference: ProbeTrackingReference? = null
     private var tracking = false
 
+    override suspend fun connect() = sensor.connect()
+
+    override suspend fun disconnect() {
+        tracking = false
+        reference = null
+        sensor.disconnect()
+    }
+
     override suspend fun startTracking(reference: ProbeTrackingReference) {
         if (!sensor.status.value.connected) sensor.connect()
         this.reference = reference
