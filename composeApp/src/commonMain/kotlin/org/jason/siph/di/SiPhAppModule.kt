@@ -30,6 +30,7 @@ import org.jason.siph.domain.inspection.DefaultInspectionCalibrationRunner
 import org.jason.siph.domain.inspection.InMemoryInspectionCalibrationRepository
 import org.jason.siph.domain.inspection.InspectionCalibrationRepository
 import org.jason.siph.domain.inspection.InspectionCalibrationRunner
+import org.jason.siph.domain.inspection.InspectionVisionAlignmentAdapter
 import org.jason.siph.domain.inspection.PivotCalibrationService
 import org.jason.siph.domain.inspection.ProbeHeightTrainer
 import org.jason.siph.domain.inspection.SimulatedCameraAcquisitionPort
@@ -40,6 +41,7 @@ import org.jason.siph.domain.inspection.UnavailableZDisplacementSensorPort
 import org.jason.siph.domain.inspection.VisionFeatureDetector
 import org.jason.siph.domain.inspection.VisualPreAlignmentService
 import org.jason.siph.domain.inspection.ZDisplacementSensorPort
+import org.jason.siph.domain.inspection.ZSensorProbeTrackingAdapter
 import org.jason.siph.domain.oo.DefaultOoMeasurementRunner
 import org.jason.siph.domain.oo.InMemoryOoMeasurementRepository
 import org.jason.siph.domain.oo.OoAlignmentPort
@@ -171,30 +173,6 @@ fun createSiPhAppModule(
             }
         }
 
-        single<VisionAlignmentPort> {
-            when (runtimeMode) {
-                HardwareRuntimeMode.Demo -> UnavailableVisionAlignmentPort()
-                HardwareRuntimeMode.Real ->
-                    realHardwarePorts?.visionAlignment ?: UnavailableVisionAlignmentPort()
-            }
-        }
-
-        single<WaferStagePort> {
-            when (runtimeMode) {
-                HardwareRuntimeMode.Demo -> UnavailableWaferStagePort()
-                HardwareRuntimeMode.Real ->
-                    realHardwarePorts?.waferStage ?: UnavailableWaferStagePort()
-            }
-        }
-
-        single<ProbeTrackingPort> {
-            when (runtimeMode) {
-                HardwareRuntimeMode.Demo -> UnavailableProbeTrackingPort()
-                HardwareRuntimeMode.Real ->
-                    realHardwarePorts?.probeTracking ?: UnavailableProbeTrackingPort()
-            }
-        }
-
         single<AutonomyRepositoryBundle> { autonomyRepository }
         single<CalibrationProfileRepository> {
             realHardwarePorts?.calibrationProfiles ?: get<AutonomyRepositoryBundle>()
@@ -205,6 +183,101 @@ fun createSiPhAppModule(
         single<DriftBaselineRepository> { get<AutonomyRepositoryBundle>() }
         single<WorkflowCheckpointRepository> { get<AutonomyRepositoryBundle>() }
         single<MeasurementRecordRepository> { get<AutonomyRepositoryBundle>() }
+
+        if (runtimeMode == HardwareRuntimeMode.Demo) {
+            single { SimulatedOoEnvironment() }
+        }
+
+        single<OoMeasurementRepository> { ooRepository }
+        single<TunableLaserPort> {
+            when (runtimeMode) {
+                HardwareRuntimeMode.Demo -> SimulatedTunableLaser(get())
+                HardwareRuntimeMode.Real -> realHardwarePorts?.tunableLaser ?: UnavailableTunableLaser()
+            }
+        }
+        single<OoOpticalPowerMeterPort> {
+            when (runtimeMode) {
+                HardwareRuntimeMode.Demo -> SimulatedOoPowerMeter(get())
+                HardwareRuntimeMode.Real -> realHardwarePorts?.ooPowerMeter ?: UnavailableOoPowerMeter()
+            }
+        }
+        single<WaferProberPort> {
+            when (runtimeMode) {
+                HardwareRuntimeMode.Demo -> SimulatedWaferProber(get())
+                HardwareRuntimeMode.Real -> realHardwarePorts?.waferProber ?: UnavailableWaferProber()
+            }
+        }
+        single<TemperatureControllerPort> {
+            when (runtimeMode) {
+                HardwareRuntimeMode.Demo -> SimulatedTemperatureController(get())
+                HardwareRuntimeMode.Real ->
+                    realHardwarePorts?.temperatureController ?: UnavailableTemperatureController()
+            }
+        }
+        single<OoAlignmentPort> {
+            when (runtimeMode) {
+                HardwareRuntimeMode.Demo -> SimulatedOoAlignmentPort(get())
+                HardwareRuntimeMode.Real ->
+                    realHardwarePorts?.ooAlignment ?: UnavailableOoAlignmentPort()
+            }
+        }
+
+        if (runtimeMode == HardwareRuntimeMode.Demo) {
+            single {
+                SimulatedInspectionEnvironment(
+                    poseProvider = { get<OpticalPositionerPort>().currentPose() },
+                    temperatureProvider = { get<TemperatureControllerPort>().readSnapshot().processValueC }
+                )
+            }
+        }
+        single<InspectionCalibrationRepository> { inspectionRepository }
+        single<VisionFeatureDetector> { CompositeVisionFeatureDetector() }
+        single<CameraAcquisitionPort> {
+            when (runtimeMode) {
+                HardwareRuntimeMode.Demo -> SimulatedCameraAcquisitionPort(
+                    environment = get(),
+                    nowEpochMs = epochClock
+                )
+                HardwareRuntimeMode.Real ->
+                    realHardwarePorts?.inspectionCamera ?: UnavailableCameraAcquisitionPort()
+            }
+        }
+        single<ZDisplacementSensorPort> {
+            when (runtimeMode) {
+                HardwareRuntimeMode.Demo -> SimulatedZDisplacementSensorPort(
+                    environment = get(),
+                    nowEpochMs = epochClock
+                )
+                HardwareRuntimeMode.Real ->
+                    realHardwarePorts?.zDisplacementSensor ?: UnavailableZDisplacementSensorPort()
+            }
+        }
+
+        single<VisionAlignmentPort> {
+            when (runtimeMode) {
+                HardwareRuntimeMode.Demo -> InspectionVisionAlignmentAdapter(
+                    camera = get(),
+                    detector = get(),
+                    calibrations = get()
+                )
+                HardwareRuntimeMode.Real ->
+                    realHardwarePorts?.visionAlignment ?: UnavailableVisionAlignmentPort()
+            }
+        }
+        single<WaferStagePort> {
+            when (runtimeMode) {
+                HardwareRuntimeMode.Demo -> UnavailableWaferStagePort()
+                HardwareRuntimeMode.Real ->
+                    realHardwarePorts?.waferStage ?: UnavailableWaferStagePort()
+            }
+        }
+        single<ProbeTrackingPort> {
+            when (runtimeMode) {
+                HardwareRuntimeMode.Demo -> ZSensorProbeTrackingAdapter(get())
+                HardwareRuntimeMode.Real ->
+                    realHardwarePorts?.probeTracking ?: UnavailableProbeTrackingPort()
+            }
+        }
 
         single<CouplingRunner> {
             AdaptiveCouplingRunner(
@@ -287,43 +360,6 @@ fun createSiPhAppModule(
             )
         }
 
-        if (runtimeMode == HardwareRuntimeMode.Demo) {
-            single { SimulatedOoEnvironment() }
-        }
-
-        single<OoMeasurementRepository> { ooRepository }
-        single<TunableLaserPort> {
-            when (runtimeMode) {
-                HardwareRuntimeMode.Demo -> SimulatedTunableLaser(get())
-                HardwareRuntimeMode.Real -> realHardwarePorts?.tunableLaser ?: UnavailableTunableLaser()
-            }
-        }
-        single<OoOpticalPowerMeterPort> {
-            when (runtimeMode) {
-                HardwareRuntimeMode.Demo -> SimulatedOoPowerMeter(get())
-                HardwareRuntimeMode.Real -> realHardwarePorts?.ooPowerMeter ?: UnavailableOoPowerMeter()
-            }
-        }
-        single<WaferProberPort> {
-            when (runtimeMode) {
-                HardwareRuntimeMode.Demo -> SimulatedWaferProber(get())
-                HardwareRuntimeMode.Real -> realHardwarePorts?.waferProber ?: UnavailableWaferProber()
-            }
-        }
-        single<TemperatureControllerPort> {
-            when (runtimeMode) {
-                HardwareRuntimeMode.Demo -> SimulatedTemperatureController(get())
-                HardwareRuntimeMode.Real ->
-                    realHardwarePorts?.temperatureController ?: UnavailableTemperatureController()
-            }
-        }
-        single<OoAlignmentPort> {
-            when (runtimeMode) {
-                HardwareRuntimeMode.Demo -> SimulatedOoAlignmentPort(get())
-                HardwareRuntimeMode.Real ->
-                    realHardwarePorts?.ooAlignment ?: UnavailableOoAlignmentPort()
-            }
-        }
         single { WaferTraversalPlanner() }
         single<OoMeasurementRunner> {
             DefaultOoMeasurementRunner(
@@ -351,36 +387,6 @@ fun createSiPhAppModule(
             )
         }
 
-        if (runtimeMode == HardwareRuntimeMode.Demo) {
-            single {
-                SimulatedInspectionEnvironment(
-                    poseProvider = { get<OpticalPositionerPort>().currentPose() },
-                    temperatureProvider = { get<TemperatureControllerPort>().readSnapshot().processValueC }
-                )
-            }
-        }
-        single<InspectionCalibrationRepository> { inspectionRepository }
-        single<VisionFeatureDetector> { CompositeVisionFeatureDetector() }
-        single<CameraAcquisitionPort> {
-            when (runtimeMode) {
-                HardwareRuntimeMode.Demo -> SimulatedCameraAcquisitionPort(
-                    environment = get(),
-                    nowEpochMs = epochClock
-                )
-                HardwareRuntimeMode.Real ->
-                    realHardwarePorts?.inspectionCamera ?: UnavailableCameraAcquisitionPort()
-            }
-        }
-        single<ZDisplacementSensorPort> {
-            when (runtimeMode) {
-                HardwareRuntimeMode.Demo -> SimulatedZDisplacementSensorPort(
-                    environment = get(),
-                    nowEpochMs = epochClock
-                )
-                HardwareRuntimeMode.Real ->
-                    realHardwarePorts?.zDisplacementSensor ?: UnavailableZDisplacementSensorPort()
-            }
-        }
         single {
             VisualPreAlignmentService(
                 camera = get(),
