@@ -10,7 +10,13 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.jason.siph.domain.autonomy.AutonomyCapabilityStatus
+import org.jason.siph.domain.autonomy.DieIndex
+import org.jason.siph.domain.autonomy.OpticalCouplerDefinition
+import org.jason.siph.domain.autonomy.PhotonicCouplingGeometry
+import org.jason.siph.domain.autonomy.SiPhDieDefinition
+import org.jason.siph.domain.autonomy.SiPhSubDieDefinition
 import org.jason.siph.domain.autonomy.SiPhWaferDefinition
+import org.jason.siph.domain.autonomy.WaferCoordinateTransform
 import org.jason.siph.domain.autonomy.WaferDefinitionRepository
 import org.jason.siph.domain.oo.DeviceBackendMode
 import org.jason.siph.domain.oo.LaserSweepConfig
@@ -57,7 +63,7 @@ data class OoMeasurementUiState(
         get() = recentResults.count { it.completed }
 
     val canStartSimulation: Boolean
-        get() = simulationBackend && latestWafer != null && !busy && !workflow.running
+        get() = simulationBackend && !busy && !workflow.running
 }
 
 sealed interface OoMeasurementAction {
@@ -122,7 +128,7 @@ class OoMeasurementStore(
                 mutableState.update { current ->
                     current.copy(
                         workflow = workflow,
-                        busy = workflow.running || current.busy,
+                        busy = workflow.running || activeJob?.isActive == true,
                         message = workflow.message,
                         errorMessage = workflow.latestFailure?.message
                     )
@@ -174,12 +180,8 @@ class OoMeasurementStore(
             publishFailure(IllegalStateException("Demo recipe is only available for simulation devices"))
             return
         }
-        val wafer = snapshot.latestWafer
-        if (wafer == null) {
-            publishFailure(IllegalStateException("No Wafer definition is available"))
-            return
-        }
         val timestamp = nowEpochMs()
+        val wafer = snapshot.latestWafer ?: builtInDemoWafer(createdAtEpochMs = timestamp)
         val recipe = OoMeasurementRecipe(
             id = "oo-demo-$timestamp",
             waferId = wafer.id,
@@ -283,3 +285,43 @@ class OoMeasurementStore(
         }
     }
 }
+
+private fun builtInDemoWafer(createdAtEpochMs: Long): SiPhWaferDefinition = SiPhWaferDefinition(
+    id = "demo-wafer",
+    diameterMm = 200.0,
+    transform = WaferCoordinateTransform(
+        originStageXUm = 0.0,
+        originStageYUm = 0.0,
+        diePitchXUm = 1_000.0,
+        diePitchYUm = 1_000.0
+    ),
+    dies = listOf(
+        demoDie(0, 0),
+        demoDie(1, 0),
+        demoDie(1, 1),
+        demoDie(0, 1)
+    ),
+    createdAtEpochMs = createdAtEpochMs
+)
+
+private fun demoDie(column: Int, row: Int): SiPhDieDefinition = SiPhDieDefinition(
+    index = DieIndex(column = column, row = row),
+    label = "D${row}_$column",
+    subDies = listOf(
+        SiPhSubDieDefinition(
+            id = "sub-a",
+            name = "Sub A",
+            originOffsetXUm = 0.0,
+            originOffsetYUm = 0.0,
+            couplers = listOf(
+                OpticalCouplerDefinition(
+                    id = "gc-input",
+                    name = "Input Grating",
+                    geometry = PhotonicCouplingGeometry.VerticalGrating,
+                    offsetXUm = 10.0,
+                    offsetYUm = 10.0
+                )
+            )
+        )
+    )
+)
