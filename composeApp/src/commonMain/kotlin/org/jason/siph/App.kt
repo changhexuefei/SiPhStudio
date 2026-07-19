@@ -1,6 +1,8 @@
 package org.jason.siph
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -13,6 +15,8 @@ import org.jason.siph.di.RealHardwarePorts
 import org.jason.siph.di.createSiPhAppModule
 import org.jason.siph.domain.runtime.HardwareRuntimeMode
 import org.jason.siph.ui.autonomy.AutonomousWorkflowStore
+import org.jason.siph.ui.model.CouplingToolPage
+import org.jason.siph.ui.oo.OoMeasurementPanel
 import org.jason.siph.ui.oo.OoMeasurementStore
 import org.jason.siph.ui.safety.MotionSafetySettingsStore
 import org.jason.siph.ui.siphtools.CouplingToolScreen
@@ -58,16 +62,24 @@ fun App(
                 color = AerospacePalette.Void,
                 contentColor = MaterialTheme.colorScheme.onBackground
             ) {
-                CouplingToolScreen(
-                    state = couplingState,
-                    safetyState = safetyState,
-                    autonomousState = autonomousState,
-                    ooState = ooState,
-                    onAction = couplingStore::dispatch,
-                    onSafetyAction = safetyStore::dispatch,
-                    onAutonomousAction = autonomousStore::dispatch,
-                    onOoAction = ooStore::dispatch
-                )
+                Column(modifier = Modifier.fillMaxSize()) {
+                    if (couplingState.selectedPage == CouplingToolPage.AutonomousAssistant) {
+                        OoMeasurementPanel(
+                            state = ooState,
+                            onAction = ooStore::dispatch,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    CouplingToolScreen(
+                        state = couplingState,
+                        safetyState = safetyState,
+                        autonomousState = autonomousState,
+                        onAction = couplingStore::dispatch,
+                        onSafetyAction = safetyStore::dispatch,
+                        onAutonomousAction = autonomousStore::dispatch,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
     }
