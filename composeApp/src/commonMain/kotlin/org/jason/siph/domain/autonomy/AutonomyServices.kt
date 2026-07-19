@@ -81,6 +81,79 @@ class MeasurementPositionTrainer(
     }
 }
 
+data class CalibrationProfileVerificationRequest(
+    val profileId: String,
+    val verifiedBy: String,
+    val maximumPoseErrorUm: Double = 1.0,
+    val activateOnPass: Boolean = true
+) {
+    init {
+        require(profileId.isNotBlank()) { "profileId must not be blank" }
+        require(verifiedBy.isNotBlank()) { "verifiedBy must not be blank" }
+        require(maximumPoseErrorUm.isFinite() && maximumPoseErrorUm >= 0.0) {
+            "maximumPoseErrorUm must be non-negative and finite"
+        }
+    }
+}
+
+/**
+ * 通过控制器身份和当前测量位姿验证校准配置，不执行任何自动运动。
+ */
+class CalibrationProfileVerifier(
+    private val positioner: OpticalPositionerPort,
+    private val profiles: CalibrationProfileRepository,
+    private val verifications: CalibrationVerificationRepository,
+    private val nowEpochMs: () -> Long
+) {
+    suspend fun verify(
+        request: CalibrationProfileVerificationRequest
+    ): CalibrationVerificationRecord {
+        currentCoroutineContext().ensureActive()
+        val profile = profiles.findProfile(request.profileId)
+            ?: error("Calibration profile not found: ${request.profileId}")
+        val controllerIdentity = positioner.identify().also {
+            require(it.isNotBlank()) { "Positioner identity is blank" }
+        }
+        val actualPose = positioner.currentPose()
+        val expectedPose = profile.measurementPose
+        val poseError = expectedPose?.linearDistanceTo(actualPose) ?: Double.POSITIVE_INFINITY
+        val identityMatches = profile.controllerIdentity
+            ?.takeIf { it.isNotBlank() }
+            ?.let { expected -> controllerIdentity.contains(expected, ignoreCase = true) }
+            ?: true
+        val passed = identityMatches && expectedPose != null && poseError <= request.maximumPoseErrorUm
+        val message = buildString {
+            if (!identityMatches) append("Controller identity mismatch. ")
+            if (expectedPose == null) append("Measurement pose is not configured. ")
+            if (expectedPose != null && poseError > request.maximumPoseErrorUm) {
+                append("Pose error $poseError um exceeds ${request.maximumPoseErrorUm} um. ")
+            }
+            if (passed) append("Calibration profile verified")
+        }.trim()
+        val timestamp = nowEpochMs()
+        val record = CalibrationVerificationRecord(
+            profileId = profile.id,
+            verifiedAtEpochMs = timestamp,
+            controllerIdentity = controllerIdentity,
+            fixtureId = profile.fixtureId,
+            poseErrorUm = poseError.takeIf { it.isFinite() } ?: Double.MAX_VALUE,
+            powerErrorDb = null,
+            passed = passed,
+            message = message
+        )
+        verifications.saveVerification(record)
+        val updated = profile.copy(
+            controllerIdentity = profile.controllerIdentity ?: controllerIdentity,
+            verifiedAtEpochMs = timestamp,
+            verifiedBy = request.verifiedBy,
+            verified = passed
+        )
+        profiles.saveProfile(updated)
+        if (passed && request.activateOnPass) profiles.activateProfile(updated.id)
+        return record
+    }
+}
+
 /**
  * 从最佳点小幅离开后反复回位并测量，用于验证全系统回位重复性。
  * 所有目标仍经过 OpticalPositionerPort 的安全包装。
