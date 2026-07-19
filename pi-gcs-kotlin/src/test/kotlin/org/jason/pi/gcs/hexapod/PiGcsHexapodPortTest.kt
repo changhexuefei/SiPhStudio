@@ -6,6 +6,7 @@ import org.jason.pi.gcs.core.GcsDevice
 import org.jason.pi.gcs.core.PiConnectionType
 import org.jason.pi.gcs.core.PiControllerProbeOptions
 import org.jason.pi.gcs.core.PiGcsCommandException
+import org.jason.pi.gcs.pitools.PiTravelRangeException
 import org.jason.pi.gcs.transport.GcsTransport
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -17,16 +18,9 @@ import kotlin.test.assertTrue
 class PiGcsHexapodPortTest {
 
     @Test
-    fun connectPublishesControllerProfile() = runBlocking {
+    fun connectPublishesControllerProfileAndLoadsTravelRange() = runBlocking {
         val transport = ScriptedHexapodTransport(
-            responses = listOf(
-                "Physik Instrumente, C-887.52, SN 12345",
-                "0",
-                "GCS 2.0 Firmware 1.2.3",
-                "0",
-                "X Y Z U V W",
-                "0"
-            )
+            responses = successfulConnectResponses()
         )
         val port = PiGcsHexapodPort(
             device = GcsDevice(GcsClient(transport)),
@@ -48,6 +42,22 @@ class PiGcsHexapodPortTest {
             "Physik Instrumente, C-887.52, SN 12345",
             port.identify()
         )
+        assertEquals(
+            expected = listOf(
+                "*IDN?", "ERR?",
+                "VER?", "ERR?",
+                "SAI?", "ERR?",
+                "TMN? X Y Z U V W",
+                "TMX? X Y Z U V W"
+            ),
+            actual = transport.writes
+        )
+
+        val businessRange = port.queryBusinessTravelRange()
+        assertEquals(-100_000.0, businessRange.getValue(PiAxis.X).start)
+        assertEquals(100_000.0, businessRange.getValue(PiAxis.X).endInclusive)
+        assertEquals(-10.0, businessRange.getValue(PiAxis.U).start)
+        assertEquals(10.0, businessRange.getValue(PiAxis.U).endInclusive)
 
         port.disconnect()
 
@@ -56,6 +66,54 @@ class PiGcsHexapodPortTest {
             port.connectionState.value.phase
         )
         assertFalse(transport.isOpen)
+    }
+
+    @Test
+    fun absoluteMoveOutsideControllerRangeIsRejectedBeforeMovCommand() = runBlocking {
+        val transport = ScriptedHexapodTransport(
+            responses = successfulConnectResponses()
+        )
+        val port = PiGcsHexapodPort(
+            device = GcsDevice(GcsClient(transport)),
+            safePose = PiHexapodPose.ZERO
+        )
+        port.connect()
+        val writesBeforeMove = transport.writes.toList()
+
+        assertFailsWith<PiTravelRangeException> {
+            port.moveTo(
+                pose = PiHexapodPose(
+                    xUm = 100_001.0,
+                    yUm = 0.0,
+                    zUm = 0.0,
+                    uDeg = 0.0,
+                    vDeg = 0.0,
+                    wDeg = 0.0
+                ),
+                wait = false
+            )
+        }
+
+        assertEquals(writesBeforeMove, transport.writes)
+        assertTrue(transport.writes.none { it.startsWith("MOV ") })
+        port.disconnect()
+    }
+
+    @Test
+    fun nonFinitePoseAndDeltaAreRejectedAtModelBoundary() {
+        assertFailsWith<IllegalArgumentException> {
+            PiHexapodPose(
+                xUm = Double.NaN,
+                yUm = 0.0,
+                zUm = 0.0,
+                uDeg = 0.0,
+                vDeg = 0.0,
+                wDeg = 0.0
+            )
+        }
+        assertFailsWith<IllegalArgumentException> {
+            PiHexapodDelta(dxUm = Double.POSITIVE_INFINITY)
+        }
     }
 
     @Test
@@ -81,6 +139,27 @@ class PiGcsHexapodPortTest {
         assertFalse(transport.isOpen)
     }
 }
+
+private fun successfulConnectResponses(): List<String> = listOf(
+    "Physik Instrumente, C-887.52, SN 12345",
+    "0",
+    "GCS 2.0 Firmware 1.2.3",
+    "0",
+    "X Y Z U V W",
+    "0",
+    "X=-100.0",
+    "Y=-100.0",
+    "Z=-50.0",
+    "U=-10.0",
+    "V=-10.0",
+    "W=-10.0",
+    "X=100.0",
+    "Y=100.0",
+    "Z=50.0",
+    "U=10.0",
+    "V=10.0",
+    "W=10.0"
+)
 
 private class ScriptedHexapodTransport(
     responses: List<String>
