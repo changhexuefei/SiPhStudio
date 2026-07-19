@@ -57,6 +57,7 @@ import org.jason.siph.domain.safety.SafetyCheckedOpticalPositioner
 import org.jason.siph.domain.simulation.DemoOpticalPositioner
 import org.jason.siph.domain.simulation.DemoOpticalPowerMeter
 import org.jason.siph.ui.autonomy.AutonomousWorkflowStore
+import org.jason.siph.ui.oo.OoMeasurementStore
 import org.jason.siph.ui.safety.MotionSafetySettingsStore
 import org.jason.siph.ui.state.CouplingToolStore
 import org.koin.core.module.Module
@@ -311,6 +312,19 @@ fun createSiPhAppModule(
                 alignment = get(),
                 repository = get(),
                 traversalPlanner = get(),
+                nowEpochMs = epochClock
+            )
+        }
+        single {
+            OoMeasurementStore(
+                scope = scope,
+                runner = get(),
+                repository = get(),
+                wafers = get(),
+                laser = get(),
+                powerMeter = get(),
+                prober = get(),
+                temperature = get(),
                 nowEpochMs = epochClock
             )
         }
