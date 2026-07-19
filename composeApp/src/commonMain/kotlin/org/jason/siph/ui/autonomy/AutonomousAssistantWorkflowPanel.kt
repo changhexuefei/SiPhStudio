@@ -277,7 +277,7 @@ private fun FirstStageRuntimePanel(
 
             Column(
                 modifier = Modifier.weight(1.15f),
-                verticalArrangement = Arrangement.spacedBy(3.dp)
+                verticalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 Text(
                     text = "ACTIVE CALIBRATION",
@@ -296,6 +296,35 @@ private fun FirstStageRuntimePanel(
                     },
                     maxLines = 1
                 )
+                OutlinedButton(
+                    onClick = {
+                        onAction(AutonomousWorkflowAction.VerifyActiveProfile())
+                    },
+                    enabled = workflowState.activeProfile != null && !workflowState.busy,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 32.dp),
+                    shape = MaterialTheme.shapes.small,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    border = BorderStroke(
+                        1.dp,
+                        if (workflowState.verifiedProfileApplied) {
+                            AerospacePalette.Success.copy(alpha = 0.62f)
+                        } else {
+                            AerospacePalette.Accent.copy(alpha = 0.62f)
+                        }
+                    )
+                ) {
+                    Text(
+                        text = if (workflowState.verifiedProfileApplied) {
+                            "REVERIFY PROFILE"
+                        } else {
+                            "VERIFY PROFILE"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
                 Text(
                     text = "Phase 1 uses existing positioner and power meter only; optional adapters remain non-blocking.",
                     style = MaterialTheme.typography.labelSmall,
