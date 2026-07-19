@@ -22,7 +22,8 @@ import kotlin.time.Duration.Companion.seconds
  * - 不依赖 PI GCS DLL；
  * - 同时支持 Windows、Linux 和 macOS；
  * - TCP_NODELAY 降低小步进闭环控制的命令延迟；
- * - 连接和读取失败时会完整释放 Socket 与 SelectorManager。
+ * - 连接和读取失败时会完整释放 Socket 与 SelectorManager；
+ * - 生命周期代次阻止“close 已发生，但迟到的 connect 又把连接安装回来”。
  */
 class KtorTcpGcsTransport(
     private val host: String,
@@ -32,11 +33,13 @@ class KtorTcpGcsTransport(
 ) : GcsTransport {
 
     private val openMutex = Mutex()
+    private val resourceLock = Any()
 
     private var selectorManager: SelectorManager? = null
     private var socket: Socket? = null
     private var receiveChannel: ByteReadChannel? = null
     private var sendChannel: ByteWriteChannel? = null
+    private var lifecycleGeneration: Long = 0L
 
     /**
      * Ktor 3 的 Socket 接口不再稳定暴露 isClosed，因此由传输层维护明确的生命周期标记。
@@ -64,6 +67,10 @@ class KtorTcpGcsTransport(
 
             // 清理上一次失败连接可能留下的部分资源。
             close()
+            val openGeneration = synchronized(resourceLock) {
+                lifecycleGeneration += 1L
+                lifecycleGeneration
+            }
 
             val manager = SelectorManager(Dispatchers.IO)
             var connectedSocket: Socket? = null
@@ -80,13 +87,30 @@ class KtorTcpGcsTransport(
                 val readChannel = connectedSocket.openReadChannel()
                 val writeChannel = connectedSocket.openWriteChannel(autoFlush = true)
 
-                selectorManager = manager
-                socket = connectedSocket
-                receiveChannel = readChannel
-                sendChannel = writeChannel
-                connectionOpen = true
+                val installed = synchronized(resourceLock) {
+                    if (openGeneration != lifecycleGeneration) {
+                        false
+                    } else {
+                        selectorManager = manager
+                        socket = connectedSocket
+                        receiveChannel = readChannel
+                        sendChannel = writeChannel
+                        connectionOpen = true
+                        true
+                    }
+                }
+
+                if (!installed) {
+                    runCatching { connectedSocket.close() }
+                    runCatching { manager.close() }
+                    error("PI GCS TCP connection was closed while opening")
+                }
             } catch (error: Throwable) {
-                connectionOpen = false
+                synchronized(resourceLock) {
+                    if (openGeneration == lifecycleGeneration) {
+                        connectionOpen = false
+                    }
+                }
                 runCatching { connectedSocket?.close() }
                 runCatching { manager.close() }
                 throw error
@@ -120,18 +144,22 @@ class KtorTcpGcsTransport(
     }
 
     override fun close() {
-        // 先发布关闭状态，避免其他协程在资源释放过程中继续发起 I/O。
-        connectionOpen = false
+        val resources = synchronized(resourceLock) {
+            lifecycleGeneration += 1L
+            connectionOpen = false
 
-        val currentSocket = socket
-        val currentManager = selectorManager
+            val currentSocket = socket
+            val currentManager = selectorManager
 
-        socket = null
-        selectorManager = null
-        receiveChannel = null
-        sendChannel = null
+            socket = null
+            selectorManager = null
+            receiveChannel = null
+            sendChannel = null
 
-        runCatching { currentSocket?.close() }
-        runCatching { currentManager?.close() }
+            currentSocket to currentManager
+        }
+
+        runCatching { resources.first?.close() }
+        runCatching { resources.second?.close() }
     }
 }
