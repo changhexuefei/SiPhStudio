@@ -87,7 +87,6 @@ class GcsClient(
         }
 
         return transactionMutex.withLock {
-            check(transport.isOpen) { "PI GCS transport 未连接" }
             transport.writeLine(command)
             val response = transport.readLines(expectedResponseLines)
                 .joinToString(separator = "\n") { line ->
@@ -110,7 +109,6 @@ class GcsClient(
         require(command.isNotBlank()) { "GCS command 不能为空" }
 
         transactionMutex.withLock {
-            check(transport.isOpen) { "PI GCS transport 未连接" }
             transport.writeLine(command)
 
             if (checkError) {
