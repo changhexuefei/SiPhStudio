@@ -1,0 +1,27 @@
+{
+  "id": "hardware-soak-line-a-24h",
+  "kind": "HardwareSoak",
+  "environmentName": "SiPh production line A",
+  "minimumRunDurationMs": 86400000,
+  "maximumRunDurationMs": 90000000,
+  "maximumTasks": 100000,
+  "idlePollDelayMs": 250,
+  "maximumConsecutiveIdlePolls": 240,
+  "criteria": {
+    "minimumCompletedTasks": 1000,
+    "minimumThroughputTasksPerHour": 100,
+    "minimumSuccessRate": 0.995,
+    "maximumDuplicateResults": 0,
+    "maximumP95TaskLatencyMs": 120000,
+    "minimumContinuousRunMs": 86400000
+  },
+  "evidenceReferences": [
+    "replace://approved-calibration-wafer-qualification",
+    "replace://device-fat-sat-evidence",
+    "replace://mes-and-audit-receipts",
+    "replace://operator-and-quality-approval"
+  ],
+  "limitations": [
+    "Remove this limitation only after the real hardware, fixture, wafer, MES, audit and identity systems are connected"
+  ]
+}
