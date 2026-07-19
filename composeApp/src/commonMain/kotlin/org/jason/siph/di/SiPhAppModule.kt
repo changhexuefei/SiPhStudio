@@ -24,6 +24,22 @@ import org.jason.siph.domain.autonomy.WaferStagePort
 import org.jason.siph.domain.autonomy.WorkflowCheckpointRepository
 import org.jason.siph.domain.coupling.AdaptiveCouplingRunner
 import org.jason.siph.domain.coupling.CouplingRunner
+import org.jason.siph.domain.inspection.CameraAcquisitionPort
+import org.jason.siph.domain.inspection.CompositeVisionFeatureDetector
+import org.jason.siph.domain.inspection.DefaultInspectionCalibrationRunner
+import org.jason.siph.domain.inspection.InMemoryInspectionCalibrationRepository
+import org.jason.siph.domain.inspection.InspectionCalibrationRepository
+import org.jason.siph.domain.inspection.InspectionCalibrationRunner
+import org.jason.siph.domain.inspection.PivotCalibrationService
+import org.jason.siph.domain.inspection.ProbeHeightTrainer
+import org.jason.siph.domain.inspection.SimulatedCameraAcquisitionPort
+import org.jason.siph.domain.inspection.SimulatedInspectionEnvironment
+import org.jason.siph.domain.inspection.SimulatedZDisplacementSensorPort
+import org.jason.siph.domain.inspection.UnavailableCameraAcquisitionPort
+import org.jason.siph.domain.inspection.UnavailableZDisplacementSensorPort
+import org.jason.siph.domain.inspection.VisionFeatureDetector
+import org.jason.siph.domain.inspection.VisualPreAlignmentService
+import org.jason.siph.domain.inspection.ZDisplacementSensorPort
 import org.jason.siph.domain.oo.DefaultOoMeasurementRunner
 import org.jason.siph.domain.oo.InMemoryOoMeasurementRepository
 import org.jason.siph.domain.oo.OoAlignmentPort
@@ -57,6 +73,7 @@ import org.jason.siph.domain.safety.SafetyCheckedOpticalPositioner
 import org.jason.siph.domain.simulation.DemoOpticalPositioner
 import org.jason.siph.domain.simulation.DemoOpticalPowerMeter
 import org.jason.siph.ui.autonomy.AutonomousWorkflowStore
+import org.jason.siph.ui.inspection.InspectionCalibrationStore
 import org.jason.siph.ui.oo.OoMeasurementStore
 import org.jason.siph.ui.safety.MotionSafetySettingsStore
 import org.jason.siph.ui.state.CouplingToolStore
@@ -79,14 +96,17 @@ data class RealHardwarePorts(
     val waferProber: WaferProberPort? = null,
     val temperatureController: TemperatureControllerPort? = null,
     val ooAlignment: OoAlignmentPort? = null,
-    val ooMeasurements: OoMeasurementRepository? = null
+    val ooMeasurements: OoMeasurementRepository? = null,
+    val inspectionCamera: CameraAcquisitionPort? = null,
+    val zDisplacementSensor: ZDisplacementSensorPort? = null,
+    val inspectionCalibrations: InspectionCalibrationRepository? = null
 )
 
 /**
  * SiPh Studio 的公共 Koin 模块。
  *
  * Real 模式没有传入对应硬件端口时，使用明确失败的未配置实现，绝不回退到 Demo。
- * 第一阶段与 O-O 第二阶段分别使用独立端口，避免扫描能力破坏现有自动耦光契约。
+ * 第一、第二和第三阶段使用独立能力接口，但复用同一安全位置器与温控器。
  */
 fun createSiPhAppModule(
     scope: CoroutineScope,
@@ -100,6 +120,8 @@ fun createSiPhAppModule(
         ?: InMemoryAutonomyRepository()
     val ooRepository = realHardwarePorts?.ooMeasurements
         ?: InMemoryOoMeasurementRepository()
+    val inspectionRepository = realHardwarePorts?.inspectionCalibrations
+        ?: InMemoryInspectionCalibrationRepository()
 
     return module {
         single { runtimeMode }
@@ -325,6 +347,85 @@ fun createSiPhAppModule(
                 powerMeter = get(),
                 prober = get(),
                 temperature = get(),
+                nowEpochMs = epochClock
+            )
+        }
+
+        if (runtimeMode == HardwareRuntimeMode.Demo) {
+            single {
+                SimulatedInspectionEnvironment(
+                    poseProvider = { get<OpticalPositionerPort>().currentPose() },
+                    temperatureProvider = { get<TemperatureControllerPort>().readSnapshot().processValueC }
+                )
+            }
+        }
+        single<InspectionCalibrationRepository> { inspectionRepository }
+        single<VisionFeatureDetector> { CompositeVisionFeatureDetector() }
+        single<CameraAcquisitionPort> {
+            when (runtimeMode) {
+                HardwareRuntimeMode.Demo -> SimulatedCameraAcquisitionPort(
+                    environment = get(),
+                    nowEpochMs = epochClock
+                )
+                HardwareRuntimeMode.Real ->
+                    realHardwarePorts?.inspectionCamera ?: UnavailableCameraAcquisitionPort()
+            }
+        }
+        single<ZDisplacementSensorPort> {
+            when (runtimeMode) {
+                HardwareRuntimeMode.Demo -> SimulatedZDisplacementSensorPort(
+                    environment = get(),
+                    nowEpochMs = epochClock
+                )
+                HardwareRuntimeMode.Real ->
+                    realHardwarePorts?.zDisplacementSensor ?: UnavailableZDisplacementSensorPort()
+            }
+        }
+        single {
+            VisualPreAlignmentService(
+                camera = get(),
+                detector = get(),
+                positioner = get(),
+                repository = get()
+            )
+        }
+        single {
+            ProbeHeightTrainer(
+                positioner = get(),
+                sensor = get(),
+                repository = get(),
+                nowEpochMs = epochClock
+            )
+        }
+        single {
+            PivotCalibrationService(
+                camera = get(),
+                detector = get(),
+                positioner = get(),
+                repository = get(),
+                nowEpochMs = epochClock
+            )
+        }
+        single<InspectionCalibrationRunner> {
+            DefaultInspectionCalibrationRunner(
+                camera = get(),
+                zSensor = get(),
+                temperatureController = get(),
+                positioner = get(),
+                preAlignment = get(),
+                heightTrainer = get(),
+                pivotCalibration = get(),
+                repository = get(),
+                nowEpochMs = epochClock
+            )
+        }
+        single {
+            InspectionCalibrationStore(
+                scope = scope,
+                runner = get(),
+                repository = get(),
+                camera = get(),
+                zSensor = get(),
                 nowEpochMs = epochClock
             )
         }
