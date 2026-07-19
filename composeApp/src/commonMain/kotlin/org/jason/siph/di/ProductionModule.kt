@@ -10,9 +10,8 @@ import org.jason.siph.domain.production.DefaultProductionScheduler
 import org.jason.siph.domain.production.DefaultProductionWorker
 import org.jason.siph.domain.production.DefaultQualitySpcEngine
 import org.jason.siph.domain.production.DistributedProductionCoordinator
-import org.jason.siph.domain.production.InMemoryRemoteAuditSink
+import org.jason.siph.domain.production.EnterpriseIdentityGateway
 import org.jason.siph.domain.production.MesGateway
-import org.jason.siph.domain.production.MockMesGateway
 import org.jason.siph.domain.production.ProductionAnomalyClassifier
 import org.jason.siph.domain.production.ProductionAuditService
 import org.jason.siph.domain.production.ProductionAuthorizationService
@@ -30,9 +29,7 @@ import org.jason.siph.domain.production.RoleBasedProductionAuthorizationService
 import org.jason.siph.domain.production.RuleBasedProductionAnomalyClassifier
 import org.jason.siph.domain.production.SimulatedProductionMeasurementExecutor
 import org.jason.siph.domain.production.StrictDistributedProductionCoordinator
-import org.jason.siph.domain.production.UnavailableMesGateway
 import org.jason.siph.domain.production.UnavailableProductionMeasurementExecutor
-import org.jason.siph.domain.production.UnavailableRemoteAuditSink
 import org.jason.siph.domain.runtime.HardwareRuntimeMode
 import org.jason.siph.ui.production.ProductionClusterStore
 import org.jason.siph.ui.production.ProductionControlStore
@@ -48,46 +45,53 @@ fun createProductionModule(
     distributedCoordinator: DistributedProductionCoordinator
 ): Module {
     val epochClock = { Clock.System.now().toEpochMilliseconds() }
-    val workstationId = "${runtimeMode.name.lowercase()}-workstation"
+    val approvedRealRegistration = createPlatformWorkerRegistration(runtimeMode, epochClock())
+    val workerId = approvedRealRegistration?.workerId ?: "production-worker-1"
+    val workstationId = approvedRealRegistration?.workstationId ?: "${runtimeMode.name.lowercase()}-workstation"
     val equipmentIdentities = if (runtimeMode == HardwareRuntimeMode.Demo) {
         ProductionControlStore.DEMO_EQUIPMENT
     } else {
         emptyMap()
     }
-    val workerCapabilities = if (runtimeMode == HardwareRuntimeMode.Demo) {
-        setOf(
-            "fiberArray",
-            "laser",
-            "powerMeter",
-            "electricalAnalyzer",
-            "prober"
-        )
-    } else {
-        emptySet()
-    }
+    val digitalWorkerCapabilities = setOf(
+        "fiberArray",
+        "laser",
+        "powerMeter",
+        "electricalAnalyzer",
+        "prober"
+    )
     val strictCoordinator = StrictDistributedProductionCoordinator(distributedCoordinator)
     val coordinator = AutoRegisteringDistributedProductionCoordinator(
         delegate = strictCoordinator,
-        registrationFactory = { workerId, nowEpochMs ->
-            workerCapabilities.takeIf { it.isNotEmpty() }?.let { capabilities ->
-                ProductionWorkerRegistration(
-                    workerId = workerId,
+        registrationFactory = { requestedWorkerId, nowEpochMs ->
+            when (runtimeMode) {
+                HardwareRuntimeMode.Demo -> ProductionWorkerRegistration(
+                    workerId = requestedWorkerId,
                     workstationId = workstationId,
-                    equipmentGroupId = if (runtimeMode == HardwareRuntimeMode.Demo) "digital-production" else "unverified-real",
-                    capabilities = capabilities,
-                    softwareVersion = "phase4.5-digital",
+                    equipmentGroupId = "digital-production",
+                    capabilities = digitalWorkerCapabilities,
+                    softwareVersion = "phase4.6-enterprise-digital",
                     maximumParallelTasks = 1,
                     registeredAtEpochMs = nowEpochMs
                 )
+                HardwareRuntimeMode.Real -> approvedRealRegistration
+                    ?.takeIf { it.workerId == requestedWorkerId }
+                    ?.copy(registeredAtEpochMs = nowEpochMs)
             }
         }
     )
+    val platformMesGateway = createPlatformMesGateway(runtimeMode)
+    val platformRemoteAuditSink = createPlatformRemoteAuditSink(runtimeMode)
+    val platformIdentityGateway = createPlatformEnterpriseIdentityGateway(runtimeMode)
     var auditSequence = 0L
 
     return module {
         single<ProductionRepository> { repository }
         single<AuditHasher> { auditHasher }
         single<DistributedProductionCoordinator> { coordinator }
+        single<EnterpriseIdentityGateway> { platformIdentityGateway }
+        single<MesGateway> { platformMesGateway }
+        single<RemoteAuditSink> { platformRemoteAuditSink }
         single<ProductionScheduler> {
             if (coordinator.status.configured) {
                 CoordinatedProductionScheduler(
@@ -108,18 +112,6 @@ fun createProductionModule(
         single<QualitySpcEngine> { DefaultQualitySpcEngine() }
         single<ProductionAnomalyClassifier> { RuleBasedProductionAnomalyClassifier() }
         single<ProductionAuthorizationService> { RoleBasedProductionAuthorizationService() }
-        single<MesGateway> {
-            when (runtimeMode) {
-                HardwareRuntimeMode.Demo -> MockMesGateway()
-                HardwareRuntimeMode.Real -> UnavailableMesGateway()
-            }
-        }
-        single<RemoteAuditSink> {
-            when (runtimeMode) {
-                HardwareRuntimeMode.Demo -> InMemoryRemoteAuditSink()
-                HardwareRuntimeMode.Real -> UnavailableRemoteAuditSink()
-            }
-        }
         single {
             ProductionOutboxDispatcher(
                 coordinator = get(),
@@ -134,7 +126,7 @@ fun createProductionModule(
                 hasher = get(),
                 nowEpochMs = epochClock,
                 idFactory = { "audit-${epochClock()}-${++auditSequence}" },
-                applicationVersion = "phase4.5-distributed",
+                applicationVersion = "phase4.6-enterprise",
                 workstationId = workstationId
             )
             if (coordinator.status.configured) {
@@ -167,7 +159,7 @@ fun createProductionModule(
         }
         single {
             DefaultProductionWorker(
-                workerId = "production-worker-1",
+                workerId = workerId,
                 repository = get(),
                 scheduler = get(),
                 calibrationGate = get(),
