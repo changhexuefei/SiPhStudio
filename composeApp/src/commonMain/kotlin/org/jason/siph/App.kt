@@ -15,6 +15,8 @@ import org.jason.siph.di.RealHardwarePorts
 import org.jason.siph.di.createSiPhAppModule
 import org.jason.siph.domain.runtime.HardwareRuntimeMode
 import org.jason.siph.ui.autonomy.AutonomousWorkflowStore
+import org.jason.siph.ui.inspection.InspectionCalibrationPanel
+import org.jason.siph.ui.inspection.InspectionCalibrationStore
 import org.jason.siph.ui.model.CouplingToolPage
 import org.jason.siph.ui.oo.OoMeasurementPanel
 import org.jason.siph.ui.oo.OoMeasurementStore
@@ -52,10 +54,12 @@ fun App(
             val safetyStore = koinInject<MotionSafetySettingsStore>()
             val autonomousStore = koinInject<AutonomousWorkflowStore>()
             val ooStore = koinInject<OoMeasurementStore>()
+            val inspectionStore = koinInject<InspectionCalibrationStore>()
             val couplingState by couplingStore.state.collectAsState()
             val safetyState by safetyStore.state.collectAsState()
             val autonomousState by autonomousStore.state.collectAsState()
             val ooState by ooStore.state.collectAsState()
+            val inspectionState by inspectionStore.state.collectAsState()
 
             Surface(
                 modifier = Modifier.fillMaxSize(),
@@ -64,6 +68,11 @@ fun App(
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     if (couplingState.selectedPage == CouplingToolPage.AutonomousAssistant) {
+                        InspectionCalibrationPanel(
+                            state = inspectionState,
+                            onAction = inspectionStore::dispatch,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                         OoMeasurementPanel(
                             state = ooState,
                             onAction = ooStore::dispatch,
