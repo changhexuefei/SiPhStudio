@@ -34,6 +34,7 @@ import org.jason.siph.domain.production.UnavailableMesGateway
 import org.jason.siph.domain.production.UnavailableProductionMeasurementExecutor
 import org.jason.siph.domain.production.UnavailableRemoteAuditSink
 import org.jason.siph.domain.runtime.HardwareRuntimeMode
+import org.jason.siph.ui.production.ProductionClusterStore
 import org.jason.siph.ui.production.ProductionControlStore
 import org.koin.core.module.Module
 import org.koin.dsl.module
@@ -188,6 +189,15 @@ fun createProductionModule(
                 repository = get(),
                 scheduler = get(),
                 worker = get(),
+                nowEpochMs = epochClock
+            )
+        }
+        single {
+            ProductionClusterStore(
+                scope = scope,
+                runtimeMode = runtimeMode,
+                coordinator = get(),
+                dispatcher = get(),
                 nowEpochMs = epochClock
             )
         }
