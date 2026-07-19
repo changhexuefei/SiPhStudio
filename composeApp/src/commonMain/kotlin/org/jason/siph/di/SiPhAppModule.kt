@@ -1,9 +1,9 @@
 package org.jason.siph.di
 
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.datetime.Clock
 import org.jason.siph.domain.autonomy.AutonomyRepositoryBundle
 import org.jason.siph.domain.autonomy.CalibrationProfileRepository
+import org.jason.siph.domain.autonomy.CalibrationProfileVerifier
 import org.jason.siph.domain.autonomy.CalibrationVerificationRepository
 import org.jason.siph.domain.autonomy.DefaultSiPhWorkflowRunner
 import org.jason.siph.domain.autonomy.DriftBaselineRepository
@@ -40,6 +40,7 @@ import org.jason.siph.ui.safety.MotionSafetySettingsStore
 import org.jason.siph.ui.state.CouplingToolStore
 import org.koin.core.module.Module
 import org.koin.dsl.module
+import kotlin.time.Clock
 import kotlin.time.TimeSource
 
 /** 可由 JVM/真实设备模块按能力逐项覆盖的端口和持久化服务集合。 */
@@ -171,6 +172,15 @@ fun createSiPhAppModule(
         }
 
         single {
+            CalibrationProfileVerifier(
+                positioner = get(),
+                profiles = get(),
+                verifications = get(),
+                nowEpochMs = epochClock
+            )
+        }
+
+        single {
             OpticalAlignmentVerifier(
                 positioner = get(),
                 powerMeter = get(),
@@ -219,6 +229,7 @@ fun createSiPhAppModule(
                 checkpoints = get(),
                 records = get(),
                 trainer = get(),
+                calibrationVerifier = get(),
                 workflowRunner = get(),
                 nowEpochMs = epochClock
             )
