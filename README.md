@@ -6,62 +6,62 @@ This is a Kotlin Multiplatform project targeting Desktop (JVM), Web.
   It contains several subfolders:
     - [commonMain](./composeApp/src/commonMain/kotlin) is for code that's common for all targets.
     - Other folders are for Kotlin code that will be compiled for only the platform indicated in the folder name.
-      For example, if you want to use Apple's CoreCrypto for the iOS part of your Kotlin app,
-      the [iosMain](./composeApp/src/iosMain/kotlin) folder would be the right place for such calls.
-      Similarly, if you want to edit the Desktop (JVM) specific part, [jvmMain](./composeApp/src/jvmMain/kotlin)
-      is the appropriate location.
+      For example, if you want to use Apple's CoreCrypto for the iOS part, [iosMain](./composeApp/src/iosMain/kotlin)
+      would be the right place for such calls. Desktop-specific code belongs in
+      [jvmMain](./composeApp/src/jvmMain/kotlin).
 
 ### Build and Run Desktop (JVM) Application
 
-To build and run the development version of the desktop app, use the run configuration from the run widget
-in your IDE's toolbar or run it directly from the terminal:
-- on macOS/Linux
+- macOS/Linux
   ```shell
   ./gradlew :composeApp:run
   ```
-- on Windows
+- Windows
   ```shell
   .\gradlew.bat :composeApp:run
   ```
 
-### Optional PostgreSQL Multi-Workstation Production Coordination
+### PostgreSQL Multi-Workstation Production Coordination
 
-The desktop application keeps the local production repository by default. Distributed worker leases, capability
-matching, fencing tokens and MES/audit Outbox coordination can be moved to PostgreSQL by supplying JVM system
-properties:
+The desktop keeps the local production repository by default. Distributed Worker leases, capability matching,
+fencing tokens and MES/audit Outbox coordination can use PostgreSQL and HikariCP:
 
 ```text
--Dsiph.production.postgres.url=jdbc:postgresql://127.0.0.1:5432/siphstudio
+-Dsiph.production.postgres.url=jdbc:postgresql://db-a:5432,db-b:5432/siphstudio?targetServerType=primary&hostRecheckSeconds=5
 -Dsiph.production.postgres.user=siphstudio
 -Dsiph.production.postgres.password=<secret>
+-Dsiph.production.postgres.maximumPoolSize=16
+-Dsiph.production.postgres.minimumIdle=2
 ```
 
 Operational rules:
 
 - Demo mode without a PostgreSQL URL uses an in-memory digital coordinator.
 - Real mode without a PostgreSQL URL reports the distributed coordinator as not configured.
-- Real production measurement remains blocked until verified device executors and worker capabilities are injected.
-- PostgreSQL coordination uses worker heartbeats, capability matching, expiring leases, fencing tokens,
+- Real production remains blocked until a verified executor and a Production-Qualified Worker manifest are supplied.
+- PostgreSQL coordination uses heartbeats, capability matching, expiring leases, fencing tokens,
   `FOR UPDATE SKIP LOCKED`, idempotent task keys and an Outbox for MES and remote audit delivery.
-- H2 PostgreSQL-compatibility tests validate schema, transactions, sequential multi-worker reservation, fencing and
-  Outbox behavior. H2 is not treated as proof of PostgreSQL's concurrent lock semantics; a real PostgreSQL integration
-  environment is still required before production acceptance.
+- H2 compatibility tests provide fast schema and transaction regression coverage.
+- GitHub Actions also starts a real PostgreSQL service and verifies concurrent Worker reservation, concurrent Outbox
+  delivery, Hikari pooling, writable-primary health, `pg_dump`, SHA-256 manifests, `pg_restore --list` and restore into
+  an isolated database.
+- A customer HA failover, enterprise directory, MES contract and real hardware soak still require those external
+  systems. The software includes dedicated acceptance runners and keeps these results separate from full production
+  acceptance.
+
+Enterprise deployment, MES mapping, WORM audit, LDAP/AD/Keycloak, backup/restore and Worker manifest details are in
+[`infrastructure/production/README.md`](./infrastructure/production/README.md).
 
 ### Build and Run Web Application
 
-To build and run the development version of the web app, use the run configuration from the run widget
-in your IDE's toolbar or run it directly from the terminal:
-- for the Wasm target (faster, modern browsers):
-  - on macOS/Linux
-    ```shell
-    ./gradlew :composeApp:wasmJsBrowserDevelopmentRun
-    ```
-  - on Windows
-    ```shell
-    .\gradlew.bat :composeApp:wasmJsBrowserDevelopmentRun
-    ```
-We would appreciate your feedback on Compose/Web and Kotlin/Wasm in the public Slack channel [#compose-web](https://slack-chats.kotlinlang.org/c/compose-web).
-If you face any issues, please report them on [YouTrack](https://youtrack.jetbrains.com/newIssue?project=CMP).
+- macOS/Linux
+  ```shell
+  ./gradlew :composeApp:wasmJsBrowserDevelopmentRun
+  ```
+- Windows
+  ```shell
+  .\gradlew.bat :composeApp:wasmJsBrowserDevelopmentRun
+  ```
 
 ---
 
