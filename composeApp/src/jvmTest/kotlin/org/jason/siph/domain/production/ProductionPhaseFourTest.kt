@@ -142,7 +142,10 @@ class ProductionPhaseFourTest {
             repository = repository,
             scheduler = scheduler,
             calibrationGate = DefaultProductionCalibrationGate(repository),
-            executor = SimulatedProductionMeasurementExecutor(repository) { now++ },
+            executor = SimulatedProductionMeasurementExecutor(
+                repository = repository,
+                nowEpochMs = { now++ }
+            ),
             anomalyClassifier = RuleBasedProductionAnomalyClassifier(),
             audit = audit,
             authorization = RoleBasedProductionAuthorizationService(),
