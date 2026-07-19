@@ -13,6 +13,7 @@ import org.jason.siph.di.RealHardwarePorts
 import org.jason.siph.di.createSiPhAppModule
 import org.jason.siph.domain.runtime.HardwareRuntimeMode
 import org.jason.siph.ui.autonomy.AutonomousWorkflowStore
+import org.jason.siph.ui.oo.OoMeasurementStore
 import org.jason.siph.ui.safety.MotionSafetySettingsStore
 import org.jason.siph.ui.siphtools.CouplingToolScreen
 import org.jason.siph.ui.state.CouplingToolStore
@@ -46,9 +47,11 @@ fun App(
             val couplingStore = koinInject<CouplingToolStore>()
             val safetyStore = koinInject<MotionSafetySettingsStore>()
             val autonomousStore = koinInject<AutonomousWorkflowStore>()
+            val ooStore = koinInject<OoMeasurementStore>()
             val couplingState by couplingStore.state.collectAsState()
             val safetyState by safetyStore.state.collectAsState()
             val autonomousState by autonomousStore.state.collectAsState()
+            val ooState by ooStore.state.collectAsState()
 
             Surface(
                 modifier = Modifier.fillMaxSize(),
@@ -59,9 +62,11 @@ fun App(
                     state = couplingState,
                     safetyState = safetyState,
                     autonomousState = autonomousState,
+                    ooState = ooState,
                     onAction = couplingStore::dispatch,
                     onSafetyAction = safetyStore::dispatch,
-                    onAutonomousAction = autonomousStore::dispatch
+                    onAutonomousAction = autonomousStore::dispatch,
+                    onOoAction = ooStore::dispatch
                 )
             }
         }
