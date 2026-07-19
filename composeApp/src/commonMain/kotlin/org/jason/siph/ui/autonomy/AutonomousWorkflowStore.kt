@@ -11,6 +11,8 @@ import kotlinx.coroutines.launch
 import org.jason.siph.domain.autonomy.AutonomyCapabilityStatus
 import org.jason.siph.domain.autonomy.CalibrationProfile
 import org.jason.siph.domain.autonomy.CalibrationProfileRepository
+import org.jason.siph.domain.autonomy.CalibrationProfileVerificationRequest
+import org.jason.siph.domain.autonomy.CalibrationProfileVerifier
 import org.jason.siph.domain.autonomy.MeasurementPositionRepository
 import org.jason.siph.domain.autonomy.MeasurementPositionTrainer
 import org.jason.siph.domain.autonomy.MeasurementPositionTrainingRequest
@@ -42,6 +44,7 @@ enum class AutonomousWorkflowOperation {
     ProfileActivate,
     ProfileDelete,
     ProfileClear,
+    ProfileVerify,
     PositionTrain,
     WaferSave,
     WaferDelete,
@@ -100,6 +103,10 @@ sealed interface AutonomousWorkflowAction {
     data class ActivateProfile(val id: String) : AutonomousWorkflowAction
     data class DeleteProfile(val id: String) : AutonomousWorkflowAction
     data object ClearActiveProfile : AutonomousWorkflowAction
+    data class VerifyActiveProfile(
+        val verifiedBy: String = "operator",
+        val maximumPoseErrorUm: Double = 1.0
+    ) : AutonomousWorkflowAction
     data class TrainMeasurementPosition(
         val request: MeasurementPositionTrainingRequest
     ) : AutonomousWorkflowAction
@@ -132,6 +139,7 @@ class AutonomousWorkflowStore(
     private val checkpoints: WorkflowCheckpointRepository,
     private val records: MeasurementRecordRepository,
     private val trainer: MeasurementPositionTrainer,
+    private val calibrationVerifier: CalibrationProfileVerifier,
     private val workflowRunner: SiPhWorkflowRunner,
     private val nowEpochMs: () -> Long
 ) {
@@ -261,6 +269,8 @@ class AutonomousWorkflowStore(
                 refreshAssets()
             }
 
+            is AutonomousWorkflowAction.VerifyActiveProfile -> verifyActiveProfile(action)
+
             is AutonomousWorkflowAction.TrainMeasurementPosition -> runOperation(
                 AutonomousWorkflowOperation.PositionTrain,
                 "Measurement position trained and persisted"
@@ -301,6 +311,29 @@ class AutonomousWorkflowStore(
             AutonomousWorkflowAction.StopWorkflow -> scope.launch {
                 workflowRunner.requestStop()
             }
+        }
+    }
+
+    private fun verifyActiveProfile(action: AutonomousWorkflowAction.VerifyActiveProfile) {
+        val profile = mutableState.value.activeProfile
+        if (profile == null) {
+            updateError("No active calibration profile exists")
+            return
+        }
+        runOperation(
+            operation = AutonomousWorkflowOperation.ProfileVerify,
+            successMessage = "Calibration profile verification completed"
+        ) {
+            val result = calibrationVerifier.verify(
+                CalibrationProfileVerificationRequest(
+                    profileId = profile.id,
+                    verifiedBy = action.verifiedBy,
+                    maximumPoseErrorUm = action.maximumPoseErrorUm,
+                    activateOnPass = true
+                )
+            )
+            refreshAssets()
+            if (!result.passed) error(result.message)
         }
     }
 
