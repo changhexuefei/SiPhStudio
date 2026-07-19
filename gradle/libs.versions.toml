@@ -25,6 +25,10 @@ koin = "4.2.0"
 # Network
 ktor = "3.0.0"
 
+# Database
+postgresql = "42.7.10"
+h2 = "2.3.232"
+
 # Plot
 lets-plot = "4.15.0"
 lets-plot-compose = "3.2.2"
@@ -82,6 +86,12 @@ koin-compose = { module = "io.insert-koin:koin-compose", version.ref = "koin" }
 # Ktor
 # =========================================================
 ktor-network = { module = "io.ktor:ktor-network", version.ref = "ktor" }
+
+# =========================================================
+# Database
+# =========================================================
+postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
+h2 = { module = "com.h2database:h2", version.ref = "h2" }
 
 # =========================================================
 # Plot
