@@ -213,7 +213,9 @@ object PiTools {
     ) {
         device.stopAll()
         if (clearErrorAfterStop) {
-            runCatching { device.qERR() }
+            runStep(failFast = false) {
+                device.qERR()
+            }
         }
     }
 
