@@ -27,6 +27,7 @@ ktor = "3.0.0"
 
 # Database
 postgresql = "42.7.13"
+hikari = "7.0.2"
 h2 = "2.4.240"
 
 # Plot
@@ -91,6 +92,7 @@ ktor-network = { module = "io.ktor:ktor-network", version.ref = "ktor" }
 # Database
 # =========================================================
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
+hikari = { module = "com.zaxxer:HikariCP", version.ref = "hikari" }
 h2 = { module = "com.h2database:h2", version.ref = "h2" }
 
 # =========================================================
