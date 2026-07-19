@@ -35,6 +35,7 @@ interface DriftBaselineRepository {
 }
 
 interface WorkflowCheckpointRepository {
+    suspend fun listCheckpoints(): List<SiPhWorkflowCheckpoint>
     suspend fun findCheckpoint(runId: String): SiPhWorkflowCheckpoint?
     suspend fun saveCheckpoint(checkpoint: SiPhWorkflowCheckpoint)
     suspend fun deleteCheckpoint(runId: String)
@@ -174,6 +175,10 @@ class InMemoryAutonomyRepository(
 
     override suspend fun deleteBaseline(id: String) {
         mutex.withLock { baselines.remove(id) }
+    }
+
+    override suspend fun listCheckpoints(): List<SiPhWorkflowCheckpoint> = mutex.withLock {
+        checkpoints.values.sortedByDescending { it.updatedAtEpochMs }
     }
 
     override suspend fun findCheckpoint(runId: String): SiPhWorkflowCheckpoint? = mutex.withLock {
