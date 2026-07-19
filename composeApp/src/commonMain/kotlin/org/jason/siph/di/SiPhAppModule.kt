@@ -29,10 +29,10 @@ import org.koin.core.module.Module
 import org.koin.dsl.module
 import kotlin.time.TimeSource
 
-/** 可由真实设备模块覆盖的端口集合。 */
+/** 可由 JVM/真实设备模块按能力逐项覆盖的端口集合。 */
 data class RealHardwarePorts(
-    val positioner: OpticalPositionerPort,
-    val powerMeter: OpticalPowerMeterPort,
+    val positioner: OpticalPositionerPort? = null,
+    val powerMeter: OpticalPowerMeterPort? = null,
     val visionAlignment: VisionAlignmentPort? = null,
     val waferStage: WaferStagePort? = null,
     val probeTracking: ProbeTrackingPort? = null,
@@ -85,7 +85,12 @@ fun createSiPhAppModule(
             SafetyCheckedOpticalPositioner(
                 delegate = rawPositioner,
                 planner = get(),
-                safePoseProvider = { OpticalPose.ZERO }
+                // Real 模式必须使用真实适配器中经过配置的安全位，不能默认为零点。
+                safePoseProvider = if (runtimeMode == HardwareRuntimeMode.Demo) {
+                    { OpticalPose.ZERO }
+                } else {
+                    null
+                }
             )
         }
 
