@@ -24,6 +24,11 @@ class GcsDevice(
         client.connect()
     }
 
+    /** 等待活动 GCS 事务结束后再断开连接。 */
+    suspend fun disconnect() {
+        client.disconnect()
+    }
+
     suspend fun execute(command: GcsCommand): String? {
         return client.execute(command)
     }
@@ -272,6 +277,9 @@ class GcsDevice(
         command(GcsCommand.referenceIds(axes, mode))
     }
 
+    /**
+     * 同步兜底关闭。正常协程代码应调用 [disconnect]。
+     */
     override fun close() {
         client.close()
     }
