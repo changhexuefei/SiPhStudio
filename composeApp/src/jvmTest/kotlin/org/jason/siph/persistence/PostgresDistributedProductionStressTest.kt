@@ -124,7 +124,7 @@ class PostgresDistributedProductionStressTest {
             val report = ProductionAcceptanceEvaluator().evaluate(
                 id = "postgres-concurrency-${System.currentTimeMillis()}",
                 kind = ProductionAcceptanceKind.PostgreSqlConcurrency,
-                environmentName = "GitHub Actions PostgreSQL 17 service",
+                environmentName = "GitHub Actions ${health.serverVersion.substringBefore(" on ")}",
                 startedAtEpochMs = startedAt,
                 finishedAtEpochMs = finishedAt,
                 submittedTasks = taskCount,
@@ -141,7 +141,7 @@ class PostgresDistributedProductionStressTest {
                     minimumContinuousRunMs = 1L
                 ),
                 evidenceReferences = listOf(
-                    "github-actions://compose-app/postgresql-17",
+                    "github-actions://compose-app/postgresql-service",
                     "test://PostgresDistributedProductionStressTest"
                 ),
                 limitations = listOf(
