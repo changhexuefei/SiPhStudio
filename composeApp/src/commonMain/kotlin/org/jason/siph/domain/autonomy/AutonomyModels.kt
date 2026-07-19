@@ -1,9 +1,11 @@
 package org.jason.siph.domain.autonomy
 
+import kotlinx.serialization.Serializable
 import org.jason.siph.domain.positioner.OpticalPose
 import org.jason.siph.domain.positioner.VirtualPivotPoint
 
 /** 可接入能力的统一连接状态。 */
+@Serializable
 enum class AutonomyCapabilityState {
     NotConfigured,
     Disconnected,
@@ -14,6 +16,7 @@ enum class AutonomyCapabilityState {
 }
 
 /** 自主硅光子系统中一个外部能力的状态快照。 */
+@Serializable
 data class AutonomyCapabilityStatus(
     val state: AutonomyCapabilityState = AutonomyCapabilityState.NotConfigured,
     val identity: String? = null,
@@ -24,19 +27,20 @@ data class AutonomyCapabilityStatus(
         get() = state != AutonomyCapabilityState.NotConfigured
 
     val connected: Boolean
-        get() = state == AutonomyCapabilityState.Ready ||
-            state == AutonomyCapabilityState.Busy
+        get() = state == AutonomyCapabilityState.Ready || state == AutonomyCapabilityState.Busy
 
     val healthy: Boolean
         get() = state == AutonomyCapabilityState.Ready
 }
 
+@Serializable
 enum class PhotonicCouplingGeometry {
     VerticalGrating,
     EdgeCoupling,
     FiberArray
 }
 
+@Serializable
 data class VisionFrame(
     val frameId: String,
     val capturedAtEpochMs: Long,
@@ -45,12 +49,14 @@ data class VisionFrame(
     val sourceDescription: String
 )
 
+@Serializable
 data class VisionTargetRequest(
     val geometry: PhotonicCouplingGeometry,
     val expectedFeature: String,
     val regionOfInterest: VisionRegion? = null
 )
 
+@Serializable
 data class VisionRegion(
     val leftPx: Int,
     val topPx: Int,
@@ -58,6 +64,7 @@ data class VisionRegion(
     val heightPx: Int
 )
 
+@Serializable
 data class VisionAlignmentObservation(
     val frameId: String,
     val targetFound: Boolean,
@@ -68,12 +75,14 @@ data class VisionAlignmentObservation(
     val message: String
 )
 
+@Serializable
 data class VisionCalibrationRequest(
     val profileName: String,
     val fixtureId: String,
     val geometry: PhotonicCouplingGeometry
 )
 
+@Serializable
 data class VisionCalibrationResult(
     val calibrationId: String,
     val rmsErrorUm: Double,
@@ -81,6 +90,7 @@ data class VisionCalibrationResult(
     val message: String
 )
 
+@Serializable
 data class WaferSite(
     val dieColumn: Int,
     val dieRow: Int,
@@ -88,12 +98,14 @@ data class WaferSite(
     val label: String? = null
 )
 
+@Serializable
 data class WaferMapDefinition(
     val mapId: String,
     val waferId: String,
     val sites: List<WaferSite>
 )
 
+@Serializable
 data class WaferStageSnapshot(
     val loadedMapId: String? = null,
     val currentSite: WaferSite? = null,
@@ -102,6 +114,7 @@ data class WaferStageSnapshot(
     val contactState: String? = null
 )
 
+@Serializable
 data class MeasurementPositionTrainingResult(
     val name: String,
     val site: WaferSite?,
@@ -111,12 +124,14 @@ data class MeasurementPositionTrainingResult(
     val verified: Boolean
 )
 
+@Serializable
 data class ProbeTrackingReference(
     val referenceId: String,
     val expectedGapUm: Double,
     val geometry: PhotonicCouplingGeometry
 )
 
+@Serializable
 data class ProbeTrackingSample(
     val timestampEpochMs: Long,
     val gapUm: Double?,
@@ -131,6 +146,7 @@ data class ProbeTrackingSample(
  * 与具体控制器、夹具和校准数据绑定的自主作业配置。
  * 未验证的配置不能被自动工作流视为运动许可。
  */
+@Serializable
 data class CalibrationProfile(
     val id: String,
     val name: String,
@@ -145,8 +161,19 @@ data class CalibrationProfile(
     val createdAtEpochMs: Long,
     val verifiedAtEpochMs: Long? = null,
     val verifiedBy: String? = null,
-    val verified: Boolean = false
-)
+    val verified: Boolean = false,
+    val schemaVersion: Int = 1
+) {
+    init {
+        require(id.isNotBlank()) { "Calibration profile id must not be blank" }
+        require(name.isNotBlank()) { "Calibration profile name must not be blank" }
+        require(fixtureId.isNotBlank()) { "fixtureId must not be blank" }
+        require(probeHeightUm == null || probeHeightUm.isFinite()) {
+            "probeHeightUm must be finite when provided"
+        }
+        require(schemaVersion > 0) { "schemaVersion must be positive" }
+    }
+}
 
 class AutonomyCapabilityUnavailableException(
     capability: String
