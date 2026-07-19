@@ -1,5 +1,6 @@
 package org.jason.pi.gcs.pitools
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import org.jason.pi.gcs.core.GcsDevice
 import org.jason.pi.gcs.core.PiGcsTimeoutException
@@ -101,9 +102,6 @@ object PiTools {
         )
     }
 
-    /**
-     * Sends one SVO command containing all axes.
-     */
     suspend fun setServo(
         device: GcsDevice,
         axes: List<PiAxis>,
@@ -118,13 +116,6 @@ object PiTools {
         }
     }
 
-    /**
-     * References the selected axes.
-     *
-     * When per-axis waiting is disabled, one multi-axis FRF command is used.
-     * When it is enabled, each axis is referenced and verified independently so
-     * a failure can be attributed to the correct axis.
-     */
     suspend fun referenceAxes(
         device: GcsDevice,
         axes: List<PiAxis>,
@@ -168,12 +159,6 @@ object PiTools {
         )
     }
 
-    /**
-     * Waits until every requested axis reports ONT=1.
-     *
-     * A monotonic clock is used so an operating-system clock adjustment cannot
-     * make the timeout expire too early or too late.
-     */
     suspend fun waitOnTarget(
         device: GcsDevice,
         axes: List<PiAxis> = PiAxis.HEXAPOD_AXES,
@@ -262,7 +247,9 @@ object PiTools {
         try {
             block()
         } catch (error: Throwable) {
-            if (failFast) throw error
+            if (error is CancellationException || failFast) {
+                throw error
+            }
         }
     }
 
