@@ -18,7 +18,7 @@ private fun unavailableDescriptor(
     verificationState = DeviceVerificationState.ProtocolImplemented
 )
 
-private abstract class UnavailableOoDevice(
+abstract class UnavailableOoDevice(
     protected val capabilityName: String
 ) {
     protected val mutableStatus = MutableStateFlow(AutonomyCapabilityStatus())
