@@ -1,39 +1,19 @@
 package org.jason.siph.ui.coupling
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -41,9 +21,8 @@ import org.jason.siph.ui.model.CouplingSampleUi
 import org.jason.siph.ui.theme.AerospacePalette
 import org.jason.siph.ui.theme.TelemetryPill
 import kotlin.math.absoluteValue
-import kotlin.math.cos
-import kotlin.math.sin
 
+/** JVM/desktop 可选择的三维渲染后端。 */
 internal enum class AerospaceSurfaceBackend(
     val label: String,
     val caption: String,
@@ -51,21 +30,25 @@ internal enum class AerospaceSurfaceBackend(
 ) {
     SurfacePlot(
         label = "SURFACE PLOT",
-        caption = "Reusable surface-plot JVM renderer with orbit, zoom and contours",
+        caption = "Cached mesh renderer with orbit, zoom and contours",
         enabled = true
     ),
     JavaFx3d(
         label = "JAVAFX",
-        caption = "Desktop JavaFX accelerated surface renderer",
+        caption = "JavaFX accelerated surface renderer",
         enabled = true
     ),
     Lwjgl(
         label = "LWJGL",
-        caption = "OpenGL surface renderer for production visualization",
+        caption = "OpenGL production surface renderer",
         enabled = true
     )
 }
 
+/**
+ * 旧版 Compose Canvas 3D 会在每次拖动时重建二维列表、单元格、排序列表和 Path。
+ * 这里仅在 samples 改变时构建一次 [SurfaceMesh]，视图旋转和绘制交给各后端维护。
+ */
 @Composable
 internal fun AerospacePowerSurface3d(
     samples: List<CouplingSampleUi>,
@@ -73,11 +56,13 @@ internal fun AerospacePowerSurface3d(
     onSelectBackend: (AerospaceSurfaceBackend) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val mesh = remember(samples) { buildSurfaceMesh(samples) }
+    val mesh = remember(samples) {
+        buildAerospaceSurfaceMesh(samples)
+    }
 
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         SurfaceRendererControlBar(
             selectedBackend = selectedBackend,
@@ -86,76 +71,24 @@ internal fun AerospacePowerSurface3d(
             modifier = Modifier.fillMaxWidth()
         )
 
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-        ) {
-            val stackViewports = this.maxWidth < 900.dp
+        when (selectedBackend) {
+            AerospaceSurfaceBackend.SurfacePlot -> SurfacePlotPowerSurface3d(
+                mesh = mesh,
+                title = "POWER SURFACE",
+                initialAzimuthDegrees = -35.5f,
+                initialElevationDegrees = 33.2f,
+                modifier = Modifier.fillMaxWidth().weight(1f)
+            )
 
-            when (selectedBackend) {
-                AerospaceSurfaceBackend.SurfacePlot -> {
-                    if (stackViewports) {
-                        Column(
-                            modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            SurfacePlotPowerSurface3d(
-                                title = "PRIMARY ORBIT",
-                                mesh = mesh,
-                                initialAzimuthDegrees = -35.5f,
-                                initialElevationDegrees = 33.2f,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f)
-                            )
-                            SurfacePlotPowerSurface3d(
-                                title = "CROSS AXIS",
-                                mesh = mesh,
-                                initialAzimuthDegrees = 33.2f,
-                                initialElevationDegrees = 37.8f,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f)
-                            )
-                        }
-                    } else {
-                        Row(
-                            modifier = Modifier.fillMaxSize(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            SurfacePlotPowerSurface3d(
-                                title = "PRIMARY ORBIT",
-                                mesh = mesh,
-                                initialAzimuthDegrees = -35.5f,
-                                initialElevationDegrees = 33.2f,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                            )
-                            SurfacePlotPowerSurface3d(
-                                title = "CROSS AXIS",
-                                mesh = mesh,
-                                initialAzimuthDegrees = 33.2f,
-                                initialElevationDegrees = 37.8f,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                            )
-                        }
-                    }
-                }
+            AerospaceSurfaceBackend.JavaFx3d -> JavaFxPowerSurface3d(
+                mesh = mesh,
+                modifier = Modifier.fillMaxWidth().weight(1f)
+            )
 
-                AerospaceSurfaceBackend.JavaFx3d -> JavaFxPowerSurface3d(
-                    mesh = mesh,
-                    modifier = Modifier.fillMaxSize()
-                )
-
-                AerospaceSurfaceBackend.Lwjgl -> LwjglPowerSurface3d(
-                    mesh = mesh,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
+            AerospaceSurfaceBackend.Lwjgl -> LwjglPowerSurface3d(
+                mesh = mesh,
+                modifier = Modifier.fillMaxWidth().weight(1f)
+            )
         }
     }
 }
@@ -175,7 +108,7 @@ private fun SurfaceRendererControlBar(
     ) {
         Column(
             modifier = Modifier.padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(9.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -194,7 +127,6 @@ private fun SurfaceRendererControlBar(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Column(
@@ -218,7 +150,7 @@ private fun SurfaceRendererControlBar(
 
                 TelemetryPill(
                     label = "MESH",
-                    value = mesh?.points?.size?.let { "${it}×$it" } ?: "NO DATA",
+                    value = mesh?.let { "${it.rowCount}×${it.columnCount}" } ?: "NO DATA",
                     tone = if (mesh != null) AerospacePalette.Success else AerospacePalette.Warning,
                     active = mesh != null
                 )
@@ -236,161 +168,30 @@ private fun SurfaceRendererControlBar(
     }
 }
 
-@Composable
-private fun AerospaceSurfaceViewport(
-    title: String,
-    subtitle: String,
-    mesh: SurfaceMesh?,
-    initialYaw: Double,
-    initialPitch: Double,
-    modifier: Modifier = Modifier
-) {
-    var yaw by remember(title) { mutableStateOf(initialYaw) }
-    var pitch by remember(title) { mutableStateOf(initialPitch) }
-
-    Surface(
-        modifier = modifier.heightIn(min = 300.dp),
-        shape = MaterialTheme.shapes.medium,
-        color = AerospacePlotPanel,
-        border = BorderStroke(1.dp, AerospacePalette.Border)
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(7.dp)
-                        .background(
-                            color = if (mesh != null) {
-                                AerospacePalette.AccentBright
-                            } else {
-                                AerospacePalette.TextMuted
-                            },
-                            shape = androidx.compose.foundation.shape.CircleShape
-                        )
-                )
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(1.dp)
-                ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = AerospacePalette.TextPrimary,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = AerospacePalette.TextMuted
-                    )
-                }
-                Text(
-                    text = if (mesh == null) "AWAITING FIELD" else "LIVE MESH",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (mesh == null) AerospacePalette.Warning else AerospacePalette.Success,
-                    fontFamily = FontFamily.Monospace
-                )
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .heightIn(min = 220.dp)
-                    .background(AerospacePlotBackground)
-            ) {
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    drawSurfaceGrid()
-                    if (mesh == null) {
-                        drawSurfacePlaceholder()
-                    } else {
-                        drawEngineeringSurface(
-                            mesh = mesh,
-                            yaw = yaw,
-                            pitch = pitch
-                        )
-                    }
-                }
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .pointerInput(title) {
-                            detectDragGestures { change, dragAmount ->
-                                change.consume()
-                                yaw += dragAmount.x * 0.008
-                                pitch = (pitch - dragAmount.y * 0.008)
-                                    .coerceIn(0.24, 1.18)
-                            }
-                        }
-                )
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    text = "DRAG TO ORBIT",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = AerospacePalette.Accent,
-                    fontFamily = FontFamily.Monospace
-                )
-                Text(
-                    text = "YAW ${roundAngle(yaw)}°  /  PITCH ${roundAngle(pitch)}°",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = AerospacePalette.TextMuted,
-                    fontFamily = FontFamily.Monospace
-                )
-                Spacer(modifier = Modifier.weight(1f))
-                Surface(
-                    modifier = Modifier.clickable {
-                        yaw = initialYaw
-                        pitch = initialPitch
-                    },
-                    shape = MaterialTheme.shapes.extraSmall,
-                    color = AerospacePalette.PanelRaised,
-                    border = BorderStroke(1.dp, AerospacePalette.BorderStrong)
-                ) {
-                    Text(
-                        text = "RESET VIEW",
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = AerospacePalette.TextSecondary,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-        }
-    }
-}
-
-private fun roundAngle(radians: Double): Double =
-    kotlin.math.round(radians * 180.0 / kotlin.math.PI * 10.0) / 10.0
-
-private fun buildSurfaceMesh(
+/**
+ * 仅在样本集合变化时执行的网格构建。
+ * 反距离加权插值不再放在 Canvas 每帧绘制路径中。
+ */
+internal fun buildAerospaceSurfaceMesh(
     samples: List<CouplingSampleUi>,
-    resolution: Int = 26
+    resolution: Int = 30
 ): SurfaceMesh? {
+    require(resolution >= 2) { "resolution must be >= 2" }
     if (samples.size < 3) return null
 
-    val xMin = samples.minOf { it.pose.xUm }
-    val xMax = samples.maxOf { it.pose.xUm }
-    val yMin = samples.minOf { it.pose.yUm }
-    val yMax = samples.maxOf { it.pose.yUm }
-    val pMin = samples.minOf { it.powerDbm }
-    val pMax = samples.maxOf { it.powerDbm }
+    val finiteSamples = samples.filter { sample ->
+        sample.pose.xUm.isFinite() &&
+            sample.pose.yUm.isFinite() &&
+            sample.powerDbm.isFinite()
+    }
+    if (finiteSamples.size < 3) return null
+
+    val xMin = finiteSamples.minOf { it.pose.xUm }
+    val xMax = finiteSamples.maxOf { it.pose.xUm }
+    val yMin = finiteSamples.minOf { it.pose.yUm }
+    val yMax = finiteSamples.maxOf { it.pose.yUm }
+    val pMin = finiteSamples.minOf { it.powerDbm }
+    val pMax = finiteSamples.maxOf { it.powerDbm }
 
     if (
         (xMax - xMin).absoluteValue < 1e-9 ||
@@ -404,11 +205,12 @@ private fun buildSurfaceMesh(
         List(resolution) { xIndex ->
             val x = xMin + (xMax - xMin) * xIndex / (resolution - 1)
             val y = yMin + (yMax - yMin) * yIndex / (resolution - 1)
-            val power = interpolatePower(samples, x, y)
+            val power = interpolatePower(finiteSamples, x, y)
+
             SurfacePoint(
-                x = normalizeSurface(x, xMin, xMax).toDouble() * 2.0 - 1.0,
-                y = normalizeSurface(y, yMin, yMax).toDouble() * 2.0 - 1.0,
-                z = normalizeSurface(power, pMin, pMax).toDouble(),
+                x = normalizeSurface(x, xMin, xMax) * 2.0 - 1.0,
+                y = normalizeSurface(y, yMin, yMax) * 2.0 - 1.0,
+                z = normalizeSurface(power, pMin, pMax),
                 power = power
             )
         }
@@ -433,12 +235,12 @@ private fun interpolatePower(
     var weightedPower = 0.0
     var totalWeight = 0.0
 
-    samples.forEach { sample ->
+    for (sample in samples) {
         val dx = sample.pose.xUm - x
         val dy = sample.pose.yUm - y
         val distanceSquared = dx * dx + dy * dy
 
-        if (distanceSquared < 1e-9) return sample.powerDbm
+        if (distanceSquared < 1e-12) return sample.powerDbm
 
         val weight = 1.0 / distanceSquared
         weightedPower += sample.powerDbm * weight
@@ -448,338 +250,47 @@ private fun interpolatePower(
     return weightedPower / totalWeight
 }
 
-private fun DrawScope.drawEngineeringSurface(
-    mesh: SurfaceMesh,
-    yaw: Double,
-    pitch: Double
-) {
-    val plotWidth = (size.width - 54f).coerceAtLeast(size.width * 0.72f)
-    val projected = mesh.points.map { row ->
-        row.map { point ->
-            projectSurfacePoint(
-                point = point,
-                yaw = yaw,
-                pitch = pitch,
-                width = plotWidth,
-                height = size.height
-            )
-        }
-    }
-    val cells = mutableListOf<SurfaceCell>()
-
-    for (rowIndex in 0 until projected.lastIndex) {
-        for (columnIndex in 0 until projected[rowIndex].lastIndex) {
-            val vertices = listOf(
-                projected[rowIndex][columnIndex],
-                projected[rowIndex][columnIndex + 1],
-                projected[rowIndex + 1][columnIndex + 1],
-                projected[rowIndex + 1][columnIndex]
-            )
-            val power = listOf(
-                mesh.points[rowIndex][columnIndex].power,
-                mesh.points[rowIndex][columnIndex + 1].power,
-                mesh.points[rowIndex + 1][columnIndex + 1].power,
-                mesh.points[rowIndex + 1][columnIndex].power
-            ).average()
-
-            cells += SurfaceCell(
-                vertices = vertices,
-                depth = vertices.map { it.depth }.average(),
-                powerRatio = normalizeSurface(power, mesh.minPower, mesh.maxPower)
-            )
-        }
-    }
-
-    drawFloorProjection(projected)
-
-    cells.sortedBy { it.depth }.forEach { cell ->
-        val path = Path().apply {
-            moveTo(cell.vertices.first().offset.x, cell.vertices.first().offset.y)
-            cell.vertices.drop(1).forEach { lineTo(it.offset.x, it.offset.y) }
-            close()
-        }
-        drawPath(path, surfaceColor(cell.powerRatio))
-        drawPath(
-            path = path,
-            color = AerospacePalette.Void.copy(alpha = 0.42f),
-            style = Stroke(width = 0.58f)
-        )
-    }
-
-    drawPlotBox(projected)
-    drawSurfaceColorBar(
-        x = size.width - 26f,
-        y = 24f,
-        height = (size.height - 58f).coerceAtLeast(64f)
-    )
-    drawSurfacePeak(projected)
-}
-
-private fun DrawScope.drawSurfaceGrid() {
-    drawRect(AerospacePlotBackground)
-    val minor = 36.dp.toPx()
-    var index = 0
-    var x = 0f
-    while (x <= size.width) {
-        drawLine(
-            color = if (index % 4 == 0) AerospacePlotGridMajor else AerospacePlotGridMinor,
-            start = Offset(x, 0f),
-            end = Offset(x, size.height),
-            strokeWidth = if (index % 4 == 0) 0.7.dp.toPx() else 0.4.dp.toPx()
-        )
-        x += minor
-        index += 1
-    }
-
-    index = 0
-    var y = 0f
-    while (y <= size.height) {
-        drawLine(
-            color = if (index % 4 == 0) AerospacePlotGridMajor else AerospacePlotGridMinor,
-            start = Offset(0f, y),
-            end = Offset(size.width, y),
-            strokeWidth = if (index % 4 == 0) 0.7.dp.toPx() else 0.4.dp.toPx()
-        )
-        y += minor
-        index += 1
-    }
-}
-
-private fun DrawScope.drawPlotBox(projected: List<List<ProjectedSurfacePoint>>) {
-    val back = projected.first()
-    val front = projected.last()
-    val left = projected.map { it.first() }
-    val right = projected.map { it.last() }
-
-    listOf(back, front, left, right).forEach { line ->
-        drawLine(
-            color = AerospacePalette.BorderStrong,
-            start = line.first().offset,
-            end = line.last().offset,
-            strokeWidth = 1.05f
-        )
-    }
-
-    projected.first().indices.forEach { index ->
-        if (index == 0 || index == projected.first().lastIndex || index % 5 == 0) {
-            drawLine(
-                color = AerospacePlotGridMajor,
-                start = back[index].offset,
-                end = front[index].offset,
-                strokeWidth = 0.65f
-            )
-        }
-    }
-
-    projected.indices.forEach { index ->
-        if (index == 0 || index == projected.lastIndex || index % 5 == 0) {
-            drawLine(
-                color = AerospacePlotGridMajor,
-                start = projected[index].first().offset,
-                end = projected[index].last().offset,
-                strokeWidth = 0.65f
-            )
-        }
-    }
-}
-
-private fun DrawScope.drawFloorProjection(
-    projected: List<List<ProjectedSurfacePoint>>
-) {
-    val floorRows = projected.map { row ->
-        row.map { it.copy(offset = it.floorOffset) }
-    }
-
-    floorRows.forEachIndexed { index, row ->
-        if (index % 2 == 0 || index == floorRows.lastIndex) {
-            drawPolyline(
-                points = row.map { it.offset },
-                color = AerospacePalette.Accent.copy(alpha = 0.34f),
-                strokeWidth = 0.85f
-            )
-        }
-    }
-
-    floorRows.first().indices.forEach { index ->
-        if (index % 2 == 0 || index == floorRows.first().lastIndex) {
-            drawPolyline(
-                points = floorRows.map { it[index].offset },
-                color = AerospacePalette.BorderStrong.copy(alpha = 0.42f),
-                strokeWidth = 0.78f
-            )
-        }
-    }
-}
-
-private fun DrawScope.drawPolyline(
-    points: List<Offset>,
-    color: Color,
-    strokeWidth: Float
-) {
-    points.zipWithNext().forEach { (start, end) ->
-        drawLine(color, start, end, strokeWidth = strokeWidth)
-    }
-}
-
-private fun DrawScope.drawSurfaceColorBar(
-    x: Float,
-    y: Float,
-    height: Float
-) {
-    val width = 12f
-    val steps = height.toInt().coerceAtLeast(1)
-
-    for (index in 0..steps) {
-        val ratio = 1f - index / steps.toFloat()
-        drawLine(
-            color = surfaceColor(ratio),
-            start = Offset(x, y + index),
-            end = Offset(x + width, y + index),
-            strokeWidth = 1f
-        )
-    }
-
-    drawRect(
-        color = AerospacePalette.BorderStrong,
-        topLeft = Offset(x, y),
-        size = Size(width, height),
-        style = Stroke(width = 1f)
-    )
-}
-
-private fun DrawScope.drawSurfacePeak(
-    projected: List<List<ProjectedSurfacePoint>>
-) {
-    val peak = projected.flatten().maxByOrNull { it.powerRatio } ?: return
-    drawCircle(
-        color = AerospacePalette.Success.copy(alpha = 0.18f),
-        radius = 14f,
-        center = peak.offset
-    )
-    drawCircle(
-        color = AerospacePalette.Success,
-        radius = 7f,
-        center = peak.offset,
-        style = Stroke(width = 1.4f)
-    )
-    drawCircle(
-        color = AerospacePalette.TextPrimary,
-        radius = 3.8f,
-        center = peak.offset
-    )
-}
-
-private fun DrawScope.drawSurfacePlaceholder() {
-    val center = Offset(size.width * 0.5f, size.height * 0.48f)
-    val radiusX = size.width * 0.28f
-    val radiusY = size.height * 0.16f
-
-    drawLine(
-        AerospacePlotGridMajor,
-        Offset(size.width * 0.18f, size.height * 0.72f),
-        Offset(size.width * 0.82f, size.height * 0.72f),
-        strokeWidth = 1f
-    )
-    drawLine(
-        AerospacePlotGridMajor,
-        Offset(size.width * 0.18f, size.height * 0.72f),
-        Offset(size.width * 0.5f, size.height * 0.20f),
-        strokeWidth = 1f
-    )
-    drawLine(
-        AerospacePlotGridMajor,
-        Offset(size.width * 0.82f, size.height * 0.72f),
-        Offset(size.width * 0.5f, size.height * 0.20f),
-        strokeWidth = 1f
-    )
-    drawOval(
-        color = AerospacePalette.Accent.copy(alpha = 0.38f),
-        topLeft = Offset(center.x - radiusX, center.y - radiusY),
-        size = Size(radiusX * 2f, radiusY * 2f),
-        style = Stroke(width = 1.2f)
-    )
-}
-
-private fun projectSurfacePoint(
-    point: SurfacePoint,
-    yaw: Double,
-    pitch: Double,
-    width: Float,
-    height: Float
-): ProjectedSurfacePoint {
-    val z = point.z * 1.18
-    val yawCos = cos(yaw)
-    val yawSin = sin(yaw)
-    val pitchCos = cos(pitch)
-    val pitchSin = sin(pitch)
-    val rotatedX = point.x * yawCos - point.y * yawSin
-    val rotatedY = point.x * yawSin + point.y * yawCos
-    val projectedY = rotatedY * pitchCos - z * pitchSin
-    val depth = rotatedY * pitchSin + z * pitchCos
-    val scale = minOf(width * 0.33, height * 0.38)
-    val baseY = height * 0.72f
-    val floorY = baseY + (rotatedY * pitchCos * scale).toFloat()
-
-    return ProjectedSurfacePoint(
-        offset = Offset(
-            x = width * 0.50f + (rotatedX * scale).toFloat(),
-            y = baseY + (projectedY * scale).toFloat()
-        ),
-        floorOffset = Offset(
-            x = width * 0.50f + (rotatedX * scale).toFloat(),
-            y = floorY
-        ),
-        depth = depth,
-        powerRatio = point.z.toFloat()
-    )
-}
-
-private val SurfaceColorStops = listOf(
-    0.00f to Color(0xFF071425),
-    0.22f to Color(0xFF0B3C68),
-    0.46f to Color(0xFF007E99),
-    0.68f to Color(0xFF3C9DFF),
-    0.86f to Color(0xFF39D98A),
-    1.00f to Color(0xFFF5F7FA)
-)
-
-private fun surfaceColor(powerRatio: Float): Color {
-    val ratio = powerRatio.coerceIn(0f, 1f)
-    val rightIndex = SurfaceColorStops
-        .indexOfFirst { ratio <= it.first }
-        .takeIf { it > 0 }
-        ?: SurfaceColorStops.lastIndex
-    val left = SurfaceColorStops[rightIndex - 1]
-    val right = SurfaceColorStops[rightIndex]
-    val local = ((ratio - left.first) / (right.first - left.first))
-        .coerceIn(0f, 1f)
-
-    return Color(
-        red = left.second.red + (right.second.red - left.second.red) * local,
-        green = left.second.green + (right.second.green - left.second.green) * local,
-        blue = left.second.blue + (right.second.blue - left.second.blue) * local,
-        alpha = 1f
-    )
-}
-
-private fun normalizeSurface(
-    value: Double,
-    min: Double,
-    max: Double
-): Float {
+private fun normalizeSurface(value: Double, min: Double, max: Double): Double {
     val span = max - min
-    if (span.absoluteValue < 1e-9) return 0.5f
-    return ((value - min) / span).toFloat().coerceIn(0f, 1f)
+    if (span.absoluteValue < 1e-12) return 0.5
+    return ((value - min) / span).coerceIn(0.0, 1.0)
 }
 
-private fun ProjectedSurfacePoint.copy(
-    offset: Offset
-): ProjectedSurfacePoint = ProjectedSurfacePoint(
-    offset = offset,
-    floorOffset = floorOffset,
-    depth = depth,
-    powerRatio = powerRatio
+internal data class AerospaceSurfaceColorStop(
+    val position: Float,
+    val color: Color
 )
+
+/** 共享颜色表，显式处理 0 和 1，避免最低功率错误落入最后一个区间。 */
+internal object AerospaceSurfaceColorScale {
+    val stops: List<AerospaceSurfaceColorStop> = listOf(
+        AerospaceSurfaceColorStop(0.00f, Color(0xFF071425)),
+        AerospaceSurfaceColorStop(0.22f, Color(0xFF0B3C68)),
+        AerospaceSurfaceColorStop(0.46f, Color(0xFF007E99)),
+        AerospaceSurfaceColorStop(0.68f, Color(0xFF3C9DFF)),
+        AerospaceSurfaceColorStop(0.86f, Color(0xFF39D98A)),
+        AerospaceSurfaceColorStop(1.00f, Color(0xFFF5F7FA))
+    )
+
+    fun colorAt(powerRatio: Float): Color {
+        val ratio = powerRatio.coerceIn(0f, 1f)
+        if (ratio <= stops.first().position) return stops.first().color
+        if (ratio >= stops.last().position) return stops.last().color
+
+        val rightIndex = stops.indexOfFirst { ratio <= it.position }
+        val left = stops[rightIndex - 1]
+        val right = stops[rightIndex]
+        val local = ((ratio - left.position) / (right.position - left.position))
+            .coerceIn(0f, 1f)
+
+        return Color(
+            red = left.color.red + (right.color.red - left.color.red) * local,
+            green = left.color.green + (right.color.green - left.color.green) * local,
+            blue = left.color.blue + (right.color.blue - left.color.blue) * local,
+            alpha = left.color.alpha + (right.color.alpha - left.color.alpha) * local
+        )
+    }
+}
 
 internal data class SurfaceMesh(
     val points: List<List<SurfacePoint>>,
@@ -789,26 +300,19 @@ internal data class SurfaceMesh(
     val xMax: Double,
     val yMin: Double,
     val yMax: Double
-)
+) {
+    val rowCount: Int
+        get() = points.size
+
+    val columnCount: Int
+        get() = points.firstOrNull()?.size ?: 0
+}
 
 internal data class SurfacePoint(
     val x: Double,
     val y: Double,
     val z: Double,
     val power: Double
-)
-
-private data class ProjectedSurfacePoint(
-    val offset: Offset,
-    val floorOffset: Offset,
-    val depth: Double,
-    val powerRatio: Float
-)
-
-private data class SurfaceCell(
-    val vertices: List<ProjectedSurfacePoint>,
-    val depth: Double,
-    val powerRatio: Float
 )
 
 @Composable
