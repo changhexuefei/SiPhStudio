@@ -8,8 +8,8 @@ This is a Kotlin Multiplatform project targeting Desktop (JVM), Web.
     - Other folders are for Kotlin code that will be compiled for only the platform indicated in the folder name.
       For example, if you want to use Apple's CoreCrypto for the iOS part of your Kotlin app,
       the [iosMain](./composeApp/src/iosMain/kotlin) folder would be the right place for such calls.
-      Similarly, if you want to edit the Desktop (JVM) specific part, the [jvmMain](./composeApp/src/jvmMain/kotlin)
-      folder is the appropriate location.
+      Similarly, if you want to edit the Desktop (JVM) specific part, [jvmMain](./composeApp/src/jvmMain/kotlin)
+      is the appropriate location.
 
 ### Build and Run Desktop (JVM) Application
 
@@ -23,6 +23,29 @@ in your IDE's toolbar or run it directly from the terminal:
   ```shell
   .\gradlew.bat :composeApp:run
   ```
+
+### Optional PostgreSQL Multi-Workstation Production Coordination
+
+The desktop application keeps the local production repository by default. Distributed worker leases, capability
+matching, fencing tokens and MES/audit Outbox coordination can be moved to PostgreSQL by supplying JVM system
+properties:
+
+```text
+-Dsiph.production.postgres.url=jdbc:postgresql://127.0.0.1:5432/siphstudio
+-Dsiph.production.postgres.user=siphstudio
+-Dsiph.production.postgres.password=<secret>
+```
+
+Operational rules:
+
+- Demo mode without a PostgreSQL URL uses an in-memory digital coordinator.
+- Real mode without a PostgreSQL URL reports the distributed coordinator as not configured.
+- Real production measurement remains blocked until verified device executors and worker capabilities are injected.
+- PostgreSQL coordination uses worker heartbeats, capability matching, expiring leases, fencing tokens,
+  `FOR UPDATE SKIP LOCKED`, idempotent task keys and an Outbox for MES and remote audit delivery.
+- H2 PostgreSQL-compatibility tests validate schema, transactions, sequential multi-worker reservation, fencing and
+  Outbox behavior. H2 is not treated as proof of PostgreSQL's concurrent lock semantics; a real PostgreSQL integration
+  environment is still required before production acceptance.
 
 ### Build and Run Web Application
 
@@ -41,7 +64,6 @@ We would appreciate your feedback on Compose/Web and Kotlin/Wasm in the public S
 If you face any issues, please report them on [YouTrack](https://youtrack.jetbrains.com/newIssue?project=CMP).
 
 ---
-
 
 第一阶段：不增加新硬件也能完成
 SiPhWorkflowRunner 状态机；
