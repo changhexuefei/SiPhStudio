@@ -1,0 +1,7 @@
+{
+  "observationDurationMs": 600000,
+  "pollIntervalMs": 1000,
+  "maximumAllowedOutageMs": 30000,
+  "minimumObservedRoleTransitions": 1,
+  "requireWriteProbe": true
+}
