@@ -87,7 +87,7 @@ ktor-network = { module = "io.ktor:ktor-network", version.ref = "ktor" }
 # Plot
 # =========================================================
 lets-plot-kotlin = { module = "org.jetbrains.lets-plot:lets-plot-kotlin", version.ref = "lets-plot" }
-lets-plot-compose = { module = "org.jetbrains.lets-plot.compose:plots-compose", version.ref = "lets-plot-compose" }
+lets-plot-compose = { module = "org.jetbrains.lets-plot:lets-plot-compose", version.ref = "lets-plot-compose" }
 
 # =========================================================
 # Logging
