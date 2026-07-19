@@ -39,13 +39,13 @@ internal actual fun LwjglPowerSurface3d(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "LWJGL",
+                text = "GPU OPENGL",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
 
             Text(
-                text = "LWJGL OpenGL rendering is only available in the desktop JVM build.",
+                text = "The GPU OpenGL renderer is available only in the desktop JVM build.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp)
