@@ -41,11 +41,17 @@ internal actual fun SurfacePlotPowerSurface3d(
             return@Surface
         }
 
+        // 网格数据只在 mesh 实例变化时构建，不参与视角拖动的逐帧绘制。
         val data = remember(mesh) {
+            val values = buildList(mesh.rowCount * mesh.columnCount) {
+                mesh.points.forEach { row ->
+                    row.forEach { point -> add(point.power.toFloat()) }
+                }
+            }
             SurfaceGrid(
-                columns = mesh.points.first().size,
-                rows = mesh.points.size,
-                values = mesh.points.flatten().map { it.power.toFloat() },
+                columns = mesh.columnCount,
+                rows = mesh.rowCount,
+                values = values,
                 xRange = mesh.xMin.toFloat()..mesh.xMax.toFloat(),
                 yRange = mesh.yMin.toFloat()..mesh.yMax.toFloat()
             )
@@ -76,14 +82,9 @@ internal actual fun SurfacePlotPowerSurface3d(
                     textColor = AerospacePalette.TextSecondary,
                     tooltipBackgroundColor = AerospacePalette.PanelRaised,
                     tooltipTextColor = AerospacePalette.TextPrimary,
-                    colorStops = listOf(
-                        SurfaceColorStop(0f, Color(0xFF102A73)),
-                        SurfaceColorStop(0.22f, Color(0xFF155BB5)),
-                        SurfaceColorStop(0.45f, Color(0xFF00A6C7)),
-                        SurfaceColorStop(0.65f, Color(0xFF38C982)),
-                        SurfaceColorStop(0.82f, Color(0xFFE0D94A)),
-                        SurfaceColorStop(1f, Color(0xFFFF6A3D))
-                    )
+                    colorStops = AerospaceSurfaceColorScale.stops.map { stop ->
+                        SurfaceColorStop(stop.position, stop.color)
+                    }
                 )
             )
         }
