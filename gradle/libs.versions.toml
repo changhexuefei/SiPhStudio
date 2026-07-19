@@ -26,8 +26,8 @@ koin = "4.2.0"
 ktor = "3.0.0"
 
 # Database
-postgresql = "42.7.10"
-h2 = "2.3.232"
+postgresql = "42.7.13"
+h2 = "2.4.240"
 
 # Plot
 lets-plot = "4.15.0"
