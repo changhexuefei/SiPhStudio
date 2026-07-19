@@ -92,12 +92,14 @@ kotlin {
 
             runtimeOnly("org.lwjgl:lwjgl:$lwjglVersion:$lwjglPlatform")
             runtimeOnly("org.lwjgl:lwjgl-opengl:$lwjglVersion:$lwjglPlatform")
+            runtimeOnly(libs.postgresql)
             runtimeOnly(libs.slf4j.simple)
         }
 
         jvmTest.dependencies {
             implementation(kotlin("test"))
             implementation(libs.kotlinx.coroutines.core)
+            implementation(libs.h2)
         }
     }
 }
