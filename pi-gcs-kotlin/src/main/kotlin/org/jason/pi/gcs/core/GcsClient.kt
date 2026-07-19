@@ -9,6 +9,7 @@ import org.jason.pi.gcs.transport.GcsTransport
  *
  * PI GCS 是严格的请求/响应协议。同一连接上不能让多个协程交叉写命令和读响应，
  * 所以这里用一个 Mutex 保护完整事务，而不是只保护单次 write/read。
+ * 连接与断开也使用同一个事务锁，避免查询尚未读完时 TCP Socket 被关闭。
  */
 class GcsClient(
     private val transport: GcsTransport,
@@ -24,6 +25,19 @@ class GcsClient(
         transactionMutex.withLock {
             if (!transport.isOpen) {
                 transport.open()
+            }
+        }
+    }
+
+    /**
+     * 等待正在执行的 GCS 请求/响应事务结束后再关闭传输层。
+     *
+     * 正常的协程生命周期必须调用这个方法，而不是直接调用 [close]。
+     */
+    suspend fun disconnect() {
+        transactionMutex.withLock {
+            if (transport.isOpen) {
+                transport.close()
             }
         }
     }
@@ -73,6 +87,7 @@ class GcsClient(
         }
 
         return transactionMutex.withLock {
+            check(transport.isOpen) { "PI GCS transport 未连接" }
             transport.writeLine(command)
             val response = transport.readLines(expectedResponseLines)
                 .joinToString(separator = "\n") { line ->
@@ -95,6 +110,7 @@ class GcsClient(
         require(command.isNotBlank()) { "GCS command 不能为空" }
 
         transactionMutex.withLock {
+            check(transport.isOpen) { "PI GCS transport 未连接" }
             transport.writeLine(command)
 
             if (checkError) {
@@ -108,8 +124,22 @@ class GcsClient(
         return GcsResponseParser.parseErrorCode(response)
     }
 
+    /**
+     * AutoCloseable 的同步兜底入口。
+     *
+     * 为避免同步 close 与正在挂起的事务发生竞争，这里只在当前没有活动事务时关闭。
+     * 协程代码应始终调用 [disconnect]，它会等待活动事务完成。
+     */
     override fun close() {
-        transport.close()
+        check(transactionMutex.tryLock()) {
+            "PI GCS transaction is active; call suspend disconnect() instead of close()"
+        }
+
+        try {
+            transport.close()
+        } finally {
+            transactionMutex.unlock()
+        }
     }
 
     /** Must only be called while [transactionMutex] is held. */
