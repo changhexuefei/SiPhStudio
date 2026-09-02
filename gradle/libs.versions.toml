@@ -15,19 +15,19 @@ compose-navigation3-ui = "1.1.1"
 compose-navigationevent = "1.1.0"
 
 # KotlinX
-kotlinx-coroutines = "1.10.2"
+kotlinx-coroutines = "1.11.0"
 kotlinx-datetime = "0.7.1-0.6.x-compat"
 kotlinx-serialization = "1.11.0"
 
 # Dependency injection
-koin = "4.2.0"
+koin = "4.2.2"
 
 # Network
-ktor = "3.0.0"
+ktor = "3.5.2"
 
 # Database
 postgresql = "42.7.13"
-hikari = "7.0.2"
+hikari = "7.1.0"
 h2 = "2.4.240"
 
 # Plot
@@ -38,7 +38,7 @@ lets-plot-compose = "3.2.2"
 slf4j = "2.0.17"
 
 # LWJGL
-lwjgl = "3.4.1"
+lwjgl = "3.4.3"
 lwjgl3-awt = "0.2.4"
 
 
