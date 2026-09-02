@@ -1,0 +1,60 @@
+{
+  "id": "mes-production-result-v1",
+  "version": 1,
+  "endpointPath": "/api/v1/production/results",
+  "eventTypes": [
+    "PRODUCTION_TASK_COMPLETED"
+  ],
+  "fieldMappings": [
+    {
+      "targetField": "messageId",
+      "source": "EventId"
+    },
+    {
+      "targetField": "eventType",
+      "source": "EventType"
+    },
+    {
+      "targetField": "taskId",
+      "source": "AggregateId"
+    },
+    {
+      "targetField": "idempotencyKey",
+      "source": "IdempotencyKey"
+    },
+    {
+      "targetField": "resultId",
+      "source": "PayloadPath",
+      "sourcePath": "resultId"
+    },
+    {
+      "targetField": "passed",
+      "source": "PayloadPath",
+      "sourcePath": "passed"
+    },
+    {
+      "targetField": "recipeId",
+      "source": "PayloadPath",
+      "sourcePath": "recipeSnapshot.id"
+    },
+    {
+      "targetField": "recipeVersion",
+      "source": "PayloadPath",
+      "sourcePath": "recipeSnapshot.version"
+    },
+    {
+      "targetField": "sourceSystem",
+      "source": "StaticValue",
+      "staticValue": "SiPhStudio"
+    }
+  ],
+  "staticHeaders": {
+    "X-Source-System": "SiPhStudio"
+  },
+  "acceptedHttpStatusCodes": [
+    200,
+    201,
+    202,
+    204
+  ]
+}

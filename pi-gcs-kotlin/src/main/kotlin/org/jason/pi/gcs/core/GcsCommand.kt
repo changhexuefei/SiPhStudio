@@ -3,454 +3,296 @@ package org.jason.pi.gcs.core
 import org.jason.pi.gcs.hexapod.PiAxis
 import java.util.Locale
 
-/**
- * PI GCS 命令类型。
- */
+/** PI GCS 命令类型。 */
 enum class GcsCommandKind {
-
-    /**
-     * 无返回值命令。
-     *
-     * 例如：
-     * - MOV X 1.0
-     * - MVR X 0.1
-     * - SVO X 1
-     * - STP
-     */
     Command,
-
-    /**
-     * 有返回值查询命令。
-     *
-     * 例如：
-     * - *IDN?
-     * - POS? X
-     * - ONT? X
-     * - ERR?
-     */
     Query
 }
 
 /**
- * PI GCS 命令对象。
+ * PI GCS 命令描述。
  *
- * 这个接口只负责生成 GCS 文本命令，不负责发送。
- *
- * 发送由 GcsClient / GcsDevice 负责。
+ * 除了命令文本之外，还携带响应行数。PI 控制器的多轴查询通常按轴逐行返回，
+ * 因此不能把所有查询都当成单行响应处理。
  */
 sealed interface GcsCommand {
 
-    /**
-     * GCS 原始命令文本。
-     */
     val text: String
 
-    /**
-     * 命令类型。
-     */
     val kind: GcsCommandKind
 
-    /**
-     * 是否是查询命令。
-     */
+    /** 查询命令预期返回的行数；普通命令固定为 0。 */
+    val expectedResponseLines: Int
+        get() = if (kind == GcsCommandKind.Query) 1 else 0
+
     val isQuery: Boolean
         get() = kind == GcsCommandKind.Query
 
-    /**
-     * 是否是普通命令。
-     */
     val isCommand: Boolean
         get() = kind == GcsCommandKind.Command
 
-    /**
-     * 普通命令执行后是否建议执行 ERR? 检查。
-     */
+    /** 普通命令执行后是否执行 ERR? 检查。 */
     val shouldCheckError: Boolean
         get() = kind == GcsCommandKind.Command
 
     companion object {
 
-        /**
-         * 原始无返回值命令。
-         *
-         * 用于调试或临时支持尚未封装的 GCS 命令。
-         */
-        fun rawCommand(
-            text: String
-        ): GcsCommand {
-            return RawCommand(text)
-        }
+        fun rawCommand(text: String): GcsCommand = RawCommand(text)
 
-        /**
-         * 原始查询命令。
-         */
         fun rawQuery(
-            text: String
-        ): GcsCommand {
-            return RawQuery(text)
-        }
+            text: String,
+            expectedResponseLines: Int = 1
+        ): GcsCommand = RawQuery(text, expectedResponseLines)
 
-        /**
-         * 查询设备识别信息。
-         *
-         * GCS:
-         * *IDN?
-         */
-        fun qIDN(): GcsCommand {
-            return RawQuery("*IDN?")
-        }
+        fun qIDN(): GcsCommand = RawQuery("*IDN?")
 
-        /**
-         * 查询版本信息。
-         *
-         * GCS:
-         * VER?
-         */
-        fun qVER(): GcsCommand {
-            return RawQuery("VER?")
-        }
+        fun qVER(): GcsCommand = RawQuery("VER?")
 
-        /**
-         * 查询错误码。
-         *
-         * GCS:
-         * ERR?
-         */
-        fun qERR(): GcsCommand {
-            return RawQuery("ERR?")
-        }
+        fun qERR(): GcsCommand = RawQuery("ERR?")
 
-        /**
-         * 停止所有运动。
-         *
-         * GCS:
-         * STP
-         */
-        fun stopAll(): GcsCommand {
-            return RawCommand("STP")
-        }
+        fun stopAll(): GcsCommand = RawCommand("STP")
 
-        /**
-         * 打开 / 关闭单轴 Servo。
-         *
-         * GCS:
-         * SVO X 1
-         * SVO X 0
-         */
         fun servo(
             axis: PiAxis,
             enabled: Boolean
-        ): GcsCommand {
-            return RawCommand(
-                "SVO ${axis.code} ${enabled.toGcsInt()}"
-            )
+        ): GcsCommand = servo(linkedMapOf(axis to enabled))
+
+        /** 一次发送多轴 Servo 状态。 */
+        fun servo(states: Map<PiAxis, Boolean>): GcsCommand {
+            require(states.isNotEmpty()) { "SVO states 不能为空" }
+            return RawCommand("SVO ${states.toAxisBooleanText()}")
         }
 
-        /**
-         * 查询单轴 Servo 状态。
-         *
-         * GCS:
-         * SVO? X
-         */
-        fun qServo(
-            axis: PiAxis
-        ): GcsCommand {
+        /** 动态轴版本，支持数字轴和 AXIS_1 等 GCS 3.0 轴名。 */
+        fun servoIds(states: Map<PiAxisId, Boolean>): GcsCommand {
+            require(states.isNotEmpty()) { "SVO states 不能为空" }
+            return RawCommand("SVO ${states.toAxisIdBooleanText()}")
+        }
+
+        fun qServo(axis: PiAxis): GcsCommand = RawQuery("SVO? ${axis.code}")
+
+        fun qServo(axes: List<PiAxis>): GcsCommand {
+            require(axes.isNotEmpty()) { "SVO? axes 不能为空" }
             return RawQuery(
-                "SVO? ${axis.code}"
+                text = "SVO? ${axes.toAxisListText()}",
+                responseLines = axes.size
             )
         }
 
-        /**
-         * 绝对移动单轴。
-         *
-         * GCS:
-         * MOV X 1.000000000
-         */
+        fun qServoIds(axes: List<PiAxisId>): GcsCommand {
+            require(axes.isNotEmpty()) { "SVO? axes 不能为空" }
+            return RawQuery(
+                text = "SVO? ${axes.toAxisIdListText()}",
+                responseLines = axes.size
+            )
+        }
+
         fun moveAbsolute(
             axis: PiAxis,
             target: Double
-        ): GcsCommand {
-            return RawCommand(
-                "MOV ${axis.code} ${target.toGcsNumber()}"
-            )
+        ): GcsCommand = moveAbsolute(linkedMapOf(axis to target))
+
+        fun moveAbsolute(targets: Map<PiAxis, Double>): GcsCommand {
+            require(targets.isNotEmpty()) { "MOV targets 不能为空" }
+            return RawCommand("MOV ${targets.toAxisValueText()}")
         }
 
-        /**
-         * 绝对移动多轴。
-         *
-         * GCS:
-         * MOV X 1.000000000 Y 2.000000000 Z 3.000000000
-         */
-        fun moveAbsolute(
-            targets: Map<PiAxis, Double>
-        ): GcsCommand {
-            require(targets.isNotEmpty()) {
-                "MOV targets 不能为空"
-            }
-
-            return RawCommand(
-                "MOV ${targets.toAxisValueText()}"
-            )
+        fun moveAbsoluteIds(targets: Map<PiAxisId, Double>): GcsCommand {
+            require(targets.isNotEmpty()) { "MOV targets 不能为空" }
+            return RawCommand("MOV ${targets.toAxisIdValueText()}")
         }
 
-        /**
-         * 相对移动单轴。
-         *
-         * GCS:
-         * MVR X 0.001000000
-         */
         fun moveRelative(
             axis: PiAxis,
             delta: Double
-        ): GcsCommand {
-            return RawCommand(
-                "MVR ${axis.code} ${delta.toGcsNumber()}"
-            )
-        }
+        ): GcsCommand = moveRelative(linkedMapOf(axis to delta))
 
-        /**
-         * 相对移动多轴。
-         *
-         * GCS:
-         * MVR X 0.001000000 Y -0.001000000
-         */
-        fun moveRelative(
-            deltas: Map<PiAxis, Double>
-        ): GcsCommand {
+        fun moveRelative(deltas: Map<PiAxis, Double>): GcsCommand {
             val nonZero = deltas.filterValues { it != 0.0 }
-
             require(nonZero.isNotEmpty()) {
                 "MVR deltas 不能为空，或者所有 delta 都为 0"
             }
-
-            return RawCommand(
-                "MVR ${nonZero.toAxisValueText()}"
-            )
+            return RawCommand("MVR ${nonZero.toAxisValueText()}")
         }
 
-        /**
-         * 查询单轴位置。
-         *
-         * GCS:
-         * POS? X
-         */
-        fun qPosition(
-            axis: PiAxis
-        ): GcsCommand {
-            return RawQuery(
-                "POS? ${axis.code}"
-            )
-        }
-
-        /**
-         * 查询多轴位置。
-         *
-         * GCS:
-         * POS? X Y Z U V W
-         */
-        fun qPosition(
-            axes: List<PiAxis>
-        ): GcsCommand {
-            require(axes.isNotEmpty()) {
-                "POS? axes 不能为空"
+        fun moveRelativeIds(deltas: Map<PiAxisId, Double>): GcsCommand {
+            val nonZero = deltas.filterValues { it != 0.0 }
+            require(nonZero.isNotEmpty()) {
+                "MVR deltas 不能为空，或者所有 delta 都为 0"
             }
+            return RawCommand("MVR ${nonZero.toAxisIdValueText()}")
+        }
 
+        fun qPosition(axis: PiAxis): GcsCommand = RawQuery("POS? ${axis.code}")
+
+        fun qPosition(axes: List<PiAxis>): GcsCommand {
+            require(axes.isNotEmpty()) { "POS? axes 不能为空" }
             return RawQuery(
-                "POS? ${axes.toAxisListText()}"
+                text = "POS? ${axes.toAxisListText()}",
+                responseLines = axes.size
             )
         }
 
-        /**
-         * 查询单轴是否到位。
-         *
-         * GCS:
-         * ONT? X
-         */
-        fun qOnTarget(
-            axis: PiAxis
-        ): GcsCommand {
+        fun qPositionIds(axes: List<PiAxisId>): GcsCommand {
+            require(axes.isNotEmpty()) { "POS? axes 不能为空" }
             return RawQuery(
-                "ONT? ${axis.code}"
+                text = "POS? ${axes.toAxisIdListText()}",
+                responseLines = axes.size
             )
         }
 
-        /**
-         * 查询多轴是否到位。
-         *
-         * GCS:
-         * ONT? X Y Z U V W
-         */
-        fun qOnTarget(
-            axes: List<PiAxis>
-        ): GcsCommand {
-            require(axes.isNotEmpty()) {
-                "ONT? axes 不能为空"
-            }
+        fun qOnTarget(axis: PiAxis): GcsCommand = RawQuery("ONT? ${axis.code}")
 
+        fun qOnTarget(axes: List<PiAxis>): GcsCommand {
+            require(axes.isNotEmpty()) { "ONT? axes 不能为空" }
             return RawQuery(
-                "ONT? ${axes.toAxisListText()}"
+                text = "ONT? ${axes.toAxisListText()}",
+                responseLines = axes.size
             )
         }
 
-        /**
-         * 查询单轴最小行程。
-         *
-         * GCS:
-         * TMN? X
-         */
-        fun qTravelMin(
-            axis: PiAxis
-        ): GcsCommand {
+        fun qOnTargetIds(axes: List<PiAxisId>): GcsCommand {
+            require(axes.isNotEmpty()) { "ONT? axes 不能为空" }
             return RawQuery(
-                "TMN? ${axis.code}"
+                text = "ONT? ${axes.toAxisIdListText()}",
+                responseLines = axes.size
             )
         }
 
-        /**
-         * 查询单轴最大行程。
-         *
-         * GCS:
-         * TMX? X
-         */
-        fun qTravelMax(
-            axis: PiAxis
-        ): GcsCommand {
+        fun qTravelMin(axis: PiAxis): GcsCommand = RawQuery("TMN? ${axis.code}")
+
+        fun qTravelMax(axis: PiAxis): GcsCommand = RawQuery("TMX? ${axis.code}")
+
+        fun qTravelMin(axes: List<PiAxis>): GcsCommand {
+            require(axes.isNotEmpty()) { "TMN? axes 不能为空" }
             return RawQuery(
-                "TMX? ${axis.code}"
+                text = "TMN? ${axes.toAxisListText()}",
+                responseLines = axes.size
             )
         }
 
-        /**
-         * 查询多轴最小行程。
-         *
-         * GCS:
-         * TMN? X Y Z U V W
-         */
-        fun qTravelMin(
-            axes: List<PiAxis>
-        ): GcsCommand {
-            require(axes.isNotEmpty()) {
-                "TMN? axes 不能为空"
-            }
-
+        fun qTravelMax(axes: List<PiAxis>): GcsCommand {
+            require(axes.isNotEmpty()) { "TMX? axes 不能为空" }
             return RawQuery(
-                "TMN? ${axes.toAxisListText()}"
+                text = "TMX? ${axes.toAxisListText()}",
+                responseLines = axes.size
             )
         }
 
-        /**
-         * 查询多轴最大行程。
-         *
-         * GCS:
-         * TMX? X Y Z U V W
-         */
-        fun qTravelMax(
-            axes: List<PiAxis>
-        ): GcsCommand {
-            require(axes.isNotEmpty()) {
-                "TMX? axes 不能为空"
-            }
-
+        fun qTravelMinIds(axes: List<PiAxisId>): GcsCommand {
+            require(axes.isNotEmpty()) { "TMN? axes 不能为空" }
             return RawQuery(
-                "TMX? ${axes.toAxisListText()}"
+                text = "TMN? ${axes.toAxisIdListText()}",
+                responseLines = axes.size
             )
         }
 
-        /**
-         * 单轴 reference。
-         *
-         * GCS:
-         * FRF X
-         *
-         * 注意：
-         * 六轴是否需要 FRF，要根据控制器型号和 PI 手册确认。
-         */
+        fun qTravelMaxIds(axes: List<PiAxisId>): GcsCommand {
+            require(axes.isNotEmpty()) { "TMX? axes 不能为空" }
+            return RawQuery(
+                text = "TMX? ${axes.toAxisIdListText()}",
+                responseLines = axes.size
+            )
+        }
+
         fun reference(
-            axis: PiAxis
+            axis: PiAxis,
+            mode: PiReferenceCommand = PiReferenceCommand.FRF
         ): GcsCommand {
-            return RawCommand(
-                "FRF ${axis.code}"
-            )
+            return RawCommand("${mode.gcsCode} ${axis.code}")
         }
 
-        /**
-         * 查询轴列表。
-         *
-         * 常见 GCS:
-         * SAI?
-         *
-         * 注意：
-         * 不同控制器支持情况可能不同。
-         * 如果不支持，可以在 GcsDevice 中 fallback 到 X/Y/Z/U/V/W。
-         */
-        fun qAxes(): GcsCommand {
-            return RawQuery("SAI?")
+        fun reference(
+            axes: List<PiAxis>,
+            mode: PiReferenceCommand = PiReferenceCommand.FRF
+        ): GcsCommand {
+            require(axes.isNotEmpty()) { "reference axes 不能为空" }
+            return RawCommand("${mode.gcsCode} ${axes.toAxisListText()}")
         }
+
+        fun referenceIds(
+            axes: List<PiAxisId>,
+            mode: PiReferenceCommand = PiReferenceCommand.FRF
+        ): GcsCommand {
+            require(axes.isNotEmpty()) { "reference axes 不能为空" }
+            return RawCommand("${mode.gcsCode} ${axes.toAxisIdListText()}")
+        }
+
+        fun qAxes(): GcsCommand = RawQuery("SAI?")
     }
 }
 
-/**
- * 原始无返回值命令。
- */
 private data class RawCommand(
     override val text: String
 ) : GcsCommand {
+    init {
+        require(text.isNotBlank()) { "GCS command 不能为空" }
+    }
 
-    override val kind: GcsCommandKind =
-        GcsCommandKind.Command
+    override val kind: GcsCommandKind = GcsCommandKind.Command
 }
 
-/**
- * 原始查询命令。
- */
 private data class RawQuery(
-    override val text: String
+    override val text: String,
+    private val responseLines: Int = 1
 ) : GcsCommand {
+    init {
+        require(text.isNotBlank()) { "GCS query 不能为空" }
+        require(responseLines > 0) {
+            "responseLines 必须大于 0，当前值: $responseLines"
+        }
+    }
 
-    override val kind: GcsCommandKind =
-        GcsCommandKind.Query
+    override val kind: GcsCommandKind = GcsCommandKind.Query
+
+    override val expectedResponseLines: Int
+        get() = responseLines
 }
 
-/**
- * Boolean 转 GCS 0/1。
- */
-private fun Boolean.toGcsInt(): Int {
-    return if (this) 1 else 0
-}
+private fun Boolean.toGcsInt(): Int = if (this) 1 else 0
 
-/**
- * Double 转 GCS 数字字符串。
- *
- * 使用 Locale.US，避免中文系统 / 欧洲系统下小数点变成逗号。
- */
+/** 使用固定 Locale，避免不同系统区域设置改变小数点。 */
 internal fun Double.toGcsNumber(): String {
-    return String.format(
-        Locale.US,
-        "%.9f",
-        this
-    )
+    require(isFinite()) { "GCS 数值必须是有限数，当前值: $this" }
+    return String.format(Locale.US, "%.9f", this)
 }
 
-/**
- * 多轴列表转 GCS 文本。
- *
- * 例如：
- * X Y Z U V W
- */
 internal fun List<PiAxis>.toAxisListText(): String {
-    return joinToString(" ") { axis ->
-        axis.code
+    require(isNotEmpty()) { "axes 不能为空" }
+    require(size == distinct().size) { "axes 不能包含重复轴: $this" }
+    return joinToString(" ") { it.code }
+}
+
+internal fun List<PiAxisId>.toAxisIdListText(): String {
+    require(isNotEmpty()) { "axes 不能为空" }
+    require(size == distinct().size) { "axes 不能包含重复轴: $this" }
+    return joinToString(" ") { it.value }
+}
+
+internal fun Map<PiAxis, Double>.toAxisValueText(): String {
+    return entries
+        .sortedBy { it.key.ordinal }
+        .joinToString(" ") { (axis, value) ->
+            "${axis.code} ${value.toGcsNumber()}"
+        }
+}
+
+internal fun Map<PiAxisId, Double>.toAxisIdValueText(): String {
+    return entries.joinToString(" ") { (axis, value) ->
+        "${axis.value} ${value.toGcsNumber()}"
     }
 }
 
-/**
- * 多轴目标值转 GCS 文本。
- *
- * 例如：
- * X 1.000000000 Y 2.000000000
- */
-internal fun Map<PiAxis, Double>.toAxisValueText(): String {
-    return entries.joinToString(" ") { (axis, value) ->
-        "${axis.code} ${value.toGcsNumber()}"
+private fun Map<PiAxis, Boolean>.toAxisBooleanText(): String {
+    return entries
+        .sortedBy { it.key.ordinal }
+        .joinToString(" ") { (axis, enabled) ->
+            "${axis.code} ${enabled.toGcsInt()}"
+        }
+}
+
+private fun Map<PiAxisId, Boolean>.toAxisIdBooleanText(): String {
+    return entries.joinToString(" ") { (axis, enabled) ->
+        "${axis.value} ${enabled.toGcsInt()}"
     }
 }

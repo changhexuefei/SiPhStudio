@@ -20,15 +20,21 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import org.jason.siph.domain.positioner.OpticalPose
 import org.jason.siph.ui.model.CouplingConfigUiState
 import org.jason.siph.ui.model.CouplingPlane
+import org.jason.siph.ui.model.CouplingStartMode
 
 @Composable
 fun CouplingConfigPanel(
     state: CouplingConfigUiState,
+    previousRunStartPose: OpticalPose?,
+    safePose: OpticalPose,
     enabled: Boolean,
+    canStart: Boolean = enabled,
     onConfigChange: (CouplingConfigUiState) -> Unit,
     onStartCoupling: () -> Unit,
     onStopCoupling: () -> Unit,
@@ -46,39 +52,33 @@ fun CouplingConfigPanel(
         ) {
             PanelHeader(
                 title = "Coupling Config",
-                caption = if (enabled) "Ready to run" else "Running"
+                caption = if (enabled) {
+                    "Adaptive coarse and fine search"
+                } else {
+                    "Configuration locked while running"
+                }
             )
 
             SectionLabel("Optical Setup")
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 NumberField(
                     label = "Wavelength nm",
                     value = state.wavelengthNm,
                     enabled = enabled,
-                    onValueChange = {
-                        onConfigChange(state.copy(wavelengthNm = it))
-                    },
+                    onValueChange = { onConfigChange(state.copy(wavelengthNm = it)) },
                     modifier = Modifier.weight(1f)
                 )
-
                 IntField(
                     label = "PM Channel",
                     value = state.powerMeterChannel,
                     enabled = enabled,
-                    onValueChange = {
-                        onConfigChange(state.copy(powerMeterChannel = it))
-                    },
+                    onValueChange = { onConfigChange(state.copy(powerMeterChannel = it)) },
                     modifier = Modifier.weight(1f)
                 )
             }
 
             HorizontalDivider()
-
             SectionLabel("Search Plane")
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -86,13 +86,9 @@ fun CouplingConfigPanel(
                 CouplingPlane.entries.forEach { plane ->
                     FilterChip(
                         selected = state.plane == plane,
-                        onClick = {
-                            onConfigChange(state.copy(plane = plane))
-                        },
+                        onClick = { onConfigChange(state.copy(plane = plane)) },
                         enabled = enabled,
-                        label = {
-                            Text(plane.text)
-                        },
+                        label = { Text(plane.text) },
                         modifier = Modifier
                             .weight(1f)
                             .heightIn(min = 42.dp)
@@ -101,88 +97,145 @@ fun CouplingConfigPanel(
             }
 
             HorizontalDivider()
-
-            SectionLabel("Power Targets")
-
+            SectionLabel("Run Start")
             Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                CouplingStartMode.entries.forEach { mode ->
+                    val modeAvailable = mode != CouplingStartMode.PreviousRunStart ||
+                        previousRunStartPose != null
+
+                    FilterChip(
+                        selected = state.startMode == mode,
+                        onClick = { onConfigChange(state.copy(startMode = mode)) },
+                        enabled = enabled && modeAvailable,
+                        label = { Text(mode.text) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 42.dp)
+                    )
+                }
+            }
+
+            StartModeSummary(
+                mode = state.startMode,
+                previousRunStartPose = previousRunStartPose,
+                safePose = safePose
+            )
+
+            HorizontalDivider()
+            SectionLabel("Power Targets")
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 NumberField(
                     label = "First light dBm",
                     value = state.firstLightThresholdDbm,
                     enabled = enabled,
-                    onValueChange = {
-                        onConfigChange(state.copy(firstLightThresholdDbm = it))
-                    },
+                    onValueChange = { onConfigChange(state.copy(firstLightThresholdDbm = it)) },
                     modifier = Modifier.weight(1f)
                 )
-
                 NumberField(
                     label = "Target dBm",
                     value = state.targetPowerDbm,
                     enabled = enabled,
-                    onValueChange = {
-                        onConfigChange(state.copy(targetPowerDbm = it))
-                    },
+                    onValueChange = { onConfigChange(state.copy(targetPowerDbm = it)) },
                     modifier = Modifier.weight(1f)
                 )
             }
 
-            SectionLabel("Search Window")
+            ToggleRow(
+                title = "Stop when target is reached",
+                caption = "End the search as soon as target power is measured",
+                checked = state.stopWhenTargetReached,
+                enabled = enabled,
+                onCheckedChange = { onConfigChange(state.copy(stopWhenTargetReached = it)) }
+            )
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
+            SectionLabel("Coarse Search")
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 NumberField(
                     label = "Spiral step um",
                     value = state.spiralStepUm,
                     enabled = enabled,
-                    onValueChange = {
-                        onConfigChange(state.copy(spiralStepUm = it))
-                    },
+                    onValueChange = { onConfigChange(state.copy(spiralStepUm = it)) },
                     modifier = Modifier.weight(1f)
                 )
-
                 NumberField(
                     label = "Max radius um",
                     value = state.maxRadiusUm,
                     enabled = enabled,
-                    onValueChange = {
-                        onConfigChange(state.copy(maxRadiusUm = it))
-                    },
+                    onValueChange = { onConfigChange(state.copy(maxRadiusUm = it)) },
                     modifier = Modifier.weight(1f)
                 )
             }
 
-            LongField(
-                label = "Settle delay ms",
-                value = state.settleDelayMs,
-                enabled = enabled,
-                onValueChange = {
-                    onConfigChange(state.copy(settleDelayMs = it))
-                }
-            )
+            SectionLabel("Measurement Stability")
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                LongField(
+                    label = "Settle ms",
+                    value = state.settleDelayMs,
+                    enabled = enabled,
+                    onValueChange = { onConfigChange(state.copy(settleDelayMs = it)) },
+                    modifier = Modifier.weight(1f)
+                )
+                IntField(
+                    label = "Average count",
+                    value = state.powerAverageCount,
+                    enabled = enabled,
+                    onValueChange = { onConfigChange(state.copy(powerAverageCount = it)) },
+                    modifier = Modifier.weight(1f)
+                )
+                LongField(
+                    label = "Average delay ms",
+                    value = state.powerAverageDelayMs,
+                    enabled = enabled,
+                    onValueChange = { onConfigChange(state.copy(powerAverageDelayMs = it)) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
 
             HorizontalDivider()
-
             ToggleRow(
                 title = "Fine XYZ",
-                caption = "Refine around first light",
+                caption = "Multi-scale coordinate descent around the best coarse point",
                 checked = state.enableFineXyz,
                 enabled = enabled,
-                onCheckedChange = {
-                    onConfigChange(state.copy(enableFineXyz = it))
-                }
+                onCheckedChange = { onConfigChange(state.copy(enableFineXyz = it)) }
             )
+
+            if (state.enableFineXyz) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    NumberField(
+                        label = "Min improve dB",
+                        value = state.minImproveDb,
+                        enabled = enabled,
+                        onValueChange = { onConfigChange(state.copy(minImproveDb = it)) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    IntField(
+                        label = "Max passes / step",
+                        value = state.maxFinePassesPerStep,
+                        enabled = enabled,
+                        onValueChange = { onConfigChange(state.copy(maxFinePassesPerStep = it)) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
 
             ToggleRow(
                 title = "U/V/W angle optimization",
                 caption = angleOptimizationCaption(state),
                 checked = state.enableAngleOptimization,
                 enabled = enabled,
-                onCheckedChange = {
-                    onConfigChange(state.copy(enableAngleOptimization = it))
-                }
+                onCheckedChange = { onConfigChange(state.copy(enableAngleOptimization = it)) }
+            )
+
+            IntField(
+                label = "Maximum samples",
+                value = state.maxTotalSamples,
+                enabled = enabled,
+                onValueChange = { onConfigChange(state.copy(maxTotalSamples = it)) },
+                modifier = Modifier.fillMaxWidth()
             )
 
             PivotStatusRow(state)
@@ -193,7 +246,7 @@ fun CouplingConfigPanel(
             ) {
                 Button(
                     onClick = onStartCoupling,
-                    enabled = enabled,
+                    enabled = canStart,
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 46.dp)
@@ -203,6 +256,7 @@ fun CouplingConfigPanel(
 
                 OutlinedButton(
                     onClick = onStopCoupling,
+                    enabled = !enabled,
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 46.dp),
@@ -218,9 +272,47 @@ fun CouplingConfigPanel(
 }
 
 @Composable
-private fun PivotStatusRow(
-    state: CouplingConfigUiState
+private fun StartModeSummary(
+    mode: CouplingStartMode,
+    previousRunStartPose: OpticalPose?,
+    safePose: OpticalPose
 ) {
+    val detail = when (mode) {
+        CouplingStartMode.CurrentPose -> mode.caption
+        CouplingStartMode.PreviousRunStart -> previousRunStartPose?.let {
+            "${mode.caption}: ${formatPoseCompact(it)}"
+        } ?: "No previous run start pose is available yet"
+        CouplingStartMode.SafePose -> "${mode.caption}: ${formatPoseCompact(safePose)}"
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 1.dp,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = mode.text,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+    }
+}
+
+@Composable
+private fun PivotStatusRow(state: CouplingConfigUiState) {
     val pivot = state.virtualPivotPoint
     val pivotEnabled = pivot.enabled && state.enableSoftwarePivotCompensation
 
@@ -240,12 +332,11 @@ private fun PivotStatusRow(
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.SemiBold
             )
-
             Text(
                 text = if (pivotEnabled) {
                     "${pivot.name}: X=${round3(pivot.xUm)} um, Y=${round3(pivot.yUm)} um, Z=${round3(pivot.zUm)} um (${pivot.frame.name})"
                 } else {
-                    "Disabled. Angle moves use the default mechanical rotation center."
+                    "Disabled. Angle moves use the mechanical rotation center."
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -255,19 +346,13 @@ private fun PivotStatusRow(
 }
 
 @Composable
-private fun PanelHeader(
-    title: String,
-    caption: String
-) {
-    Column(
-        modifier = Modifier.fillMaxWidth()
-    ) {
+private fun PanelHeader(title: String, caption: String) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold
         )
-
         Text(
             text = caption,
             style = MaterialTheme.typography.labelMedium,
@@ -277,9 +362,7 @@ private fun PanelHeader(
 }
 
 @Composable
-private fun SectionLabel(
-    text: String
-) {
+private fun SectionLabel(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.labelLarge,
@@ -300,22 +383,18 @@ private fun ToggleRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Column(
-            modifier = Modifier.weight(1f)
-        ) {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold
             )
-
             Text(
                 text = caption,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-
         Switch(
             checked = checked,
             enabled = enabled,
@@ -334,9 +413,7 @@ private fun NumberField(
 ) {
     OutlinedTextField(
         value = value.toString(),
-        onValueChange = { text ->
-            text.toDoubleOrNull()?.let(onValueChange)
-        },
+        onValueChange = { text -> text.toDoubleOrNull()?.let(onValueChange) },
         label = { Text(label) },
         enabled = enabled,
         singleLine = true,
@@ -354,9 +431,7 @@ private fun IntField(
 ) {
     OutlinedTextField(
         value = value.toString(),
-        onValueChange = { text ->
-            text.toIntOrNull()?.let(onValueChange)
-        },
+        onValueChange = { text -> text.toIntOrNull()?.let(onValueChange) },
         label = { Text(label) },
         enabled = enabled,
         singleLine = true,
@@ -369,28 +444,30 @@ private fun LongField(
     label: String,
     value: Long,
     enabled: Boolean,
-    onValueChange: (Long) -> Unit
+    onValueChange: (Long) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     OutlinedTextField(
         value = value.toString(),
-        onValueChange = { text ->
-            text.toLongOrNull()?.let(onValueChange)
-        },
+        onValueChange = { text -> text.toLongOrNull()?.let(onValueChange) },
         label = { Text(label) },
         enabled = enabled,
         singleLine = true,
-        modifier = Modifier.fillMaxWidth()
+        modifier = modifier
     )
 }
 
-private fun angleOptimizationCaption(
-    state: CouplingConfigUiState
-): String {
+private fun angleOptimizationCaption(state: CouplingConfigUiState): String {
     return if (state.virtualPivotPoint.enabled && state.enableSoftwarePivotCompensation) {
-        "Run around configured virtual pivot"
+        "Optimize around the configured virtual pivot"
     } else {
         "Run after XYZ refinement"
     }
+}
+
+private fun formatPoseCompact(pose: OpticalPose): String {
+    return "X=${round3(pose.xUm)}, Y=${round3(pose.yUm)}, Z=${round3(pose.zUm)}, " +
+        "U=${round3(pose.uDeg)}, V=${round3(pose.vDeg)}, W=${round3(pose.wDeg)}"
 }
 
 private fun round3(value: Double): Double {

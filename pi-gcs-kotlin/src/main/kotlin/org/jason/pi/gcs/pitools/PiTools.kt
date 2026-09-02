@@ -1,36 +1,22 @@
 package org.jason.pi.gcs.pitools
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import org.jason.pi.gcs.core.GcsDevice
 import org.jason.pi.gcs.core.PiGcsTimeoutException
+import org.jason.pi.gcs.core.PiReferenceCommand
 import org.jason.pi.gcs.hexapod.PiAxis
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
+import kotlin.time.TimeSource
 
 /**
- * 类似 PIPython pitools 的 Kotlin 工具类。
+ * 类似 PIPython pitools 的 Kotlin 运动辅助层。
  *
- * 这一层不直接关心 SiPhTools / 耦光算法，
- * 只负责 PI 控制器常用运动工具：
- *
- * - startup
- * - setServo
- * - reference
- * - moveAndWait
- * - waitOnTarget
- * - stopAll
- * - queryTravelRange
+ * 该层只负责控制器通用流程，不包含耦光算法和 Compose UI 状态。
  */
-
-
-
 object PiTools {
 
-    /**
-     * 推荐新版 startup。
-     * 使用 PiStartupOptions 统一管理
-     */
     suspend fun startup(
         device: GcsDevice,
         options: PiStartupOptions = PiStartupOptions.DefaultForSiPh
@@ -38,38 +24,42 @@ object PiTools {
         require(options.axes.isNotEmpty()) { "startup axes 不能为空" }
 
         if (options.stopBeforeStartup) {
-            runCatching {
-                device.stopAll()
-            }.onFailure { error ->
-                if (options.failFast) throw error
-            }
+            runCatching { device.stopAll() }
+                .onFailure { error -> error.rethrowIfNeeded(options.failFast) }
             delayIfNeeded(options.stopSettleDelayMs)
         }
 
         if (options.clearErrorBeforeStartup) {
-            runCatching {
-                device.qERR()
-            }.onFailure { error ->
-                if (options.failFast) throw error
-            }
+            runCatching { device.qERR() }
+                .onFailure { error -> error.rethrowIfNeeded(options.failFast) }
         }
 
         when (options.servoMode) {
-            PiStartupServoMode.Keep -> {}
+            PiStartupServoMode.Keep -> Unit
             PiStartupServoMode.Enable -> {
-                // 🚀 优化：内部已升级为协程并发 Enable
-                setServo(device, options.axes, enabled = true, failFast = options.failFast)
+                setServo(
+                    device = device,
+                    axes = options.axes,
+                    enabled = true,
+                    failFast = options.failFast
+                )
                 delayIfNeeded(options.servoSettleDelayMs)
             }
+
             PiStartupServoMode.Disable -> {
-                setServo(device, options.axes, enabled = false, failFast = options.failFast)
+                setServo(
+                    device = device,
+                    axes = options.axes,
+                    enabled = false,
+                    failFast = options.failFast
+                )
             }
         }
 
-        // 🚀 优化：内部已升级为高效的批量 Reference
         referenceAxes(
             device = device,
             axes = options.effectiveReferenceAxes,
+            referenceCommand = options.referenceCommand,
             waitAfterEachAxis = options.waitAfterEachReferenceAxis,
             waitOptions = options.waitOptions,
             failFast = options.failFast
@@ -80,9 +70,6 @@ object PiTools {
         }
     }
 
-    /**
-     * 兼容旧版 startup 调用
-     */
     suspend fun startup(
         device: GcsDevice,
         axes: List<PiAxis> = PiAxis.HEXAPOD_AXES,
@@ -95,76 +82,81 @@ object PiTools {
                 axes = axes,
                 stopBeforeStartup = true,
                 clearErrorBeforeStartup = true,
-                servoMode = if (enableServo) PiStartupServoMode.Enable else PiStartupServoMode.Keep,
-                referenceMode = if (reference) PiStartupReferenceMode.ReferenceAll else PiStartupReferenceMode.None,
-                waitOptions = if (reference) PiWaitOptions.LongMove else PiWaitOptions.Default
+                servoMode = if (enableServo) {
+                    PiStartupServoMode.Enable
+                } else {
+                    PiStartupServoMode.Keep
+                },
+                referenceMode = if (reference) {
+                    PiStartupReferenceMode.ReferenceAll
+                } else {
+                    PiStartupReferenceMode.None
+                },
+                referenceCommand = PiReferenceCommand.FRF,
+                waitOptions = if (reference) {
+                    PiWaitOptions.LongMove
+                } else {
+                    PiWaitOptions.Default
+                }
             )
         )
     }
 
-    /**
-     * 🚀【重大优化】并行开启多个轴的 Servo
-     * 利用 coroutineScope 结合 async 开启并行网络请求，
-     * 避免串行循环下的多次 Mutex 锁排队和 RTT 累加。
-     */
+    /** 一条 SVO 命令设置全部轴。 */
     suspend fun setServo(
         device: GcsDevice,
         axes: List<PiAxis>,
         enabled: Boolean,
         failFast: Boolean = true
-    ) = coroutineScope {
+    ) {
         require(axes.isNotEmpty()) { "setServo axes 不能为空" }
 
-        // 使用非阻塞并发处理所有轴
-        axes.map { axis ->
-            async {
-                runCatching {
-                    if (enabled) device.servoOn(axis) else device.servoOff(axis)
-                }.onFailure { error ->
-                    if (failFast) throw error
-                }
-            }
-        }.awaitAll() // 等待所有轴的指令在网口全部就绪
+        runCatching {
+            device.setServo(axes.associateWith { enabled })
+        }.onFailure { error ->
+            error.rethrowIfNeeded(failFast)
+        }
     }
 
-    /**
-     * 对指定轴执行 Reference
-     */
     suspend fun referenceAxes(
         device: GcsDevice,
         axes: List<PiAxis>,
+        referenceCommand: PiReferenceCommand = PiReferenceCommand.FRF,
         waitAfterEachAxis: Boolean = true,
         waitOptions: PiWaitOptions = PiWaitOptions.LongMove,
         failFast: Boolean = true
     ) {
         if (axes.isEmpty()) return
 
-        // 💡 如果是六轴整体参考，推荐直接批量并发下发指令，而不是一个轴参考完再等下一个
         if (!waitAfterEachAxis) {
-            coroutineScope {
-                axes.map { axis ->
-                    async {
-                        runCatching { device.reference(axis) }.onFailure { if (failFast) throw it }
-                    }
-                }.awaitAll()
+            runCatching {
+                device.referenceAll(
+                    axes = axes,
+                    mode = referenceCommand
+                )
+            }.onFailure { error ->
+                error.rethrowIfNeeded(failFast)
             }
             return
         }
 
-        // 串行单轴参考路径（带单轴到位等待）
         axes.forEach { axis ->
             runCatching {
-                device.reference(axis)
-                waitOnTarget(device, listOf(axis), options = waitOptions)
+                device.reference(
+                    axis = axis,
+                    mode = referenceCommand
+                )
+                waitOnTarget(
+                    device = device,
+                    axes = listOf(axis),
+                    options = waitOptions
+                )
             }.onFailure { error ->
-                if (failFast) throw error
+                error.rethrowIfNeeded(failFast)
             }
         }
     }
 
-    /**
-     * 移动并等待到位
-     */
     suspend fun moveAndWait(
         device: GcsDevice,
         targets: Map<PiAxis, Double>,
@@ -172,13 +164,18 @@ object PiTools {
     ) {
         require(targets.isNotEmpty()) { "moveAndWait targets 不能为空" }
         device.moveAbsolute(targets)
-        waitOnTarget(device, axes = targets.keys.toList(), options = waitOptions)
+        waitOnTarget(
+            device = device,
+            axes = targets.keys.toList(),
+            options = waitOptions
+        )
     }
 
     /**
-     * 🚀【高性能优化】等待所有指定轴到位
-     * 结合我们先前升级的高性能多轴 qONT(axes) 批量拉取接口，
-     * 循环体内完全避免了单个轴轮询的网络累加。
+     * 等待指定轴到位。
+     *
+     * 协程被取消时默认在 [NonCancellable] 上下文中发送 STP，避免 UI 任务取消后
+     * 控制器仍继续运动；超时时也可以按 [PiWaitOptions.stopOnTimeout] 自动停止。
      */
     suspend fun waitOnTarget(
         device: GcsDevice,
@@ -187,44 +184,39 @@ object PiTools {
     ) {
         require(axes.isNotEmpty()) { "waitOnTarget axes 不能为空" }
 
-        delayIfNeeded(options.preDelayMs)
-        val startMs = nowMs()
+        try {
+            delayIfNeeded(options.preDelayMs)
+            val startedAt = TimeSource.Monotonic.markNow()
 
-        while (true) {
-            // 💡 这里的 qONT 已经享受了 Ktor queryLines 的单报文多行优化
-            val states = device.qONT(axes)
+            while (true) {
+                val states = device.qONT(axes)
 
-            // 优化：利用简单的局部标志位判断，减少不必要的对象生成
-            var allOnTarget = true
-            for (value in states.values) {
-                if (!value) {
-                    allOnTarget = false
-                    break
+                if (states.values.all { it }) {
+                    delayIfNeeded(options.postDelayMs)
+                    return
                 }
-            }
 
-            if (allOnTarget) {
-                delayIfNeeded(options.postDelayMs)
-                return
-            }
-
-            val elapsedMs = nowMs() - startMs
-            if (elapsedMs > options.timeoutMs) {
-                throw PiGcsTimeoutException(
-                    "等待 PI 到位超时: axes=${axes.toAxisText()}, " +
+                if (startedAt.elapsedNow().inWholeMilliseconds >= options.timeoutMs) {
+                    if (options.stopOnTimeout) {
+                        stopSafely(device)
+                    }
+                    throw PiGcsTimeoutException(
+                        "等待 PI 到位超时: axes=${axes.toAxisText()}, " +
                             "states=${states.toStateText()}, " +
                             "timeoutMs=${options.timeoutMs}"
-                )
-            }
+                    )
+                }
 
-            // 非阻塞挂起，平滑释放当前计算线程，不影响 Jetpack Compose 界面的 60帧/120帧 刷新
-            delay(options.pollDelayMs)
+                delay(options.pollDelayMs)
+            }
+        } catch (cancelled: CancellationException) {
+            if (options.stopOnCancellation) {
+                stopSafely(device)
+            }
+            throw cancelled
         }
     }
 
-    /**
-     * 兼容旧版 waitOnTarget 调用
-     */
     suspend fun waitOnTarget(
         device: GcsDevice,
         axes: List<PiAxis> = PiAxis.HEXAPOD_AXES,
@@ -243,27 +235,32 @@ object PiTools {
         )
     }
 
-    suspend fun stopAll(device: GcsDevice, clearErrorAfterStop: Boolean = false) {
+    suspend fun stopAll(
+        device: GcsDevice,
+        clearErrorAfterStop: Boolean = false
+    ) {
         device.stopAll()
         if (clearErrorAfterStop) {
             runCatching { device.qERR() }
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
+                }
         }
     }
 
-    /**
-     * 查询行程范围：通过批量 qTMN 和 qTMX 提升速度
-     */
     suspend fun queryTravelRange(
         device: GcsDevice,
         axes: List<PiAxis> = PiAxis.HEXAPOD_AXES
     ): PiTravelRange {
         require(axes.isNotEmpty()) { "queryTravelRange axes 不能为空" }
 
-        // 🚀 此处得益于前面的优化，两个网络请求包即可搞定全部轴边界查询
         val minValues = device.qTMN(axes)
         val maxValues = device.qTMX(axes)
 
-        return PiTravelRange.fromMinMax(minValues = minValues, maxValues = maxValues)
+        return PiTravelRange.fromMinMax(
+            minValues = minValues,
+            maxValues = maxValues
+        )
     }
 
     suspend fun queryTravelRangeMap(
@@ -273,17 +270,31 @@ object PiTools {
         return queryTravelRange(device, axes).toClosedRangeMap()
     }
 
+    private suspend fun stopSafely(device: GcsDevice) {
+        withContext(NonCancellable) {
+            runCatching { device.stopAll() }
+        }
+    }
+
     private suspend fun delayIfNeeded(delayMs: Long) {
         if (delayMs > 0L) {
             delay(delayMs)
         }
     }
 
-    private fun nowMs(): Long = System.currentTimeMillis()
+    private fun Throwable.rethrowIfNeeded(failFast: Boolean) {
+        if (this is CancellationException || failFast) {
+            throw this
+        }
+    }
 
-    private fun List<PiAxis>.toAxisText(): String = joinToString(" ") { it.code }
+    private fun List<PiAxis>.toAxisText(): String {
+        return joinToString(" ") { it.code }
+    }
 
     private fun Map<PiAxis, Boolean>.toStateText(): String {
-        return entries.joinToString(", ") { (axis, onTarget) -> "${axis.code}=$onTarget" }
+        return entries.joinToString(", ") { (axis, onTarget) ->
+            "${axis.code}=$onTarget"
+        }
     }
 }

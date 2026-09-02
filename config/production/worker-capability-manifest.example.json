@@ -1,0 +1,54 @@
+{
+  "workerId": "production-worker-line-a-01",
+  "workstationId": "siph-line-a-host-01",
+  "equipmentGroupId": "oeo-line-a",
+  "softwareVersion": "1.0.0",
+  "safetyProfileId": "safety-line-a-approved-001",
+  "calibrationQualificationId": "cal-wafer-qualification-001",
+  "evidence": [
+    {
+      "capability": "laser",
+      "deviceId": "laser-tsl-001",
+      "model": "Santec TSL",
+      "serialNumber": "REPLACE-WITH-SERIAL",
+      "verificationState": "ProductionQualified",
+      "verificationEvidenceId": "FAT-LASER-001",
+      "verifiedAtEpochMs": 1780000000000,
+      "validUntilEpochMs": 1811536000000
+    },
+    {
+      "capability": "powerMeter",
+      "deviceId": "opm-multichannel-001",
+      "model": "REPLACE-WITH-MODEL",
+      "serialNumber": "REPLACE-WITH-SERIAL",
+      "verificationState": "ProductionQualified",
+      "verificationEvidenceId": "FAT-OPM-001",
+      "verifiedAtEpochMs": 1780000000000,
+      "validUntilEpochMs": 1811536000000
+    },
+    {
+      "capability": "electricalAnalyzer",
+      "deviceId": "electrical-analyzer-001",
+      "model": "REPLACE-WITH-MODEL",
+      "serialNumber": "REPLACE-WITH-SERIAL",
+      "verificationState": "ProductionQualified",
+      "verificationEvidenceId": "FAT-ELECTRICAL-001",
+      "verifiedAtEpochMs": 1780000000000,
+      "validUntilEpochMs": 1811536000000
+    },
+    {
+      "capability": "prober",
+      "deviceId": "prober-001",
+      "model": "REPLACE-WITH-MODEL",
+      "serialNumber": "REPLACE-WITH-SERIAL",
+      "verificationState": "ProductionQualified",
+      "verificationEvidenceId": "FAT-PROBER-001",
+      "verifiedAtEpochMs": 1780000000000,
+      "validUntilEpochMs": 1811536000000
+    }
+  ],
+  "maximumParallelTasks": 1,
+  "issuedAtEpochMs": 1780000000000,
+  "issuedBy": "production-engineer-id",
+  "approvedBy": "quality-approver-id"
+}

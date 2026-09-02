@@ -1,0 +1,66 @@
+name: PI GCS Kotlin
+
+on:
+  push:
+    branches:
+      - master
+      - agent/**
+    paths:
+      - "pi-gcs-kotlin/**"
+      - "gradle/**"
+      - "gradlew"
+      - "gradlew.bat"
+      - "settings.gradle.kts"
+      - ".github/workflows/pi-gcs-kotlin.yml"
+  pull_request:
+    paths:
+      - "pi-gcs-kotlin/**"
+      - "gradle/**"
+      - "gradlew"
+      - "gradlew.bat"
+      - "settings.gradle.kts"
+      - ".github/workflows/pi-gcs-kotlin.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test PI GCS core
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+
+      - name: Run PI GCS tests
+        shell: bash
+        run: |
+          set +e
+          ./gradlew :pi-gcs-kotlin:test --stacktrace --console=plain > pi-gcs-test.log 2>&1
+          status=$?
+          tail -n 120 pi-gcs-test.log
+          exit $status
+
+      - name: Upload Gradle test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-gcs-test-log
+          path: pi-gcs-test.log
+          if-no-files-found: error
+          retention-days: 7

@@ -1,20 +1,29 @@
 package org.jason.pi.gcs.transport
 
+import io.ktor.network.selector.SelectorManager
+import io.ktor.network.sockets.Socket
+import io.ktor.network.sockets.aSocket
+import io.ktor.network.sockets.openReadChannel
+import io.ktor.network.sockets.openWriteChannel
+import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.ByteWriteChannel
+import io.ktor.utils.io.readUTF8Line
+import io.ktor.utils.io.writeStringUtf8
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeout
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
-import io.ktor.network.selector.*
-import io.ktor.network.sockets.*
-import io.ktor.utils.io.*
-
 
 /**
- * PI GCS TCP/IP 通信的 Ktor 异步非阻塞实现。
- * * 优势：
- * 1. 零 C/C++ 依赖，jar 包直接跨平台通吃（信创、ARM Linux、Windows 等）。
- * 2. 纯协程挂起，高频寻光时绝不卡死主线程或 Compose UI 渲染。
- * 3. 关闭 Nagle 算法，提供极佳的硅光闭环低延迟。
+ * PI GCS TCP/IP 的 Ktor 非阻塞实现。
+ *
+ * - 不依赖 PI GCS DLL；
+ * - 同时支持 Windows、Linux 和 macOS；
+ * - TCP_NODELAY 降低小步进闭环控制的命令延迟；
+ * - 连接和读取失败时会完整释放 Socket 与 SelectorManager；
+ * - 生命周期代次阻止“close 已发生，但迟到的 connect 又把连接安装回来”。
  */
 class KtorTcpGcsTransport(
     private val host: String,
@@ -23,63 +32,134 @@ class KtorTcpGcsTransport(
     private val lineEnding: String = "\n"
 ) : GcsTransport {
 
+    private val openMutex = Mutex()
+    private val resourceLock = Any()
+
     private var selectorManager: SelectorManager? = null
     private var socket: Socket? = null
     private var receiveChannel: ByteReadChannel? = null
     private var sendChannel: ByteWriteChannel? = null
+    private var lifecycleGeneration: Long = 0L
+
+    /**
+     * Ktor 3 的 Socket 接口不再稳定暴露 isClosed，因此由传输层维护明确的生命周期标记。
+     * 只有 Socket 和读写通道全部安装完成后，该值才会变为 true。
+     */
+    @Volatile
+    private var connectionOpen: Boolean = false
+
+    init {
+        require(host.isNotBlank()) { "PI GCS host 不能为空" }
+        require(port in 1..65535) { "PI GCS port 无效: $port" }
+        require(timeout.isPositive()) { "PI GCS timeout 必须大于 0: $timeout" }
+        require(lineEnding.isNotEmpty()) { "PI GCS lineEnding 不能为空" }
+    }
 
     override val isOpen: Boolean
-        get() = socket?.isClosed == false
+        get() = connectionOpen &&
+            socket != null &&
+            receiveChannel != null &&
+            sendChannel != null
 
     override suspend fun open() {
-        if (isOpen) return
+        openMutex.withLock {
+            if (isOpen) return@withLock
 
-        withContext(Dispatchers.IO) {
-            // 1. 创建 Ktor 异步 I/O 选择器
-            val manager = SelectorManager(Dispatchers.IO)
-            selectorManager = manager
-
-            // 2. 异步连接控制器，配置高频硅光对准所需的低延迟策略
-            val s = aSocket(manager).tcp().connect(host, port) {
-                keepAlive = true
-                noDelay = true // 💡 硅光核心优化：禁用 Nagle 算法，报文瞬间发出，不等缓冲区填满
-                socketTimeout = timeout.inWholeMilliseconds
+            // 清理上一次失败连接可能留下的部分资源。
+            close()
+            val openGeneration = synchronized(resourceLock) {
+                lifecycleGeneration += 1L
+                lifecycleGeneration
             }
-            socket = s
 
-            // 3. 打开异步非阻塞读写通道
-            receiveChannel = s.openReadChannel()
-            sendChannel = s.openWriteChannel(autoFlush = true) // 💡 自动 Flush 确保运动指令毫无滞留
+            val manager = SelectorManager(Dispatchers.IO)
+            var connectedSocket: Socket? = null
+
+            try {
+                connectedSocket = withTimeout(timeout.inWholeMilliseconds) {
+                    aSocket(manager).tcp().connect(host, port) {
+                        keepAlive = true
+                        noDelay = true
+                        socketTimeout = timeout.inWholeMilliseconds
+                    }
+                }
+
+                val readChannel = connectedSocket.openReadChannel()
+                val writeChannel = connectedSocket.openWriteChannel(autoFlush = true)
+
+                val installed = synchronized(resourceLock) {
+                    if (openGeneration != lifecycleGeneration) {
+                        false
+                    } else {
+                        selectorManager = manager
+                        socket = connectedSocket
+                        receiveChannel = readChannel
+                        sendChannel = writeChannel
+                        connectionOpen = true
+                        true
+                    }
+                }
+
+                if (!installed) {
+                    runCatching { connectedSocket?.close() }
+                    runCatching { manager.close() }
+                    error("PI GCS TCP connection was closed while opening")
+                }
+            } catch (error: Throwable) {
+                synchronized(resourceLock) {
+                    if (openGeneration == lifecycleGeneration) {
+                        connectionOpen = false
+                    }
+                }
+                runCatching { connectedSocket?.close() }
+                runCatching { manager.close() }
+                throw error
+            }
         }
     }
 
     override suspend fun writeLine(command: String) {
-        val channel = sendChannel ?: error("PI GCS TCP 连接未打开")
+        require(command.isNotBlank()) { "PI GCS command 不能为空" }
+        check(isOpen) { "PI GCS TCP 连接未打开" }
+        val channel = sendChannel ?: error("PI GCS TCP 写通道未初始化")
 
-        // 组装标准 GCS 报文
-        val trimmed = command.trim()
-        val fullCommand = if (trimmed.endsWith(lineEnding)) trimmed else "$trimmed$lineEnding"
-
-        // 🚀 Ktor 异步写入：若发送缓冲区满，则挂起协程，绝不阻塞当前线程
-        channel.writeStringUtf8(fullCommand)
+        val normalized = command.trimEnd('\r', '\n')
+        withTimeout(timeout.inWholeMilliseconds) {
+            channel.writeStringUtf8(normalized)
+            channel.writeStringUtf8(lineEnding)
+        }
     }
 
     override suspend fun readLine(): String {
-        val channel = receiveChannel ?: error("PI GCS TCP 连接未打开")
+        check(isOpen) { "PI GCS TCP 连接未打开" }
+        val channel = receiveChannel ?: error("PI GCS TCP 读通道未初始化")
 
-        // 🚀 Ktor 异步行读取：当控制器数据未到达时，协程挂起，释放 CPU 资源去画 Compose UI 波形
-        return channel.readUTF8Line()
-            ?: error("PI GCS TCP 连接已关闭，未读取到完整响应")
+        return withTimeout(timeout.inWholeMilliseconds) {
+            channel.readUTF8Line()
+                ?: run {
+                    connectionOpen = false
+                    error("PI GCS TCP 连接已关闭，未读取到完整响应")
+                }
+        }
     }
 
     override fun close() {
-        // 使用 runCatching 确保各组件安全释放，绝不向上层抛出收尾异常
-        runCatching { socket?.close() }
-        runCatching { selectorManager?.close() }
+        val resources = synchronized(resourceLock) {
+            lifecycleGeneration += 1L
+            connectionOpen = false
 
-        socket = null
-        selectorManager = null
-        receiveChannel = null
-        sendChannel = null
+            val currentSocket = socket
+            val currentManager = selectorManager
+
+            socket = null
+            selectorManager = null
+            receiveChannel = null
+            sendChannel = null
+
+            currentSocket to currentManager
+        }
+
+        runCatching { resources.first?.close() }
+        runCatching { resources.second?.close() }
     }
 }

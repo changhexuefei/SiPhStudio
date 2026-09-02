@@ -1,6 +1,5 @@
 package org.jason.siph.ui.positioner
 
-
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,6 +24,8 @@ import org.jason.siph.ui.model.CouplingToolAction
 fun PositionerControlPanel(
     state: PositionerUiState,
     onAction: (CouplingToolAction) -> Unit,
+    motionEnabled: Boolean = true,
+    connectLabel: String = "Connect",
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
@@ -36,7 +37,9 @@ fun PositionerControlPanel(
     ) {
         PositionerHeaderCard(
             state = state,
-            onAction = onAction
+            onAction = onAction,
+            motionEnabled = motionEnabled,
+            connectLabel = connectLabel
         )
 
         Row(
@@ -54,14 +57,15 @@ fun PositionerControlPanel(
 
                 PositionerSafetyCard(
                     state = state,
-                    onAction = onAction
+                    onAction = onAction,
+                    motionEnabled = motionEnabled
                 )
             }
 
             JogControlPanel(
                 linearStepUm = state.linearStepUm,
                 angleStepDeg = state.angleStepDeg,
-                enabled = state.connected && !state.isMoving,
+                enabled = motionEnabled && state.connected && !state.isMoving,
                 onLinearStepChange = {
                     onAction(CouplingToolAction.UpdateLinearStep(it))
                 },
@@ -80,7 +84,9 @@ fun PositionerControlPanel(
 @Composable
 private fun PositionerHeaderCard(
     state: PositionerUiState,
-    onAction: (CouplingToolAction) -> Unit
+    onAction: (CouplingToolAction) -> Unit,
+    motionEnabled: Boolean,
+    connectLabel: String
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -99,12 +105,16 @@ private fun PositionerHeaderCard(
             )
 
             Text(
-                text = if (state.connected) "Connected" else "Disconnected",
+                text = when {
+                    !motionEnabled -> "Safety interlock not ready"
+                    state.connected -> "Connected"
+                    else -> "Disconnected"
+                },
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (state.connected) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
+                color = when {
+                    !motionEnabled -> MaterialTheme.colorScheme.tertiary
+                    state.connected -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
             )
 
@@ -130,10 +140,10 @@ private fun PositionerHeaderCard(
             ) {
                 Button(
                     onClick = { onAction(CouplingToolAction.ConnectPositioner) },
-                    enabled = !state.connected,
+                    enabled = motionEnabled && !state.connected && !state.connecting,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Connect")
+                    Text(if (state.connecting) "Connecting..." else connectLabel)
                 }
 
                 OutlinedButton(
@@ -159,7 +169,8 @@ private fun PositionerHeaderCard(
 @Composable
 private fun PositionerSafetyCard(
     state: PositionerUiState,
-    onAction: (CouplingToolAction) -> Unit
+    onAction: (CouplingToolAction) -> Unit,
+    motionEnabled: Boolean
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -178,7 +189,11 @@ private fun PositionerSafetyCard(
             )
 
             Text(
-                text = "Move the optical head to safe pose before prober movement.",
+                text = if (motionEnabled) {
+                    "Software interlock ready. Move the optical head to safe pose before prober movement."
+                } else {
+                    "Motion is locked until a validated safety profile is applied."
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -189,7 +204,7 @@ private fun PositionerSafetyCard(
             ) {
                 Button(
                     onClick = { onAction(CouplingToolAction.MoveSafe) },
-                    enabled = state.connected && !state.isMoving,
+                    enabled = motionEnabled && state.connected && !state.isMoving,
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Move Safe")
