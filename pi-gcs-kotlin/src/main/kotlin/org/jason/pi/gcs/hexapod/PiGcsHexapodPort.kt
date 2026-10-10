@@ -50,6 +50,15 @@ class PiGcsHexapodPort(
             check(axes.all { positions[it]?.isFinite() == true }) { "Invalid recovered axis positions" }
             val onTarget = device.qONT(axes)
             check(axes.all { onTarget[it] == true }) { "Motion not confirmed on target" }
+            check(device.qERR() == 0) { "Controller reports an active error" }
+            val minima = device.qTMN(axes)
+            val maxima = device.qTMX(axes)
+            check(axes.all { axis ->
+                val pos = positions[axis] ?: return@all false
+                val min = minima[axis] ?: return@all false
+                val max = maxima[axis] ?: return@all false
+                min.isFinite() && max.isFinite() && min <= max && pos in min..max
+            }) { "Recovered position is outside validated controller travel range" }
             recoveryRequired = false
             _motionState.value = PiMotionState(PiMotionPhase.Ready)
         } catch (failure: Throwable) {
