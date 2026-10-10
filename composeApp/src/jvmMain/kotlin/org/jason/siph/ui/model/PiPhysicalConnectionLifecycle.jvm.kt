@@ -12,6 +12,11 @@ import org.jason.pi.gcs.hexapod.PiGcsHexapodPort
  * A disconnect that encounters active movement/Stop is rejected by the command
  * binding before touching hardware. No implicit physical Stop is attempted.
  */
+data class PiPhysicalReadback(
+    val identity: String,
+    val pose: org.jason.pi.gcs.hexapod.PiHexapodPose
+)
+
 class PiPhysicalConnectionLifecycle(
     private val commands: PiRuntimeMotionCommands
 ) {
@@ -50,6 +55,17 @@ class PiPhysicalConnectionLifecycle(
     suspend fun readPose(): org.jason.pi.gcs.hexapod.PiHexapodPose = mutex.withLock {
         val port = checkNotNull(activePort) { "No active PI physical controller" }
         port.currentPose()
+    }
+
+    /**
+     * Read identity and pose under a single session lease. Connect/disconnect
+     * cannot replace the owned controller between the two queries.
+     */
+    suspend fun readSnapshot(): PiPhysicalReadback = mutex.withLock {
+        val port = checkNotNull(activePort) { "No active PI physical controller" }
+        val identity = port.identify()
+        check(identity.isNotBlank()) { "PI controller returned an empty identification" }
+        PiPhysicalReadback(identity, port.currentPose())
     }
 
     suspend fun disconnect() = mutex.withLock {

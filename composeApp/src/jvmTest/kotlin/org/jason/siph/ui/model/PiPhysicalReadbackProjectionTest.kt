@@ -41,6 +41,9 @@ class PiPhysicalReadbackProjectionTest {
         assertFailsWith<IllegalStateException> { projection.refresh(CouplingToolUiState()) }
         val port = PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO)
         lifecycle.connect(port)
+        val snapshot = lifecycle.readSnapshot()
+        assertEquals("PI,HEXAPOD,TEST,1.0", snapshot.identity)
+        assertEquals(1.0, snapshot.pose.xUm)
         val actual = projection.refresh(CouplingToolUiState())
         assertEquals("PI,HEXAPOD,TEST,1.0", actual.positioner.idn)
         assertEquals(1.0, actual.positioner.currentPose.xUm)
@@ -51,6 +54,7 @@ class PiPhysicalReadbackProjectionTest {
         assertEquals(commands.uiState.value.motionAllowed, actual.positioner.motionAllowed)
         lifecycle.disconnect()
         assertFalse(commands.uiState.value.motionAllowed)
+        assertFailsWith<IllegalStateException> { lifecycle.readSnapshot() }
         assertFailsWith<IllegalStateException> { projection.refresh(CouplingToolUiState()) }
         commands.close()
         Unit
