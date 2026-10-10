@@ -27,6 +27,7 @@ class PiGcsHexapodPort(
     @Volatile private var recoveryRequired = false
     private val safetyEpoch = AtomicLong(0L)
     private val stateLock = Any()
+    @Volatile private var stopInProgress = false
     private val _motionState = MutableStateFlow(PiMotionState())
     val motionState: StateFlow<PiMotionState> = _motionState.asStateFlow()
 
@@ -46,6 +47,7 @@ class PiGcsHexapodPort(
     suspend fun recover(operatorConfirmedSafe: Boolean) {
         check(recoveryRequired) { "No fault to recover" }
         require(operatorConfirmedSafe) { "Explicit operator safety confirmation required" }
+        check(!stopInProgress) { "Stop is still in progress" }
         val expectedEpoch = safetyEpoch.get()
         _motionState.value = PiMotionState(PiMotionPhase.RecoveryRequired)
         try {
@@ -64,7 +66,7 @@ class PiGcsHexapodPort(
                 min.isFinite() && max.isFinite() && min <= max && pos in min..max
             }) { "Recovered position is outside validated controller travel range" }
             synchronized(stateLock) {
-                check(recoveryRequired && safetyEpoch.get() == expectedEpoch) {
+                check(!stopInProgress && recoveryRequired && safetyEpoch.get() == expectedEpoch) {
                     "Recovery invalidated by a concurrent Stop or motion fault"
                 }
                 safetyEpoch.incrementAndGet()
@@ -146,13 +148,17 @@ class PiGcsHexapodPort(
         synchronized(stateLock) {
             safetyEpoch.incrementAndGet()
             recoveryRequired = true
+            stopInProgress = true
             _motionState.value = PiMotionState(PiMotionPhase.Stopping)
         }
         try {
             withContext(NonCancellable) { withTimeout(2_000L) { if (device.isOpen) device.stopAll() } }
         } finally {
             device.close()
-            _motionState.value = PiMotionState(PiMotionPhase.RecoveryRequired, "Stop requested; physical stop unverified")
+            synchronized(stateLock) {
+                stopInProgress = false
+                _motionState.value = PiMotionState(PiMotionPhase.RecoveryRequired, "Stop requested; physical stop unverified")
+            }
         }
     }
 
