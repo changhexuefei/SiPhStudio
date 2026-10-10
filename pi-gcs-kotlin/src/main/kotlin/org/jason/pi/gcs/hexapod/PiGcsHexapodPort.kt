@@ -208,10 +208,13 @@ class PiGcsHexapodPort(
                 _motionState.value = PiMotionState(PiMotionPhase.Ready)
             }
         } catch (failure: Throwable) {
-            safetyEpoch.incrementAndGet()
-            recoveryRequired = true
-            if (_motionState.value.phase != PiMotionPhase.RecoveryRequired) {
-                _motionState.value = PiMotionState(PiMotionPhase.Fault, failure.message)
+            synchronized(stateLock) {
+                safetyEpoch.incrementAndGet()
+                recoveryRequired = true
+                if (_motionState.value.phase != PiMotionPhase.RecoveryRequired &&
+                    _motionState.value.phase != PiMotionPhase.Stopping) {
+                    _motionState.value = PiMotionState(PiMotionPhase.Fault, failure.message)
+                }
             }
             withContext(NonCancellable) {
                 try { withTimeout(2_000L) { if (device.isOpen) device.stopAll() } }
