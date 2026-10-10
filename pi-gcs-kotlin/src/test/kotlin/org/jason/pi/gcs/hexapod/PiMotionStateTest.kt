@@ -160,6 +160,30 @@ class PiMotionStateTest {
     }
 
     @Test
+    fun identificationFailureLatchesRecovery() = runBlocking {
+        val transport = SafetyTransport()
+        val port = PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X))
+        port.connect()
+        transport.failIdentification = true
+        assertFailsWith<IllegalStateException> { port.identify() }
+        assertEquals(PiMotionPhase.RecoveryRequired, port.motionState.value.phase)
+        assertFalse(transport.isOpen)
+        assertFailsWith<IllegalStateException> { port.connect() }
+    }
+
+    @Test
+    fun travelQueryFailureLatchesRecovery() = runBlocking {
+        val transport = SafetyTransport()
+        val port = PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X))
+        port.connect()
+        transport.failTravelRead = true
+        assertFailsWith<IllegalStateException> { port.queryCommandTravelRange() }
+        assertEquals(PiMotionPhase.RecoveryRequired, port.motionState.value.phase)
+        assertFalse(port.motionState.value.canMove)
+        assertFalse(transport.isOpen)
+    }
+
+    @Test
     fun recoveryRejectsControllerErrorAndOutOfRangePosition() = runBlocking {
         val transport = SafetyTransport()
         val port = PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X))
@@ -187,6 +211,8 @@ private class SafetyTransport : GcsTransport {
     var controllerError = 0
     var maxX = 10.0
     var failPositionRead = false
+    var failIdentification = false
+    var failTravelRead = false
     var pauseOnTarget: CompletableDeferred<Unit>? = null
     var onTargetReadStarted: CompletableDeferred<Unit>? = null
     var pauseRecovery: CompletableDeferred<Unit>? = null
@@ -202,7 +228,14 @@ private class SafetyTransport : GcsTransport {
         check(isOpen)
         return when (last) {
             "ERR?" -> controllerError.toString()
-            "TMN? X" -> "X=-10"
+            "TMN? X" -> {
+                if (failTravelRead) error("Simulated travel range query failure")
+                "X=-10"
+            }
+            "*IDN?" -> {
+                if (failIdentification) error("Simulated identification failure")
+                "Simulated PI device"
+            }
             "TMX? X" -> "X=$maxX"
             "POS? X" -> {
                 if (failPositionRead) error("Simulated position read failure")

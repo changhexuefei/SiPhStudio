@@ -80,10 +80,7 @@ class PiGcsHexapodPort(
         }
     }
 
-    override suspend fun identify(): String {
-        ensureConnected()
-        return device.qIDN()
-    }
+    override suspend fun identify(): String = guardedRead { device.qIDN() }
 
     override suspend fun startup(reference: Boolean) {
         ensureConnected()
@@ -134,13 +131,16 @@ class PiGcsHexapodPort(
         }
     }
 
-    override suspend fun currentPose(): PiHexapodPose {
+    override suspend fun currentPose(): PiHexapodPose =
+        guardedRead { unitConfig.fromCommandValues(device.qPOS(axes)) }
+
+    private suspend fun <T> guardedRead(block: suspend () -> T): T {
         val queryEpoch = synchronized(stateLock) {
             ensureConnected()
             safetyEpoch.get()
         }
         return try {
-            unitConfig.fromCommandValues(device.qPOS(axes))
+            block()
         } catch (failure: Throwable) {
             val ownsFailure = synchronized(stateLock) {
                 if (safetyEpoch.get() != queryEpoch) false else {
@@ -188,13 +188,8 @@ class PiGcsHexapodPort(
     /**
      * Returns the travel range in controller command units.
      */
-    suspend fun queryCommandTravelRange(): Map<PiAxis, ClosedFloatingPointRange<Double>> {
-        ensureConnected()
-        return PiTools.queryTravelRange(
-            device = device,
-            axes = axes
-        ).toClosedRangeMap()
-    }
+    suspend fun queryCommandTravelRange(): Map<PiAxis, ClosedFloatingPointRange<Double>> =
+        guardedRead { PiTools.queryTravelRange(device = device, axes = axes).toClosedRangeMap() }
 
     override fun close() {
         device.close()
