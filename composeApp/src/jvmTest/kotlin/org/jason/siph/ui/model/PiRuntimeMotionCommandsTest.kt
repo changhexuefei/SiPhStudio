@@ -1,6 +1,9 @@
 package org.jason.siph.ui.model
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import org.jason.pi.gcs.hexapod.PiAxis
 import org.jason.pi.gcs.core.GcsClient
 import org.jason.pi.gcs.core.GcsDevice
 import org.jason.pi.gcs.hexapod.PiGcsHexapodPort
@@ -41,4 +44,43 @@ class PiRuntimeMotionCommandsTest {
         assertFailsWith<IllegalStateException> { commands.moveToSafePose() }
         commands.close()
     }
+    @Test
+    fun activeMotionPreventsSessionReplacementUntilCommandReturns() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val transport = object : GcsTransport {
+            override var isOpen = false
+                private set
+            private var lastCommand = ""
+            override suspend fun open() { isOpen = true }
+            override suspend fun writeLine(command: String) {
+                lastCommand = command
+                if (command.startsWith("MOV ")) {
+                    entered.complete(Unit)
+                    release.await()
+                }
+            }
+            override suspend fun readLine(): String =
+                if (lastCommand == "ERR?") "0" else error("Unexpected GCS readback: $lastCommand")
+            override fun close() { isOpen = false }
+        }
+        val port = PiGcsHexapodPort(
+            GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X)
+        )
+        port.connect()
+        val commands = PiRuntimeMotionCommands(this)
+        commands.bind(port)
+        val pending = async { commands.moveTo(PiHexapodPose.ZERO, wait = false) }
+        entered.await()
+        assertFailsWith<IllegalStateException> { commands.bind(null) }
+        assertFailsWith<IllegalStateException> { commands.close() }
+        assertFailsWith<IllegalStateException> { commands.moveToSafePose() }
+        release.complete(Unit)
+        pending.await()
+        commands.bind(null)
+        assertFalse(commands.uiState.value.motionAllowed)
+        commands.close()
+        port.close()
+    }
+
 }
