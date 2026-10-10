@@ -55,4 +55,5 @@ jobs:
           path: |
             pi-gcs-kotlin/build/reports/tests/
             pi-gcs-kotlin/build/test-results/
+            pi-gcs-kotlin/build/ci/virtual-gcs-evidence/
           if-no-files-found: ignore
