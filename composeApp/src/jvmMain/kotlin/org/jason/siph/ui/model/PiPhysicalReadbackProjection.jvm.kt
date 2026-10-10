@@ -43,8 +43,9 @@ class PiPhysicalReadbackProjection(
         }
 
     suspend fun refresh(state: CouplingToolUiState): CouplingToolUiState {
-        val identity = lifecycle.identify()
-        val pose = lifecycle.readPose()
+        val snapshot = lifecycle.readSnapshot()
+        val identity = snapshot.identity
+        val pose = snapshot.pose
         val verified = commands.uiState.value
         return state.copy(
             positioner = verified.copy(
