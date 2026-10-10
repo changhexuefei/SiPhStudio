@@ -59,6 +59,39 @@ class PiPhysicalConnectionLifecycleTest {
         Unit
     }
 
+    @Test
+    fun failedDisconnectKeepsOwnershipUntilRetrySucceeds() = runBlocking {
+        val transport = object : GcsTransport {
+            override var isOpen = false
+                private set
+            var failClose = true
+            override suspend fun open() { isOpen = true }
+            override suspend fun writeLine(command: String) = Unit
+            override suspend fun readLine(): String = error("Unexpected read")
+            override fun close() {
+                if (failClose) {
+                    failClose = false
+                    error("Simulated transport close failure")
+                }
+                isOpen = false
+            }
+        }
+        val commands = PiRuntimeMotionCommands(this)
+        val owner = PiPhysicalConnectionLifecycle(commands)
+        val port = makePort(transport)
+        owner.connect(port)
+        assertFailsWith<IllegalStateException> { owner.disconnect() }
+        assertTrue(transport.isOpen)
+        assertFalse(commands.uiState.value.motionAllowed)
+        assertFailsWith<IllegalStateException> { owner.connect(makePort(FakeTransport())) }
+        // Retry the same physical close while the UI stays unbound.
+        owner.disconnect()
+        assertFalse(transport.isOpen)
+        assertFalse(commands.uiState.value.motionAllowed)
+        commands.close()
+        Unit
+    }
+
     private fun makePort(transport: GcsTransport): PiGcsHexapodPort =
         PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO)
 
