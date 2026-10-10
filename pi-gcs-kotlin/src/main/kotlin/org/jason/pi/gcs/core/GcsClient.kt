@@ -1,5 +1,6 @@
 package org.jason.pi.gcs.core
 
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.jason.pi.gcs.transport.GcsTransport
@@ -13,8 +14,11 @@ import org.jason.pi.gcs.transport.GcsTransport
  */
 class GcsClient(
     private val transport: GcsTransport,
-    private val checkErrorAfterCommand: Boolean = true
+    private val checkErrorAfterCommand: Boolean = true,
+    private val transactionTimeoutMs: Long = 5_000L
 ) : AutoCloseable {
+
+    init { require(transactionTimeoutMs > 0L) }
 
     private val mutex = Mutex()
 
@@ -69,7 +73,8 @@ class GcsClient(
         require(command.isNotBlank()) { "PI GCS query must not be blank" }
         require(maxResponseLines > 0) { "maxResponseLines must be > 0" }
 
-        return mutex.withLock {
+        return withTimeout(transactionTimeoutMs) {
+            mutex.withLock {
             ensureOpen()
             try {
                 transport.writeLine(command)
@@ -97,13 +102,15 @@ class GcsClient(
                 runCatching { transport.close() }
                 throw failure
             }
+            }
         }
     }
 
     suspend fun command(command: String) {
         require(command.isNotBlank()) { "PI GCS command must not be blank" }
 
-        mutex.withLock {
+        withTimeout(transactionTimeoutMs) {
+            mutex.withLock {
             ensureOpen()
             try {
                 transport.writeLine(command)
@@ -123,6 +130,7 @@ class GcsClient(
             } catch (failure: Throwable) {
                 if (failure !is PiGcsCommandException) runCatching { transport.close() }
                 throw failure
+            }
             }
         }
     }
