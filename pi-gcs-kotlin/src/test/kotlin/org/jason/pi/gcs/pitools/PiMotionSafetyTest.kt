@@ -1,6 +1,9 @@
 package org.jason.pi.gcs.pitools
 
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import org.jason.pi.gcs.core.GcsClient
 import org.jason.pi.gcs.core.GcsDevice
 import org.jason.pi.gcs.core.PiGcsTimeoutException
@@ -33,6 +36,27 @@ class PiMotionSafetyTest {
             device.moveAbsolute(PiAxis.X, 0.02)
         }
     }
+    @Test
+    fun cancelledMoveRequestsStopAndClosesConnection() = runBlocking {
+        val transport = NeverOnTargetTransport()
+        val device = GcsDevice(GcsClient(transport))
+        device.connect()
+        val job = launch {
+            PiTools.moveAndWait(
+                device,
+                mapOf(PiAxis.X to 0.01),
+                PiWaitOptions(timeoutMs = 60_000, pollDelayMs = 5)
+            )
+        }
+        repeat(100) {
+            if (transport.writes.any { it.startsWith("ONT?") }) return@repeat
+            delay(1)
+        }
+        job.cancelAndJoin()
+        assertTrue("STP" in transport.writes)
+        assertFalse(device.isOpen)
+    }
+
 }
 
 private class NeverOnTargetTransport : GcsTransport {
