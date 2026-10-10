@@ -86,7 +86,12 @@ kotlin {
             implementation(libs.lets.plot.compose)
         }
 
+        jvmTest.dependencies {
+            implementation(kotlin("test"))
+        }
+
         jvmMain.dependencies {
+            implementation(project(":pi-gcs-kotlin"))
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
 
