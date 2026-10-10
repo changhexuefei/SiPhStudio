@@ -37,12 +37,12 @@ class PiRuntimeSessionBinding(private val scope: CoroutineScope) : AutoCloseable
             _state.value = disconnected()
             if (port != null) {
                 val currentGeneration = generation
-                _state.value = _state.value.withControllerMotionState(port.motionState.value)
+                _state.value = projected(port.motionState.value)
                 subscription = scope.launch {
                     port.motionState.collect { motion ->
                         synchronized(lock) {
                             if (!closed && generation == currentGeneration) {
-                                _state.value = _state.value.withControllerMotionState(motion)
+                                _state.value = projected(motion)
                             }
                         }
                     }
@@ -61,6 +61,12 @@ class PiRuntimeSessionBinding(private val scope: CoroutineScope) : AutoCloseable
             _state.value = disconnected()
         }
     }
+
+    private fun projected(motion: PiMotionState): PositionerUiState =
+        PositionerUiState(
+            connected = motion.phase != PiMotionPhase.Disconnected,
+            requiresVerifiedPiState = true
+        ).withControllerMotionState(motion)
 
     private fun disconnected(): PositionerUiState =
         PositionerUiState(requiresVerifiedPiState = true)
