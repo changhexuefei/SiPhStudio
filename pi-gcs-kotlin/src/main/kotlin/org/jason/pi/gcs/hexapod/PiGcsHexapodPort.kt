@@ -105,8 +105,16 @@ class PiGcsHexapodPort(
                 _motionState.value = PiMotionState(PiMotionPhase.Ready)
             }
         } catch (failure: Throwable) {
-            device.close()
-            _motionState.value = PiMotionState(PiMotionPhase.RecoveryRequired, failure.message)
+            // A newer Stop or disconnect owns the controller after the epoch changes.
+            val ownsFailure = synchronized(stateLock) {
+                if (safetyEpoch.get() != expectedEpoch) false else {
+                    safetyEpoch.incrementAndGet()
+                    recoveryRequired = true
+                    _motionState.value = PiMotionState(PiMotionPhase.RecoveryRequired, failure.message)
+                    true
+                }
+            }
+            if (ownsFailure) device.close()
             throw failure
         }
     }
