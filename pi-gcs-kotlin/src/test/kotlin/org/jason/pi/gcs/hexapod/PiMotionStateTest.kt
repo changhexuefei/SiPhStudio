@@ -291,6 +291,28 @@ class PiMotionStateTest {
     }
 
     @Test
+    fun overlappingRecoveryIsRejectedWithoutInvalidatingFirstVerification() = runBlocking {
+        val transport = SafetyTransport()
+        val port = PiGcsHexapodPort(
+            GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X)
+        )
+        port.connect()
+        port.stop()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        transport.recoveryReadStarted = entered
+        transport.pauseRecovery = release
+        val first = async { runCatching { port.recover(operatorConfirmedSafe = true) } }
+        entered.await()
+        assertFailsWith<IllegalStateException> { port.recover(operatorConfirmedSafe = true) }
+        assertFalse(port.motionState.value.canMove)
+        release.complete(Unit)
+        assertEquals(true, first.await().isSuccess)
+        assertEquals(PiMotionPhase.Ready, port.motionState.value.phase)
+        port.disconnect()
+    }
+
+    @Test
     fun recoveryRejectsControllerErrorAndOutOfRangePosition() = runBlocking {
         val transport = SafetyTransport()
         val port = PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X))
