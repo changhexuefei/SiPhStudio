@@ -18,7 +18,7 @@ class GcsClient(
     private val transactionTimeoutMs: Long = 5_000L
 ) : AutoCloseable {
 
-    init { require(transactionTimeoutMs > 0) }
+    init { require(transactionTimeoutMs > 0L) }
 
     private val mutex = Mutex()
 
@@ -74,7 +74,6 @@ class GcsClient(
         require(maxResponseLines > 0) { "maxResponseLines must be > 0" }
 
         return withTimeout(transactionTimeoutMs) {
-            withTimeout(transactionTimeoutMs) {
             mutex.withLock {
             ensureOpen()
             try {
@@ -110,7 +109,8 @@ class GcsClient(
     suspend fun command(command: String) {
         require(command.isNotBlank()) { "PI GCS command must not be blank" }
 
-        mutex.withLock {
+        withTimeout(transactionTimeoutMs) {
+            mutex.withLock {
             ensureOpen()
             try {
                 transport.writeLine(command)
