@@ -20,3 +20,35 @@ fun CouplingToolUiState.rejectUnwiredPhysicalAction(): CouplingToolUiState = cop
         message = "Physical PI runtime is not connected; action denied"
     )
 )
+
+/**
+ * Physical mode accepts only local presentation/configuration edits.
+ * Device commands and derived hardware-state mutations fail closed.
+ */
+fun CouplingToolUiState.reduceUnwiredPhysicalAction(
+    action: CouplingToolAction
+): CouplingToolUiState {
+    val updated = when (action) {
+        is CouplingToolAction.SelectPage -> copy(selectedPage = action.page)
+        is CouplingToolAction.UpdateLinearStep ->
+            copy(positioner = positioner.copy(linearStepUm = action.valueUm))
+        is CouplingToolAction.UpdateAngleStep ->
+            copy(positioner = positioner.copy(angleStepDeg = action.valueDeg))
+        is CouplingToolAction.UpdateCouplingConfig ->
+            copy(coupling = coupling.copy(config = action.config))
+        is CouplingToolAction.UpdateVirtualPivot ->
+            copy(coupling = coupling.copy(config = coupling.config.copy(
+                virtualPivotPoint = action.pivot
+            )))
+        else -> return rejectUnwiredPhysicalAction()
+    }
+    // Preserve a fail-closed projection regardless of stale UI state supplied.
+    return updated.copy(
+        positioner = updated.positioner.copy(
+            connected = false,
+            requiresVerifiedPiState = true,
+            piMotionPhase = PiUiMotionPhase.Disconnected.name,
+            isMoving = false
+        )
+    )
+}
