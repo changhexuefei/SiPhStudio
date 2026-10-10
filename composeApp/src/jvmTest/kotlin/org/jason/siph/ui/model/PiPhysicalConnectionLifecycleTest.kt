@@ -43,6 +43,22 @@ class PiPhysicalConnectionLifecycleTest {
         Unit
     }
 
+    @Test
+    fun bindFailureClosesOpenedTransportAndNeverClaimsSession() = runBlocking {
+        val transport = FakeTransport()
+        val commands = PiRuntimeMotionCommands(this)
+        // A disposed command dispatcher cannot accept a newly opened port.
+        commands.close()
+        val owner = PiPhysicalConnectionLifecycle(commands)
+        val port = makePort(transport)
+        val failure = assertFailsWith<IllegalStateException> { owner.connect(port) }
+        assertTrue(failure.message?.contains("closed") == true)
+        assertFalse(transport.isOpen)
+        assertFalse(commands.uiState.value.motionAllowed)
+        assertFailsWith<IllegalStateException> { owner.disconnect() }
+        Unit
+    }
+
     private fun makePort(transport: GcsTransport): PiGcsHexapodPort =
         PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO)
 
