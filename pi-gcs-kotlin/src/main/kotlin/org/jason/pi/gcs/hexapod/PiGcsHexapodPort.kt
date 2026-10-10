@@ -80,10 +80,7 @@ class PiGcsHexapodPort(
         }
     }
 
-    override suspend fun identify(): String {
-        ensureConnected()
-        return device.qIDN()
-    }
+    override suspend fun identify(): String = guardedRead { device.qIDN() }
 
     override suspend fun startup(reference: Boolean) {
         ensureConnected()
@@ -188,13 +185,8 @@ class PiGcsHexapodPort(
     /**
      * Returns the travel range in controller command units.
      */
-    suspend fun queryCommandTravelRange(): Map<PiAxis, ClosedFloatingPointRange<Double>> {
-        ensureConnected()
-        return PiTools.queryTravelRange(
-            device = device,
-            axes = axes
-        ).toClosedRangeMap()
-    }
+    suspend fun queryCommandTravelRange(): Map<PiAxis, ClosedFloatingPointRange<Double>> =
+        guardedRead { PiTools.queryTravelRange(device = device, axes = axes).toClosedRangeMap() }
 
     override fun close() {
         device.close()
