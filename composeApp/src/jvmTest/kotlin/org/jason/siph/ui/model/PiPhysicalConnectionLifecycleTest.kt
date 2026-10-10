@@ -133,9 +133,9 @@ class PiPhysicalConnectionLifecycleTest {
             }
             override suspend fun readLine(): String = when {
                 command.startsWith("POS?") ->
-                    axes[nextAxis++].let { "$"+"it=0" }
+                    axes[nextAxis++] + "=0"
                 command == "ERR?" -> "0"
-                else -> error("Unexpected physical query: $"+"command")
+                else -> error("Unexpected physical query: " + command)
             }
             override fun close() { isOpen = false }
         }
