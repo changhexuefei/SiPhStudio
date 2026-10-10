@@ -208,20 +208,30 @@ class PiGcsHexapodPort(
                 _motionState.value = PiMotionState(PiMotionPhase.Ready)
             }
         } catch (failure: Throwable) {
-            synchronized(stateLock) {
-                safetyEpoch.incrementAndGet()
-                recoveryRequired = true
-                if (_motionState.value.phase != PiMotionPhase.RecoveryRequired &&
-                    _motionState.value.phase != PiMotionPhase.Stopping) {
+            // A newer Stop or recovery owns the session after the epoch changes.
+            // An older motion must not close that session or overwrite its state.
+            val ownsFailure = synchronized(stateLock) {
+                if (safetyEpoch.get() != motionEpoch) {
+                    false
+                } else {
+                    safetyEpoch.incrementAndGet()
+                    recoveryRequired = true
                     _motionState.value = PiMotionState(PiMotionPhase.Fault, failure.message)
+                    true
                 }
             }
-            withContext(NonCancellable) {
-                try { withTimeout(2_000L) { if (device.isOpen) device.stopAll() } }
-                catch (_: Exception) { /* Lost communication cannot confirm physical stop. */ }
-                finally { device.close() }
+            if (ownsFailure) {
+                withContext(NonCancellable) {
+                    try { withTimeout(2_000L) { if (device.isOpen) device.stopAll() } }
+                    catch (_: Exception) { /* Lost communication cannot confirm physical stop. */ }
+                    finally { device.close() }
+                }
+                synchronized(stateLock) {
+                    if (_motionState.value.phase == PiMotionPhase.Fault) {
+                        _motionState.value = PiMotionState(PiMotionPhase.RecoveryRequired, failure.message)
+                    }
+                }
             }
-            _motionState.value = PiMotionState(PiMotionPhase.RecoveryRequired, failure.message)
             throw failure
         }
     }
