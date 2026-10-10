@@ -336,6 +336,36 @@ class PiMotionStateTest {
     }
 
     @Test
+    fun repeatedStopRecoveryDisconnectLifecycleRemainsFailClosed() = runBlocking {
+        val transport = SafetyTransport()
+        val port = PiGcsHexapodPort(
+            GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X)
+        )
+        repeat(20) { cycle ->
+            port.connect()
+            assertEquals(PiMotionPhase.Ready, port.motionState.value.phase, "cycle $cycle")
+            port.stop()
+            assertEquals(PiMotionPhase.RecoveryRequired, port.motionState.value.phase, "cycle $cycle")
+            assertFalse(port.motionState.value.canMove, "cycle $cycle")
+            assertFailsWith<IllegalStateException> { port.connect() }
+            if (cycle % 2 == 0) {
+                transport.controllerError = 5
+                assertFailsWith<IllegalStateException> {
+                    port.recover(operatorConfirmedSafe = true)
+                }
+                assertEquals(PiMotionPhase.RecoveryRequired, port.motionState.value.phase, "cycle $cycle")
+                assertFalse(port.motionState.value.canMove, "cycle $cycle")
+                transport.controllerError = 0
+            }
+            port.recover(operatorConfirmedSafe = true)
+            assertEquals(PiMotionPhase.Ready, port.motionState.value.phase, "cycle $cycle")
+            port.disconnect()
+            assertEquals(PiMotionPhase.Disconnected, port.motionState.value.phase, "cycle $cycle")
+            assertFalse(transport.isOpen, "cycle $cycle")
+        }
+    }
+
+    @Test
     fun recoveryRejectsControllerErrorAndOutOfRangePosition() = runBlocking {
         val transport = SafetyTransport()
         val port = PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X))
