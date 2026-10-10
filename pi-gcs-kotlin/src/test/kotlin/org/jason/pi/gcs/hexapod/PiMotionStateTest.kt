@@ -366,6 +366,47 @@ class PiMotionStateTest {
     }
 
     @Test
+    fun repeatedRecoveryInterleavedWithStopOrDisconnectNeverReauthorizesStaleSession() = runBlocking {
+        val transport = SafetyTransport()
+        val port = PiGcsHexapodPort(
+            GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X)
+        )
+        repeat(12) { cycle ->
+            port.connect()
+            port.stop()
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            transport.recoveryReadStarted = entered
+            transport.pauseRecovery = release
+            val recovery = async { runCatching { port.recover(operatorConfirmedSafe = true) } }
+            entered.await()
+            if (cycle % 2 == 0) {
+                val stopping = async { runCatching { port.stop() } }
+                while (port.motionState.value.phase != PiMotionPhase.Stopping) yield()
+                assertFalse(port.motionState.value.canMove, "cycle $cycle")
+                release.complete(Unit)
+                assertEquals(true, recovery.await().isFailure, "cycle $cycle")
+                assertEquals(true, stopping.await().isSuccess, "cycle $cycle")
+            } else {
+                port.disconnect()
+                assertFalse(port.motionState.value.canMove, "cycle $cycle")
+                release.complete(Unit)
+                assertEquals(true, recovery.await().isFailure, "cycle $cycle")
+            }
+            assertEquals(PiMotionPhase.RecoveryRequired, port.motionState.value.phase, "cycle $cycle")
+            assertFalse(port.motionState.value.canMove, "cycle $cycle")
+            assertFalse(transport.isOpen, "cycle $cycle")
+            assertFailsWith<IllegalStateException> { port.connect() }
+            transport.pauseRecovery = null
+            transport.recoveryReadStarted = null
+            port.recover(operatorConfirmedSafe = true)
+            assertEquals(PiMotionPhase.Ready, port.motionState.value.phase, "cycle $cycle")
+            port.disconnect()
+            assertEquals(PiMotionPhase.Disconnected, port.motionState.value.phase, "cycle $cycle")
+        }
+    }
+
+    @Test
     fun recoveryRejectsControllerErrorAndOutOfRangePosition() = runBlocking {
         val transport = SafetyTransport()
         val port = PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X))
