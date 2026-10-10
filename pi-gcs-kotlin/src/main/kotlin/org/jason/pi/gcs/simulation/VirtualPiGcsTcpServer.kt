@@ -41,7 +41,12 @@ class VirtualPiGcsTcpServer(
                         while (running) {
                             val command = reader.readLine() ?: break
                             val readOnlyCommand = command.trim()
-                            val injected = if (readOnlyCommand in setOf("*IDN?", "POS? X Y Z U V W", "ERR?") && faultTriggered.compareAndSet(false, true)) fault else VirtualGcsFault.None
+                            val eligible = when (fault) {
+                                VirtualGcsFault.MalformedPosition, VirtualGcsFault.TruncatedPosition -> readOnlyCommand == "POS? X Y Z U V W"
+                                VirtualGcsFault.Disconnect -> readOnlyCommand in setOf("*IDN?", "POS? X Y Z U V W", "ERR?")
+                                VirtualGcsFault.None -> false
+                            }
+                            val injected = if (eligible && faultTriggered.compareAndSet(false, true)) fault else VirtualGcsFault.None
                             if (injected == VirtualGcsFault.Disconnect) break
                             val response = when (injected) {
                                 VirtualGcsFault.MalformedPosition -> if (readOnlyCommand == "POS? X Y Z U V W") "X=bad\\n" else respond(readOnlyCommand)
