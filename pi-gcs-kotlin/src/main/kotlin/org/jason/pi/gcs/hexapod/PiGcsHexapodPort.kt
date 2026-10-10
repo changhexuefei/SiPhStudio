@@ -135,8 +135,24 @@ class PiGcsHexapodPort(
     }
 
     override suspend fun currentPose(): PiHexapodPose {
-        ensureConnected()
-        return unitConfig.fromCommandValues(device.qPOS(axes))
+        val queryEpoch = synchronized(stateLock) {
+            ensureConnected()
+            safetyEpoch.get()
+        }
+        return try {
+            unitConfig.fromCommandValues(device.qPOS(axes))
+        } catch (failure: Throwable) {
+            val ownsFailure = synchronized(stateLock) {
+                if (safetyEpoch.get() != queryEpoch) false else {
+                    safetyEpoch.incrementAndGet()
+                    recoveryRequired = true
+                    _motionState.value = PiMotionState(PiMotionPhase.RecoveryRequired, failure.message)
+                    true
+                }
+            }
+            if (ownsFailure) device.close()
+            throw failure
+        }
     }
 
     override suspend fun waitOnTarget(timeoutMs: Long) {
