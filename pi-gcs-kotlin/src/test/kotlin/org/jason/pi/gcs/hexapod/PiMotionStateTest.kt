@@ -313,6 +313,29 @@ class PiMotionStateTest {
     }
 
     @Test
+    fun concurrentStopCannotReplaceFirstStopLifecycle() = runBlocking {
+        val transport = SafetyTransport()
+        val port = PiGcsHexapodPort(
+            GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X)
+        )
+        port.connect()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        transport.stopStarted = entered
+        transport.pauseStop = release
+        val first = async { runCatching { port.stop() } }
+        entered.await()
+        assertEquals(PiMotionPhase.Stopping, port.motionState.value.phase)
+        assertFailsWith<IllegalStateException> { port.stop() }
+        assertEquals(PiMotionPhase.Stopping, port.motionState.value.phase)
+        release.complete(Unit)
+        assertEquals(true, first.await().isSuccess)
+        assertEquals(PiMotionPhase.RecoveryRequired, port.motionState.value.phase)
+        assertFalse(port.motionState.value.canMove)
+        assertFalse(transport.isOpen)
+    }
+
+    @Test
     fun recoveryRejectsControllerErrorAndOutOfRangePosition() = runBlocking {
         val transport = SafetyTransport()
         val port = PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X))
@@ -337,6 +360,8 @@ private class SafetyTransport : GcsTransport {
         private set
     var onTarget = true
     var failStop = false
+    var stopStarted: CompletableDeferred<Unit>? = null
+    var pauseStop: CompletableDeferred<Unit>? = null
     var failOpen = false
     var openStarted: CompletableDeferred<Unit>? = null
     var pauseOpen: CompletableDeferred<Unit>? = null
@@ -358,7 +383,11 @@ private class SafetyTransport : GcsTransport {
     }
     override suspend fun writeLine(command: String) {
         check(isOpen)
-        if (failStop && command == "STP") error("Simulated STP failure")
+        if (command == "STP") {
+            stopStarted?.complete(Unit)
+            pauseStop?.await()
+            if (failStop) error("Simulated STP failure")
+        }
         last = command
     }
     override suspend fun readLine(): String {

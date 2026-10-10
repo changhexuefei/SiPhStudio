@@ -209,6 +209,7 @@ class PiGcsHexapodPort(
 
     override suspend fun stop() {
         synchronized(stateLock) {
+            check(!stopInProgress) { "PI Stop already in progress" }
             safetyEpoch.incrementAndGet()
             recoveryRequired = true
             stopInProgress = true
