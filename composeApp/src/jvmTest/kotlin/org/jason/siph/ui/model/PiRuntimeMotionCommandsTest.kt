@@ -83,4 +83,44 @@ class PiRuntimeMotionCommandsTest {
         port.close()
     }
 
+    @Test
+    fun inFlightStopPreventsSessionSwapAndDisposal() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val transport = object : GcsTransport {
+            override var isOpen = false
+                private set
+            private var lastCommand = ""
+            override suspend fun open() { isOpen = true }
+            override suspend fun writeLine(command: String) {
+                lastCommand = command
+                if (command == "STP") {
+                    entered.complete(Unit)
+                    release.await()
+                }
+            }
+            override suspend fun readLine(): String =
+                if (lastCommand == "ERR?") "0" else error("Unexpected query: $lastCommand")
+            override fun close() { isOpen = false }
+        }
+        val port = PiGcsHexapodPort(
+            GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X)
+        )
+        port.connect()
+        val commands = PiRuntimeMotionCommands(this)
+        commands.bind(port)
+        val stopping = async { commands.stop() }
+        entered.await()
+        assertFailsWith<IllegalStateException> { commands.bind(null) }
+        assertFailsWith<IllegalStateException> { commands.close() }
+        assertFailsWith<IllegalStateException> { commands.stop() }
+        assertFailsWith<IllegalStateException> { commands.moveToSafePose() }
+        release.complete(Unit)
+        stopping.await()
+        assertFalse(commands.uiState.value.motionAllowed)
+        commands.bind(null)
+        commands.close()
+        port.close()
+    }
+
 }
