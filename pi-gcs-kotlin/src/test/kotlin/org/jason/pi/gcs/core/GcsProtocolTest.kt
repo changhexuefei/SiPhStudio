@@ -122,6 +122,35 @@ class GcsProtocolTest {
             transport.writes
         )
     }
+    @Test
+    fun incompleteMultiAxisReplyInvalidatesSession() = runBlocking {
+        val transport = FakeTransport(responses = listOf("X=1.0"))
+        val device = GcsDevice(GcsClient(transport))
+        device.connect()
+
+        assertFailsWith<IllegalStateException> {
+            device.qPOS(listOf(PiAxis.X, PiAxis.Y))
+        }
+        assertFalse(transport.isOpen)
+        assertFailsWith<IllegalStateException> {
+            device.qPOS(PiAxis.X)
+        }
+        assertEquals(listOf("POS? X Y"), transport.writes)
+    }
+
+    @Test
+    fun missingErrorReplyInvalidatesSession() = runBlocking {
+        val transport = FakeTransport(responses = emptyList())
+        val device = GcsDevice(GcsClient(transport))
+        device.connect()
+
+        assertFailsWith<IllegalStateException> {
+            device.moveAbsolute(PiAxis.X, 1.0)
+        }
+        assertFalse(transport.isOpen)
+        assertEquals(listOf("MOV X 1.000000000", "ERR?"), transport.writes)
+    }
+
 }
 
 private class FakeTransport(
