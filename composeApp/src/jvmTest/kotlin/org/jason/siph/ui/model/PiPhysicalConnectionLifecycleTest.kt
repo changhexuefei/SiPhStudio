@@ -154,6 +154,22 @@ class PiPhysicalConnectionLifecycleTest {
         Unit
     }
 
+    @Test
+    fun shutdownDisconnectsOwnedPortAndAllowsEmptyShutdown() = runBlocking {
+        val transport = FakeTransport()
+        val commands = PiRuntimeMotionCommands(this)
+        val owner = PiPhysicalConnectionLifecycle(commands)
+        owner.disconnectIfConnected() // A never-connected window is safe to close.
+        owner.connect(makePort(transport))
+        assertTrue(transport.isOpen)
+        owner.disconnectIfConnected()
+        assertFalse(transport.isOpen)
+        assertFalse(commands.uiState.value.motionAllowed)
+        owner.disconnectIfConnected() // Idempotent shutdown.
+        commands.close()
+        Unit
+    }
+
     private fun makePort(transport: GcsTransport): PiGcsHexapodPort =
         PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO)
 
