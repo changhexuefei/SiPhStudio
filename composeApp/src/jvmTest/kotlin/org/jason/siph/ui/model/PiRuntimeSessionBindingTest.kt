@@ -60,8 +60,12 @@ class PiRuntimeSessionBindingTest {
             override var isOpen = false
                 private set
             override suspend fun open() { isOpen = true }
-            override suspend fun writeLine(command: String) = Unit
-            override suspend fun readLine(): String = error("No GCS readback in this test")
+            private var lastCommand: String? = null
+            override suspend fun writeLine(command: String) { lastCommand = command }
+            override suspend fun readLine(): String = when (lastCommand) {
+                "ERR?" -> "0"
+                else -> error("Unexpected GCS query: $lastCommand")
+            }
             override fun close() { isOpen = false }
         }
         return PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO)
