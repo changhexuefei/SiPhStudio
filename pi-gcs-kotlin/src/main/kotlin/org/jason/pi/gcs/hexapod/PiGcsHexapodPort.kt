@@ -32,9 +32,32 @@ class PiGcsHexapodPort(
     val motionState: StateFlow<PiMotionState> = _motionState.asStateFlow()
 
     override suspend fun connect() {
-        check(!recoveryRequired) { "PI motion recovery required; reconnect alone cannot unlock movement" }
-        device.connect()
-        _motionState.value = PiMotionState(PiMotionPhase.Ready)
+        val epoch = synchronized(stateLock) {
+            check(!recoveryRequired && !stopInProgress) {
+                "PI motion recovery required; reconnect alone cannot unlock movement"
+            }
+            safetyEpoch.get()
+        }
+        try {
+            device.connect()
+            synchronized(stateLock) {
+                check(!recoveryRequired && !stopInProgress && safetyEpoch.get() == epoch) {
+                    "PI connect invalidated by Stop or safety fault"
+                }
+                _motionState.value = PiMotionState(PiMotionPhase.Ready)
+            }
+        } catch (failure: Throwable) {
+            val ownsFailure = synchronized(stateLock) {
+                if (safetyEpoch.get() != epoch) false else {
+                    safetyEpoch.incrementAndGet()
+                    recoveryRequired = true
+                    _motionState.value = PiMotionState(PiMotionPhase.RecoveryRequired, failure.message)
+                    true
+                }
+            }
+            if (ownsFailure) device.close()
+            throw failure
+        }
     }
 
     override suspend fun disconnect() {

@@ -199,6 +199,42 @@ class PiMotionStateTest {
     }
 
     @Test
+    fun failedConnectLatchesRecoveryAndClosesTransport() = runBlocking {
+        val transport = SafetyTransport()
+        transport.failOpen = true
+        val port = PiGcsHexapodPort(
+            GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X)
+        )
+        assertFailsWith<IllegalStateException> { port.connect() }
+        assertEquals(PiMotionPhase.RecoveryRequired, port.motionState.value.phase)
+        assertFalse(port.motionState.value.canMove)
+        assertFalse(transport.isOpen)
+        assertFailsWith<IllegalStateException> { port.connect() }
+    }
+
+    @Test
+    fun stopDuringPendingConnectNeverRestoresReady() = runBlocking {
+        val transport = SafetyTransport()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        transport.openStarted = entered
+        transport.pauseOpen = release
+        val port = PiGcsHexapodPort(
+            GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X)
+        )
+        val connecting = async { runCatching { port.connect() } }
+        entered.await()
+        val stopping = async { runCatching { port.stop() } }
+        while (port.motionState.value.phase != PiMotionPhase.Stopping &&
+            port.motionState.value.phase != PiMotionPhase.RecoveryRequired) yield()
+        release.complete(Unit)
+        connecting.await()
+        stopping.await()
+        assertEquals(PiMotionPhase.RecoveryRequired, port.motionState.value.phase)
+        assertFalse(port.motionState.value.canMove)
+    }
+
+    @Test
     fun recoveryRejectsControllerErrorAndOutOfRangePosition() = runBlocking {
         val transport = SafetyTransport()
         val port = PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X))
@@ -223,6 +259,9 @@ private class SafetyTransport : GcsTransport {
         private set
     var onTarget = true
     var failStop = false
+    var failOpen = false
+    var openStarted: CompletableDeferred<Unit>? = null
+    var pauseOpen: CompletableDeferred<Unit>? = null
     var controllerError = 0
     var maxX = 10.0
     var failPositionRead = false
@@ -233,7 +272,12 @@ private class SafetyTransport : GcsTransport {
     var pauseRecovery: CompletableDeferred<Unit>? = null
     var recoveryReadStarted: CompletableDeferred<Unit>? = null
     private var last = ""
-    override suspend fun open() { isOpen = true }
+    override suspend fun open() {
+        openStarted?.complete(Unit)
+        pauseOpen?.await()
+        if (failOpen) error("Simulated connect failure")
+        isOpen = true
+    }
     override suspend fun writeLine(command: String) {
         check(isOpen)
         if (failStop && command == "STP") error("Simulated STP failure")
