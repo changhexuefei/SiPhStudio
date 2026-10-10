@@ -5,6 +5,7 @@ import java.net.ServerSocket
 import java.net.SocketException
 import kotlin.concurrent.thread
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import org.jason.pi.gcs.hexapod.PiHexapodPose
 
 /**
@@ -18,9 +19,11 @@ import org.jason.pi.gcs.hexapod.PiHexapodPose
 class VirtualPiGcsTcpServer(
     private val model: VirtualPiHexapodState = VirtualPiHexapodState(),
     port: Int = 0,
-    private val fault: VirtualGcsFault = VirtualGcsFault.None
+    private val fault: VirtualGcsFault = VirtualGcsFault.None,
+    val diagnostics: VirtualGcsDiagnosticEvidence = VirtualGcsDiagnosticEvidence()
 ) : AutoCloseable {
     private val faultTriggered = AtomicBoolean(false)
+    private val connectionIds = AtomicLong()
     private val listener = ServerSocket(port, 8, InetAddress.getLoopbackAddress())
     private val clients = mutableSetOf<java.net.Socket>()
     private val clientLock = Any()
@@ -32,7 +35,9 @@ class VirtualPiGcsTcpServer(
     private val acceptThread = thread(name = "virtual-pi-gcs-accept", isDaemon = true) {
         while (running) {
             val socket = try { listener.accept() } catch (_: SocketException) { break }
+            val connectionId = connectionIds.incrementAndGet()
             synchronized(clientLock) { clients.add(socket) }
+            diagnostics.record(connectionId, "CONNECTED")
             thread(name = "virtual-pi-gcs-client", isDaemon = true) {
                 try {
                     socket.use { client ->
@@ -47,12 +52,20 @@ class VirtualPiGcsTcpServer(
                                 VirtualGcsFault.None -> false
                             }
                             val injected = if (eligible && faultTriggered.compareAndSet(false, true)) fault else VirtualGcsFault.None
-                            if (injected == VirtualGcsFault.Disconnect) break
+                            if (injected == VirtualGcsFault.Disconnect) {
+                                diagnostics.record(connectionId, "QUERY", readOnlyCommand, "FAULT_DISCONNECT", injected.name)
+                                break
+                            }
                             val response = when (injected) {
                                 VirtualGcsFault.MalformedPosition -> if (readOnlyCommand == "POS? X Y Z U V W") "X=bad\\n" else respond(readOnlyCommand)
                                 VirtualGcsFault.TruncatedPosition -> if (readOnlyCommand == "POS? X Y Z U V W") "X=0\\nY=0\\n" else respond(readOnlyCommand)
                                 else -> respond(readOnlyCommand)
-                            } ?: break
+                            }
+                            if (response == null) {
+                                diagnostics.record(connectionId, "QUERY", "REJECTED", "UNSUPPORTED")
+                                break
+                            }
+                            diagnostics.record(connectionId, "QUERY", readOnlyCommand, if (injected == VirtualGcsFault.None) "REPLIED" else "FAULT_REPLY", if (injected == VirtualGcsFault.None) null else injected.name)
                             writer.write(response)
                             writer.flush()
                             if (injected == VirtualGcsFault.TruncatedPosition) break
@@ -62,6 +75,7 @@ class VirtualPiGcsTcpServer(
                     // Isolated test peer; close/disconnect is expected in lifecycle tests.
                 } finally {
                     synchronized(clientLock) { clients.remove(socket) }
+                    diagnostics.record(connectionId, "DISCONNECTED")
                 }
             }
         }
@@ -89,6 +103,7 @@ class VirtualPiGcsTcpServer(
         listener.close()
         synchronized(clientLock) { clients.toList().forEach { it.close() } }
         acceptThread.join(2_000)
+        diagnostics.record(0, "SERVER_CLOSED")
     }
 }
 
