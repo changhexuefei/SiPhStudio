@@ -28,6 +28,9 @@ class PiRuntimeMotionCommands(scope: CoroutineScope) : AutoCloseable {
         synchronized(lock) {
             check(!closed) { "PI command binding is closed" }
             check(!motionInFlight && !stopInFlight) { "Cannot replace PI session during motion or Stop" }
+            check(port == null || port !== activePort) {
+                "PI session is already bound; rebind would reset its Stop latch"
+            }
             // First invalidate the old command route; then swap the UI projection.
             gateway = null
             activePort = null
