@@ -120,6 +120,7 @@ class PiMotionStateTest {
         moving.await()
         stopping.await()
         assertEquals(PiMotionPhase.RecoveryRequired, port.motionState.value.phase)
+        assertEquals("Stop requested; physical stop unverified", port.motionState.value.reason)
         assertFalse(port.motionState.value.canMove)
     }
 
