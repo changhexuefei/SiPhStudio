@@ -18,6 +18,6 @@ class PiRuntimeModeGuardTest {
         assertTrue(physical.positioner.requiresVerifiedPiState)
         assertEquals(PiUiMotionPhase.Disconnected.name, physical.positioner.piMotionPhase)
         assertTrue(physical.status.isError)
-        assertTrue(physical.status.message.contains("denied"))
+        assertTrue(physical.status.message?.contains("denied") == true)
     }
 }
