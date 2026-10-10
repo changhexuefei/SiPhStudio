@@ -55,4 +55,12 @@ class PiHexapodUnitConfigTest {
         assertEquals(2000.0, converted.getValue(PiAxis.X).endInclusive)
         assertEquals(-5.0, converted.getValue(PiAxis.U).start)
     }
+    @Test
+    fun micrometerControllerDoesNotScaleLinearAxis() {
+        val config = PiHexapodUnitConfig.MicrometerDegree
+        val command = config.toCommandValues(PiHexapodPose.ZERO.copy(xUm = 12.5))
+        assertEquals(12.5, command.getValue(PiAxis.X))
+        assertEquals(12.5, config.fromCommandValues(command).xUm)
+    }
+
 }
