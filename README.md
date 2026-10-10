@@ -80,6 +80,10 @@ pi-gcs-kotlin            GCS 客户端、TCP 传输、六轴单位转换和运�
 
 在实际连接控制器前，请使用 [Physical 只读现场验收记录模板](./docs/validation/pi-physical-readonly-acceptance.md)。模板包含受控的 Connect → IDN → POS → Disconnect 步骤、故障测试约束、证据字段及明确的 NOT RUN 初始状态。此模板并不表示现场已通过验收。
 
+### 无真实六轴设备时的官方仿真器联调
+
+可参考 [PI 官方仿真器兼容性准备与测试矩阵](./docs/validation/pi-official-emulator-compatibility.md)，使用独立安装的 PIHexapodEmulator 做 TCP/IP 与 GCS 只读协议兼容性检查。当前官方仿真器测试状态为 **NOT RUN**，不代表软件已通过官方模拟器或真实设备验收。
+
 ## 项目状态
 
 当前重点是 **桌面 Physical TCP 连接 + 六轴只读观测**，不是已验收的六轴自动寻光生产系统。有关问题和改进请使用仓库 [Issues](https://github.com/changhexuefei/SiPhStudio/issues) 与 [Pull Requests](https://github.com/changhexuefei/SiPhStudio/pulls)。
