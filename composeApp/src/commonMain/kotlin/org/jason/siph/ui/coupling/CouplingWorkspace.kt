@@ -80,7 +80,7 @@ private fun CouplingWorkspaceTwoColumns(
 
             CouplingConfigPanel(
                 state = state.coupling.config,
-                enabled = !state.coupling.isRunning,
+                enabled = !state.coupling.isRunning && state.positioner.couplingAllowed,
                 onConfigChange = {
                     onAction(CouplingToolAction.UpdateCouplingConfig(it))
                 },
@@ -128,7 +128,7 @@ private fun CouplingWorkspaceSingleColumn(
 
         CouplingConfigPanel(
             state = state.coupling.config,
-            enabled = !state.coupling.isRunning,
+            enabled = !state.coupling.isRunning && state.positioner.couplingAllowed,
             onConfigChange = {
                 onAction(CouplingToolAction.UpdateCouplingConfig(it))
             },
