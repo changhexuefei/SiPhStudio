@@ -145,6 +145,21 @@ class PiMotionStateTest {
     }
 
     @Test
+    fun poseReadbackFailureLocksMovementAndDisconnects() = runBlocking {
+        val transport = SafetyTransport()
+        val port = PiGcsHexapodPort(
+            GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X)
+        )
+        port.connect()
+        transport.failPositionRead = true
+        assertFailsWith<IllegalStateException> { port.currentPose() }
+        assertEquals(PiMotionPhase.RecoveryRequired, port.motionState.value.phase)
+        assertFalse(port.motionState.value.canMove)
+        assertFalse(transport.isOpen)
+        assertFailsWith<IllegalStateException> { port.connect() }
+    }
+
+    @Test
     fun recoveryRejectsControllerErrorAndOutOfRangePosition() = runBlocking {
         val transport = SafetyTransport()
         val port = PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X))
@@ -171,6 +186,7 @@ private class SafetyTransport : GcsTransport {
     var failStop = false
     var controllerError = 0
     var maxX = 10.0
+    var failPositionRead = false
     var pauseOnTarget: CompletableDeferred<Unit>? = null
     var onTargetReadStarted: CompletableDeferred<Unit>? = null
     var pauseRecovery: CompletableDeferred<Unit>? = null
@@ -189,6 +205,7 @@ private class SafetyTransport : GcsTransport {
             "TMN? X" -> "X=-10"
             "TMX? X" -> "X=$maxX"
             "POS? X" -> {
+                if (failPositionRead) error("Simulated position read failure")
                 recoveryReadStarted?.complete(Unit)
                 pauseRecovery?.await()
                 "X=0"
