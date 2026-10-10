@@ -53,7 +53,7 @@ class PiPhysicalSessionIntegrationTest {
         val secondTransport = ReadOnlyTransport("PI,HEXAPOD,B,2", 0.005)
         lifecycle.connect(makePort(secondTransport))
         coordinator.invalidate()
-        val b = coordinator.refresh(disconnected)
+        val b = coordinator.refresh(requireNotNull(disconnected))
         assertEquals("PI,HEXAPOD,B,2", b?.positioner?.idn)
         assertEquals(5.0, b?.positioner?.currentPose?.xUm)
         assertEquals(0, secondTransport.motionCommands)
