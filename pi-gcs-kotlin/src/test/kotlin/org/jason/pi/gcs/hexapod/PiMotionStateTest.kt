@@ -313,6 +313,31 @@ class PiMotionStateTest {
     }
 
     @Test
+    fun overlappingStopDoesNotFinishAnActiveStopEarly() = runBlocking {
+        val transport = SafetyTransport()
+        val port = PiGcsHexapodPort(
+            GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X)
+        )
+        port.connect()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        transport.recoveryReadStarted = entered
+        transport.pauseRecovery = release
+        val query = async { runCatching { port.currentPose() } }
+        entered.await()
+        val first = async { runCatching { port.stop() } }
+        while (port.motionState.value.phase != PiMotionPhase.Stopping) yield()
+        port.stop()
+        assertEquals(PiMotionPhase.Stopping, port.motionState.value.phase)
+        assertFalse(port.motionState.value.canMove)
+        release.complete(Unit)
+        query.await()
+        assertEquals(true, first.await().isSuccess)
+        assertEquals(PiMotionPhase.RecoveryRequired, port.motionState.value.phase)
+        assertFalse(transport.isOpen)
+    }
+
+    @Test
     fun recoveryRejectsControllerErrorAndOutOfRangePosition() = runBlocking {
         val transport = SafetyTransport()
         val port = PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X))
