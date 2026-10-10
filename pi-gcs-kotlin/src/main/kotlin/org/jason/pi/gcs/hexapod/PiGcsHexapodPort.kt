@@ -131,13 +131,16 @@ class PiGcsHexapodPort(
         }
     }
 
-    override suspend fun currentPose(): PiHexapodPose {
+    override suspend fun currentPose(): PiHexapodPose =
+        guardedRead { unitConfig.fromCommandValues(device.qPOS(axes)) }
+
+    private suspend fun <T> guardedRead(block: suspend () -> T): T {
         val queryEpoch = synchronized(stateLock) {
             ensureConnected()
             safetyEpoch.get()
         }
         return try {
-            unitConfig.fromCommandValues(device.qPOS(axes))
+            block()
         } catch (failure: Throwable) {
             val ownsFailure = synchronized(stateLock) {
                 if (safetyEpoch.get() != queryEpoch) false else {
