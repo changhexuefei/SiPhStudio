@@ -66,6 +66,9 @@ data class PositionerUiState(
     val recoveryLocked: Boolean
         get() = piMotionPhase == "Fault" || piMotionPhase == "RecoveryRequired" ||
             piMotionPhase == "Stopping"
+
+    /** Expose the same gate to automatic coupling and dispatchers. */
+    val couplingAllowed: Boolean get() = motionAllowed
 }
 
 enum class CouplingState(
