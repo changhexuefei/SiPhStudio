@@ -85,6 +85,42 @@ class PiRuntimeMotionCommandsTest {
     }
 
     @Test
+    fun externallyStartedStopCannotBeBypassedByUnbindingSession() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val transport = object : GcsTransport {
+            override var isOpen = false
+                private set
+            private var last = ""
+            override suspend fun open() { isOpen = true }
+            override suspend fun writeLine(command: String) {
+                last = command
+                if (command == "STP") {
+                    entered.complete(Unit)
+                    release.await()
+                }
+            }
+            override suspend fun readLine(): String =
+                if (last == "ERR?") "0" else error("Unexpected query: $last")
+            override fun close() { isOpen = false }
+        }
+        val port = PiGcsHexapodPort(
+            GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X)
+        )
+        port.connect()
+        val commands = PiRuntimeMotionCommands(this)
+        commands.bind(port)
+        val stop = async { port.stop() } // External controller caller, not commands.stop().
+        entered.await()
+        assertFailsWith<IllegalStateException> { commands.bind(null) }
+        release.complete(Unit)
+        stop.await()
+        commands.bind(null)
+        assertFalse(commands.uiState.value.motionAllowed)
+        commands.close()
+    }
+
+    @Test
     fun selectedDisconnectedSessionCannotDispatchMovement() = runBlocking {
         val transport = object : GcsTransport {
             override val isOpen: Boolean = false
