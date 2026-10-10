@@ -28,14 +28,16 @@ class PiGcsHexapodPort(
     private val safetyEpoch = AtomicLong(0L)
     private val stateLock = Any()
     @Volatile private var stopInProgress = false
+    private var connectInProgress = false
     private val _motionState = MutableStateFlow(PiMotionState())
     val motionState: StateFlow<PiMotionState> = _motionState.asStateFlow()
 
     override suspend fun connect() {
         val epoch = synchronized(stateLock) {
-            check(!recoveryRequired && !stopInProgress) {
-                "PI motion recovery required; reconnect alone cannot unlock movement"
+            check(!recoveryRequired && !stopInProgress && !connectInProgress) {
+                "PI recovery required or connection already pending"
             }
+            connectInProgress = true
             safetyEpoch.get()
         }
         try {
@@ -56,7 +58,13 @@ class PiGcsHexapodPort(
                 }
             }
             if (ownsFailure) device.close()
+            else synchronized(stateLock) {
+                // Disconnect invalidated this connect; its late socket must not survive.
+                if (recoveryRequired && !stopInProgress) device.close()
+            }
             throw failure
+        } finally {
+            synchronized(stateLock) { connectInProgress = false }
         }
     }
 
@@ -216,8 +224,19 @@ class PiGcsHexapodPort(
         guardedRead { PiTools.queryTravelRange(device = device, axes = axes).toClosedRangeMap() }
 
     override fun close() {
-        device.close()
-        if (!recoveryRequired) _motionState.value = PiMotionState(PiMotionPhase.Disconnected)
+        synchronized(stateLock) {
+            safetyEpoch.incrementAndGet()
+            val unsafe = connectInProgress ||
+                _motionState.value.phase == PiMotionPhase.Moving ||
+                _motionState.value.phase == PiMotionPhase.Stopping
+            if (unsafe) recoveryRequired = true
+            device.close()
+            if (!stopInProgress) {
+                _motionState.value = if (recoveryRequired) {
+                    PiMotionState(PiMotionPhase.RecoveryRequired, "Disconnected before standstill verified")
+                } else PiMotionState(PiMotionPhase.Disconnected)
+            }
+        }
     }
 
     private suspend fun waitForTarget(timeoutMs: Long = 10_000L) {
