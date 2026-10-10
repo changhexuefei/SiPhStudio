@@ -3,6 +3,7 @@ package org.jason.pi.gcs.hexapod
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 import org.jason.pi.gcs.core.GcsClient
 import org.jason.pi.gcs.core.GcsDevice
@@ -122,6 +123,25 @@ class PiMotionStateTest {
         assertEquals(PiMotionPhase.RecoveryRequired, port.motionState.value.phase)
         assertEquals("Stop requested; physical stop unverified", port.motionState.value.reason)
         assertFalse(port.motionState.value.canMove)
+    }
+
+    @Test
+    fun cancellingPendingOnTargetQueryKeepsMotionLocked() = runBlocking {
+        val transport = SafetyTransport()
+        val port = PiGcsHexapodPort(
+            GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X)
+        )
+        port.connect()
+        val entered = CompletableDeferred<Unit>()
+        transport.onTargetReadStarted = entered
+        transport.pauseOnTarget = CompletableDeferred()
+        val task = launch { port.waitOnTarget(9_000L) }
+        entered.await()
+        task.cancel()
+        task.join()
+        assertEquals(PiMotionPhase.RecoveryRequired, port.motionState.value.phase)
+        assertFalse(port.motionState.value.canMove)
+        assertFalse(transport.isOpen)
     }
 
     @Test
