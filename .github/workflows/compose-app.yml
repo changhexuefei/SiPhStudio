@@ -28,7 +28,7 @@ jobs:
   validate:
     name: Compile and test Compose JVM
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 25
 
     steps:
       - name: Checkout
@@ -45,15 +45,19 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Compile Compose JVM
+        timeout-minutes: 15
+        shell: pwsh
         run: |
-          .\\gradlew.bat :composeApp:compileKotlinJvm --no-daemon --stacktrace
+          $ErrorActionPreference = "Stop"
+          & .\gradlew.bat :composeApp:compileKotlinJvm --no-daemon --stacktrace --info --console=plain --max-workers=2 2>&1 | Tee-Object -FilePath compose-build.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload Compose build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: compose-build-log
-          path: composeApp/build/reports
+          path: compose-build.log
           if-no-files-found: ignore
           retention-days: 7
 
