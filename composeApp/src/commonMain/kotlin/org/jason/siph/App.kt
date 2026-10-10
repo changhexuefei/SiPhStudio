@@ -105,6 +105,18 @@ fun App(
                                     ) {
                                         state = updated
                                     }
+                                } catch (failure: Exception) {
+                                    if (ticket == readbackVersion &&
+                                        runtimeMode == PiRuntimeMode.Physical
+                                    ) {
+                                        state = state.rejectUnwiredPhysicalAction().copy(
+                                            status = state.status.copy(
+                                                isError = true,
+                                                message = "Physical readback unavailable: " +
+                                                    (failure.message ?: "Unknown error")
+                                            )
+                                        )
+                                    }
                                 } finally {
                                     if (ticket == readbackVersion) reading = false
                                 }
