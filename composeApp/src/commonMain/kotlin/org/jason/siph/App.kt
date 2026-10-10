@@ -106,6 +106,17 @@ private fun reduceCouplingToolAction(
     state: CouplingToolUiState,
     action: CouplingToolAction
 ): CouplingToolUiState {
+    // Fail closed at the action reducer as well as at the UI button.
+    // This protects against keyboard shortcuts, stale clicks and direct dispatch.
+    val requiresMotionPermission = action is CouplingToolAction.JogPositioner ||
+        action == CouplingToolAction.MoveSafe ||
+        action == CouplingToolAction.StartCoupling
+    if (requiresMotionPermission && !state.positioner.motionAllowed) {
+        return state.copy(status = state.status.copy(
+            isError = true,
+            message = "Motion denied: positioner is not Ready or safety state is unverified"
+        ))
+    }
     return when (action) {
         is CouplingToolAction.SelectPage -> {
             state.copy(
