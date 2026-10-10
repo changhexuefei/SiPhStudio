@@ -170,6 +170,37 @@ class PiPhysicalConnectionLifecycleTest {
         Unit
     }
 
+    @Test
+    fun failedWindowShutdownKeepsSessionForSafeRetry() = runBlocking {
+        val transport = object : GcsTransport {
+            override var isOpen = false
+                private set
+            var closeFailures = 1
+            override suspend fun open() { isOpen = true }
+            override suspend fun writeLine(command: String) = Unit
+            override suspend fun readLine(): String = error("Unexpected read")
+            override fun close() {
+                if (closeFailures > 0) {
+                    closeFailures--
+                    error("Simulated close failure")
+                }
+                isOpen = false
+            }
+        }
+        val commands = PiRuntimeMotionCommands(this)
+        val owner = PiPhysicalConnectionLifecycle(commands)
+        owner.connect(makePort(transport))
+        assertFailsWith<IllegalStateException> { owner.disconnectIfConnected() }
+        assertTrue(transport.isOpen)
+        assertFalse(commands.uiState.value.motionAllowed)
+        assertFailsWith<IllegalStateException> { owner.connect(makePort(FakeTransport())) }
+        owner.disconnectIfConnected()
+        assertFalse(transport.isOpen)
+        assertFalse(commands.uiState.value.motionAllowed)
+        commands.close()
+        Unit
+    }
+
     private fun makePort(transport: GcsTransport): PiGcsHexapodPort =
         PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO)
 
