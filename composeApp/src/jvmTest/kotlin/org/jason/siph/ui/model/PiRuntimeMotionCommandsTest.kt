@@ -54,6 +54,37 @@ class PiRuntimeMotionCommandsTest {
     }
 
     @Test
+    fun stopUnbindRebindCannotBypassRecoveryLatch() = runBlocking {
+        val transport = object : GcsTransport {
+            override var isOpen = false
+                private set
+            private var last = ""
+            override suspend fun open() { isOpen = true }
+            override suspend fun writeLine(command: String) { last = command }
+            override suspend fun readLine(): String =
+                if (last == "ERR?") "0" else error("Unexpected query: $last")
+            override fun close() { isOpen = false }
+        }
+        val port = PiGcsHexapodPort(
+            GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X)
+        )
+        port.connect()
+        val commands = PiRuntimeMotionCommands(this)
+        commands.bind(port)
+        commands.stop()
+        commands.bind(null)
+        assertFalse(commands.uiState.value.motionAllowed)
+        commands.bind(port)
+        assertFalse(commands.uiState.value.motionAllowed)
+        assertFailsWith<IllegalStateException> { commands.moveToSafePose() }
+        assertFailsWith<IllegalStateException> { port.connect() }
+        assertFalse(transport.isOpen)
+        commands.bind(null)
+        commands.close()
+        port.close()
+    }
+
+    @Test
     fun selectedDisconnectedSessionCannotDispatchMovement() = runBlocking {
         val transport = object : GcsTransport {
             override val isOpen: Boolean = false
