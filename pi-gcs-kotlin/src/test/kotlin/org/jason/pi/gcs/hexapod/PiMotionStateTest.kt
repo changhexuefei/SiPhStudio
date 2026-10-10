@@ -51,6 +51,24 @@ class PiMotionStateTest {
         assertFailsWith<IllegalStateException> { port.connect() }
     }
 
+    @Test
+    fun recoveryRejectsControllerErrorAndOutOfRangePosition() = runBlocking {
+        val transport = SafetyTransport()
+        val port = PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X))
+        port.connect()
+        port.stop()
+        transport.controllerError = 5
+        assertFailsWith<IllegalStateException> { port.recover(operatorConfirmedSafe = true) }
+        assertEquals(PiMotionPhase.RecoveryRequired, port.motionState.value.phase)
+        transport.controllerError = 0
+        transport.maxX = -1.0
+        assertFailsWith<IllegalStateException> { port.recover(operatorConfirmedSafe = true) }
+        assertEquals(PiMotionPhase.RecoveryRequired, port.motionState.value.phase)
+        transport.maxX = 10.0
+        port.recover(operatorConfirmedSafe = true)
+        assertEquals(PiMotionPhase.Ready, port.motionState.value.phase)
+    }
+
 }
 
 private class SafetyTransport : GcsTransport {
@@ -58,6 +76,8 @@ private class SafetyTransport : GcsTransport {
         private set
     var onTarget = true
     var failStop = false
+    var controllerError = 0
+    var maxX = 10.0
     private var last = ""
     override suspend fun open() { isOpen = true }
     override suspend fun writeLine(command: String) {
@@ -68,7 +88,9 @@ private class SafetyTransport : GcsTransport {
     override suspend fun readLine(): String {
         check(isOpen)
         return when (last) {
-            "ERR?" -> "0"
+            "ERR?" -> controllerError.toString()
+            "TMN? X" -> "X=-10"
+            "TMX? X" -> "X=$maxX"
             "POS? X" -> "X=0"
             "ONT? X" -> if (onTarget) "X=1" else "X=0"
             else -> error("Unknown query: $last")
