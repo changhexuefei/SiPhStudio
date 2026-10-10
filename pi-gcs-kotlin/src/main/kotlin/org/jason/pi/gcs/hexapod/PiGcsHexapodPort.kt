@@ -1,5 +1,8 @@
 package org.jason.pi.gcs.hexapod
 
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.jason.pi.gcs.core.GcsDevice
 import org.jason.pi.gcs.pitools.PiTools
 
@@ -17,7 +20,10 @@ class PiGcsHexapodPort(
         require(it.isNotEmpty()) { "PI hexapod axes must not be empty" }
     }
 
+    @Volatile private var recoveryRequired = false
+
     override suspend fun connect() {
+        check(!recoveryRequired) { "PI motion recovery required; reconnect alone cannot unlock movement" }
         device.connect()
     }
 
@@ -54,10 +60,9 @@ class PiGcsHexapodPort(
             "No configured PI axes are available for moveTo"
         }
 
-        device.moveAbsolute(commandValues)
-
-        if (wait) {
-            waitOnTarget()
+        guardedMotion {
+            device.moveAbsolute(commandValues)
+            if (wait) waitForTarget()
         }
     }
 
@@ -74,10 +79,9 @@ class PiGcsHexapodPort(
 
         if (commandDeltas.isEmpty()) return
 
-        device.moveRelative(commandDeltas)
-
-        if (wait) {
-            waitOnTarget()
+        guardedMotion {
+            device.moveRelative(commandDeltas)
+            if (wait) waitForTarget()
         }
     }
 
@@ -88,17 +92,14 @@ class PiGcsHexapodPort(
 
     override suspend fun waitOnTarget(timeoutMs: Long) {
         ensureConnected()
-        PiTools.waitOnTarget(
-            device = device,
-            axes = axes,
-            timeoutMs = timeoutMs,
-            pollDelayMs = 100L
-        )
+        guardedMotion { waitForTarget(timeoutMs) }
     }
 
     override suspend fun stop() {
-        ensureConnected()
-        device.stopAll()
+        recoveryRequired = true
+        if (device.isOpen) {
+            try { device.stopAll() } finally { device.close() }
+        }
     }
 
     override suspend fun moveToSafePose() {
@@ -123,7 +124,27 @@ class PiGcsHexapodPort(
         device.close()
     }
 
+    private suspend fun waitForTarget(timeoutMs: Long = 10_000L) {
+        PiTools.waitOnTarget(device, axes, timeoutMs, pollDelayMs = 100L)
+    }
+
+    private suspend fun guardedMotion(block: suspend () -> Unit) {
+        ensureConnected()
+        try {
+            block()
+        } catch (failure: Throwable) {
+            recoveryRequired = true
+            withContext(NonCancellable) {
+                try { withTimeout(2_000L) { if (device.isOpen) device.stopAll() } }
+                catch (_: Exception) { /* Lost communication cannot confirm physical stop. */ }
+                finally { device.close() }
+            }
+            throw failure
+        }
+    }
+
     private fun ensureConnected() {
+        check(!recoveryRequired) { "PI motion recovery required; motion locked" }
         check(device.isOpen) {
             "PI GCS Hexapod 尚未连接"
         }
