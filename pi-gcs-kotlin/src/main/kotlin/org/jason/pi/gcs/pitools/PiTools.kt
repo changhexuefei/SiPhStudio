@@ -1,6 +1,9 @@
 package org.jason.pi.gcs.pitools
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.delay
 import org.jason.pi.gcs.core.GcsDevice
 import org.jason.pi.gcs.core.PiGcsTimeoutException
@@ -151,12 +154,28 @@ object PiTools {
         waitOptions: PiWaitOptions = PiWaitOptions.Default
     ) {
         require(targets.isNotEmpty()) { "moveAndWait targets 不能为空" }
+        // Once MOV has been accepted, cancellation or a failed wait must not
+        // leave the session eligible for further automatic motion.
         device.moveAbsolute(targets)
-        waitOnTarget(
-            device = device,
-            axes = targets.keys.toList(),
-            options = waitOptions
-        )
+        try {
+            waitOnTarget(
+                device = device,
+                axes = targets.keys.toList(),
+                options = waitOptions
+            )
+        } catch (failure: Throwable) {
+            withContext(NonCancellable) {
+                try {
+                    // Stop is best effort: a lost link cannot confirm physical stop.
+                    withTimeout(2_000L) { device.stopAll() }
+                } catch (_: Exception) {
+                    // Preserve the original fault and invalidate the session below.
+                } finally {
+                    device.close()
+                }
+            }
+            throw failure
+        }
     }
 
     suspend fun waitOnTarget(
