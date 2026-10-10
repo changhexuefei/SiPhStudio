@@ -57,11 +57,13 @@ data class PositionerUiState(
     val isMoving: Boolean = false,
     val errorMessage: String? = null,
     /** Null while legacy/simulated runtime has not supplied PI safety state. */
-    val piMotionPhase: String? = null
+    val piMotionPhase: String? = null,
+    /** Real hardware must not run without a verified PI safety state. */
+    val requiresVerifiedPiState: Boolean = false
 ) {
     val motionAllowed: Boolean
         get() = connected && !isMoving && errorMessage == null &&
-            (piMotionPhase == null || piMotionPhase == "Ready")
+            (piMotionPhase == "Ready" || (!requiresVerifiedPiState && piMotionPhase == null))
 
     val recoveryLocked: Boolean
         get() = piMotionPhase == "Fault" || piMotionPhase == "RecoveryRequired" ||
