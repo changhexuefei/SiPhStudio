@@ -20,4 +20,19 @@ class PiRuntimeModeGuardTest {
         assertTrue(physical.status.isError)
         assertTrue(physical.status.message?.contains("denied") == true)
     }
+    @Test
+    fun physicalModeAllowsPageAndStepEditsButNeverDemoMovement() {
+        val disconnected = CouplingToolUiState().rejectUnwiredPhysicalAction()
+        val configured = disconnected
+            .reduceUnwiredPhysicalAction(CouplingToolAction.UpdateLinearStep(2.5))
+            .reduceUnwiredPhysicalAction(CouplingToolAction.UpdateAngleStep(0.02))
+        assertEquals(2.5, configured.positioner.linearStepUm)
+        assertEquals(0.02, configured.positioner.angleStepDeg)
+        assertFalse(configured.positioner.motionAllowed)
+        val denied = configured.reduceUnwiredPhysicalAction(CouplingToolAction.MoveSafe)
+        assertTrue(denied.status.isError)
+        assertFalse(denied.positioner.motionAllowed)
+        assertFalse(denied.positioner.connected)
+    }
+
 }
