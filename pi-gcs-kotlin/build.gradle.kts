@@ -25,3 +25,10 @@ kotlin {
 tasks.test {
     useJUnitPlatform()
 }
+tasks.register<JavaExec>("runVirtualPiGcs") {
+    group = "application"
+    description = "Run a read-only virtual PI GCS server on loopback (no hardware)"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("org.jason.pi.gcs.simulation.VirtualPiGcsLauncher")
+    standardInput = System.`in`
+}
