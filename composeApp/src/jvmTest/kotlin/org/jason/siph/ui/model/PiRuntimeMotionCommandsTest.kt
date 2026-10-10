@@ -19,6 +19,7 @@ class PiRuntimeMotionCommandsTest {
         assertFailsWith<IllegalStateException> { commands.stop() }
         commands.close()
         assertFailsWith<IllegalStateException> { commands.bind(null) }
+        Unit // JUnit4 requires a void-returning test method.
     }
 
     @Test
