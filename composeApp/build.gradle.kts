@@ -87,6 +87,7 @@ kotlin {
         }
 
         jvmMain.dependencies {
+            implementation(project(":pi-gcs-kotlin"))
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
 
