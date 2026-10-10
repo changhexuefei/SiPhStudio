@@ -208,12 +208,16 @@ class PiGcsHexapodPort(
     }
 
     override suspend fun stop() {
-        synchronized(stateLock) {
-            safetyEpoch.incrementAndGet()
+        val shouldStop = synchronized(stateLock) {
+            if (stopInProgress) false else {
+                safetyEpoch.incrementAndGet()
             recoveryRequired = true
             stopInProgress = true
-            _motionState.value = PiMotionState(PiMotionPhase.Stopping)
+                _motionState.value = PiMotionState(PiMotionPhase.Stopping)
+                true
+            }
         }
+        if (!shouldStop) return
         try {
             withContext(NonCancellable) { withTimeout(2_000L) { if (device.isOpen) device.stopAll() } }
         } finally {
