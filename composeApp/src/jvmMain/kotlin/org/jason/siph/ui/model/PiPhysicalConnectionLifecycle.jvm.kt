@@ -42,8 +42,10 @@ class PiPhysicalConnectionLifecycle(
         val port = checkNotNull(activePort) { "No active PI physical controller" }
         // Refuse unsafe unbind before initiating a physical disconnect.
         commands.bind(null)
-        activePort = null
-        // An I/O failure must be propagated, never shown as success.
+        // Retain ownership until physical disconnect completes. If transport
+        // close fails, do not allow a new controller to connect; the operator
+        // can retry disconnect without re-enabling motion in the UI.
         port.disconnect()
+        activePort = null
     }
 }
