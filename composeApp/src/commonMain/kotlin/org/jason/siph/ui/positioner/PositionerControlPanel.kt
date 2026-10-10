@@ -61,7 +61,7 @@ fun PositionerControlPanel(
             JogControlPanel(
                 linearStepUm = state.linearStepUm,
                 angleStepDeg = state.angleStepDeg,
-                enabled = state.connected && !state.isMoving,
+                enabled = state.motionAllowed,
                 onLinearStepChange = {
                     onAction(CouplingToolAction.UpdateLinearStep(it))
                 },
@@ -107,6 +107,10 @@ private fun PositionerHeaderCard(
                     MaterialTheme.colorScheme.onSurfaceVariant
                 }
             )
+
+            state.piMotionPhase?.let { phase ->
+                Text("PI motion: $phase", color = if (state.recoveryLocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+            }
 
             state.idn?.let {
                 Text(
@@ -189,7 +193,7 @@ private fun PositionerSafetyCard(
             ) {
                 Button(
                     onClick = { onAction(CouplingToolAction.MoveSafe) },
-                    enabled = state.connected && !state.isMoving,
+                    enabled = state.motionAllowed,
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Move Safe")
