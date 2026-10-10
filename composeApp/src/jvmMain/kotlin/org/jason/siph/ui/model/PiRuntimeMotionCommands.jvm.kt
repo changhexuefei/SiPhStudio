@@ -19,12 +19,14 @@ class PiRuntimeMotionCommands(scope: CoroutineScope) : AutoCloseable {
     private val uiBinding = PiRuntimeSessionBinding(scope)
     val uiState: StateFlow<PositionerUiState> get() = uiBinding.state
     private var closed = false
+    private var motionInFlight = false
     private var activePort: PiGcsHexapodPort? = null
     private var gateway: PiMotionCommandGateway? = null
 
     fun bind(port: PiGcsHexapodPort?) {
         synchronized(lock) {
             check(!closed) { "PI command binding is closed" }
+            check(!motionInFlight) { "Cannot replace PI session while motion command is active" }
             // First invalidate the old command route; then swap the UI projection.
             gateway = null
             activePort = null
@@ -36,20 +38,29 @@ class PiRuntimeMotionCommands(scope: CoroutineScope) : AutoCloseable {
         }
     }
 
-    private fun readyGateway(): PiMotionCommandGateway = synchronized(lock) {
-        check(!closed && activePort != null) { "No active PI controller session" }
-        check(activePort!!.motionState.value.phase == PiMotionPhase.Ready &&
-            uiBinding.state.value.motionAllowed) { "PI controller not verified Ready" }
-        checkNotNull(gateway) { "No active PI motion command gateway" }
+    private suspend fun dispatchMotion(block: suspend (PiMotionCommandGateway) -> Unit) {
+        val selected = synchronized(lock) {
+            check(!closed && activePort != null) { "No active PI controller session" }
+            check(!motionInFlight) { "PI motion command already active" }
+            check(activePort!!.motionState.value.phase == PiMotionPhase.Ready &&
+                uiBinding.state.value.motionAllowed) { "PI controller not verified Ready" }
+            motionInFlight = true
+            checkNotNull(gateway)
+        }
+        try {
+            block(selected)
+        } finally {
+            synchronized(lock) { motionInFlight = false }
+        }
     }
 
     suspend fun moveTo(pose: PiHexapodPose, wait: Boolean = true) =
-        readyGateway().moveTo(pose, wait)
+        dispatchMotion { it.moveTo(pose, wait) }
 
     suspend fun moveBy(delta: PiHexapodDelta, wait: Boolean = true) =
-        readyGateway().moveBy(delta, wait)
+        dispatchMotion { it.moveBy(delta, wait) }
 
-    suspend fun moveToSafePose() = readyGateway().moveToSafePose()
+    suspend fun moveToSafePose() = dispatchMotion { it.moveToSafePose() }
 
     /** Stop remains callable even when Ready permission is absent. */
     suspend fun stop() {
@@ -63,6 +74,7 @@ class PiRuntimeMotionCommands(scope: CoroutineScope) : AutoCloseable {
     override fun close() {
         synchronized(lock) {
             if (closed) return
+            check(!motionInFlight) { "Cannot dispose PI command binding while motion is active" }
             closed = true
             gateway = null
             activePort = null
