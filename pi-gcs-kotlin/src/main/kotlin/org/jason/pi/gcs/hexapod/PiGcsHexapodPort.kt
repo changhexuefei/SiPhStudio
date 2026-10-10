@@ -1,24 +1,24 @@
 package org.jason.pi.gcs.hexapod
 
-
 import org.jason.pi.gcs.core.GcsDevice
 import org.jason.pi.gcs.pitools.PiTools
 
 /**
- * 基于 PI GCS 的六轴实现。
+ * PI GCS based hexapod port.
  */
 class PiGcsHexapodPort(
     private val device: GcsDevice,
     private val safePose: PiHexapodPose,
     private val unitConfig: PiHexapodUnitConfig = PiHexapodUnitConfig(),
-    private val axes: List<PiAxis> = PiAxis.HEXAPOD_AXES
+    axes: List<PiAxis> = PiAxis.HEXAPOD_AXES
 ) : PiHexapodPort {
 
-    private var connected: Boolean = false
+    private val axes: List<PiAxis> = axes.distinct().also {
+        require(it.isNotEmpty()) { "PI hexapod axes must not be empty" }
+    }
 
     override suspend fun connect() {
         device.connect()
-        connected = true
     }
 
     override suspend fun disconnect() {
@@ -30,11 +30,8 @@ class PiGcsHexapodPort(
         return device.qIDN()
     }
 
-    override suspend fun startup(
-        reference: Boolean
-    ) {
+    override suspend fun startup(reference: Boolean) {
         ensureConnected()
-
         PiTools.startup(
             device = device,
             axes = axes,
@@ -49,8 +46,13 @@ class PiGcsHexapodPort(
     ) {
         ensureConnected()
 
-        val commandValues = unitConfig.toCommandValues(pose)
+        val commandValues = unitConfig
+            .toCommandValues(pose)
             .filterKeys { it in axes }
+
+        require(commandValues.isNotEmpty()) {
+            "No configured PI axes are available for moveTo"
+        }
 
         device.moveAbsolute(commandValues)
 
@@ -65,8 +67,12 @@ class PiGcsHexapodPort(
     ) {
         ensureConnected()
 
-        val commandDeltas = unitConfig.toCommandDeltas(delta)
+        val commandDeltas = unitConfig
+            .toCommandDeltas(delta)
             .filterKeys { it in axes }
+            .filterValues { it != 0.0 }
+
+        if (commandDeltas.isEmpty()) return
 
         device.moveRelative(commandDeltas)
 
@@ -77,16 +83,11 @@ class PiGcsHexapodPort(
 
     override suspend fun currentPose(): PiHexapodPose {
         ensureConnected()
-
-        val commandValues = device.qPOS(axes)
-        return unitConfig.fromCommandValues(commandValues)
+        return unitConfig.fromCommandValues(device.qPOS(axes))
     }
 
-    override suspend fun waitOnTarget(
-        timeoutMs: Long
-    ) {
+    override suspend fun waitOnTarget(timeoutMs: Long) {
         ensureConnected()
-
         PiTools.waitOnTarget(
             device = device,
             axes = axes,
@@ -108,14 +109,10 @@ class PiGcsHexapodPort(
     }
 
     /**
-     * 查询命令单位下的行程范围。
-     *
-     * 注意：
-     * 返回的是控制器命令单位，不是业务层 um。
+     * Returns the travel range in controller command units.
      */
     suspend fun queryCommandTravelRange(): Map<PiAxis, ClosedFloatingPointRange<Double>> {
         ensureConnected()
-
         return PiTools.queryTravelRange(
             device = device,
             axes = axes
@@ -123,12 +120,11 @@ class PiGcsHexapodPort(
     }
 
     override fun close() {
-        connected = false
         device.close()
     }
 
     private fun ensureConnected() {
-        check(connected) {
+        check(device.isOpen) {
             "PI GCS Hexapod 尚未连接"
         }
     }

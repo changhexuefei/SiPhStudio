@@ -16,6 +16,7 @@ class GcsDeviceTest {
             responses = listOf("0")
         )
         val device = GcsDevice(GcsClient(transport))
+        device.connect()
 
         device.moveAbsolute(PiAxis.X, 1.25)
 
@@ -31,6 +32,7 @@ class GcsDeviceTest {
             responses = listOf("5")
         )
         val device = GcsDevice(GcsClient(transport))
+        device.connect()
 
         val exception = assertFailsWith<PiGcsCommandException> {
             device.servoOn(PiAxis.X)
@@ -46,6 +48,7 @@ class GcsDeviceTest {
             responses = listOf("X=1.0 Y=2.5 Z=-3.0")
         )
         val device = GcsDevice(GcsClient(transport))
+        device.connect()
 
         val positions = device.qPOS(listOf(PiAxis.X, PiAxis.Y, PiAxis.Z))
 
@@ -64,6 +67,7 @@ class GcsDeviceTest {
             responses = listOf("X=1 Y=0")
         )
         val device = GcsDevice(GcsClient(transport))
+        device.connect()
 
         val states = device.qONT(listOf(PiAxis.X, PiAxis.Y))
 
@@ -77,6 +81,7 @@ class GcsDeviceTest {
             responses = listOf("X Y Z U V W")
         )
         val device = GcsDevice(GcsClient(transport))
+        device.connect()
 
         assertEquals(
             expected = PiAxis.HEXAPOD_AXES,

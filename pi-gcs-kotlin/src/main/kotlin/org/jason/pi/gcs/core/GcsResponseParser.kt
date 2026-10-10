@@ -8,12 +8,10 @@ object GcsResponseParser {
     private const val NUMBER_PATTERN: String =
         """[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?"""
 
-    // 预编译正则，避免重复创建
     private val plainNumberRegex = Regex(
         pattern = """^\s*($NUMBER_PATTERN)\s*$"""
     )
 
-    // 优化后的正则：增强了对换行符 \n 和 空格 \s 的多行兼容性
     private val axisValueRegex = Regex(
         pattern = """([A-Za-z][A-Za-z0-9_]*)\s*(?:=|:|\s)\s*($NUMBER_PATTERN)"""
     )
@@ -24,62 +22,82 @@ object GcsResponseParser {
     }
 
     /**
-     * 🚀 优化：单轴 Double 解析，优先采用低开销的字符串直接切分，不匹配时再降级用正则
+     * Parses a single-axis response.
+     *
+     * Supported examples:
+     * - X=1.234
+     * - X:1.234
+     * - X 1.234
+     * - 1.234
      */
-    fun parseAxisDouble(response: String, expectedAxis: PiAxis): Double {
+    fun parseAxisDouble(
+        response: String,
+        expectedAxis: PiAxis
+    ): Double {
         val trimmed = response.trim()
 
-        // 性能优化路径：针对最常见的 "X=1.234" 或 "X 1.234" 格式，直接走非正则的高速切分
-        val delimiterIndex = trimmed.indexOfAny(charArrayOf('=', ' ', '\t'))
-        if (delimiterIndex > 0) {
-            val axisCode = trimmed.substring(0, delimiterIndex).trim()
-            if (axisCode.equals(expectedAxis.code, ignoreCase = true)) {
-                val valueStr = trimmed.substring(delimiterIndex + 1).trim()
-                valueStr.toDoubleOrNull()?.let { return it }
-            }
+        plainNumberRegex.matchEntire(trimmed)?.let {
+            return parsePlainDouble(trimmed)
         }
 
-        // 降级路径：复杂格式（如带有其他杂质字符串）走正则解析
         val pairs = parseAxisValuePairs(trimmed)
         val match = pairs.firstOrNull {
             it.axis.equals(expectedAxis.code, ignoreCase = true)
-        } ?: throw PiGcsParseException(response, "PI GCS 响应中未找到轴 ${expectedAxis.code}")
+        } ?: throw PiGcsParseException(
+            response,
+            "PI GCS 响应中未找到轴 ${expectedAxis.code}"
+        )
 
         return match.value
     }
 
-    fun parseAxisInt(response: String, expectedAxis: PiAxis): Int {
-        return parseAxisDouble(response, expectedAxis).toInt()
+    fun parseAxisInt(
+        response: String,
+        expectedAxis: PiAxis
+    ): Int {
+        val value = parseAxisDouble(response, expectedAxis)
+        val intValue = value.toInt()
+
+        if (value != intValue.toDouble()) {
+            throw PiGcsParseException(
+                response,
+                "轴 ${expectedAxis.code} 的 PI GCS 响应不是整数: $value"
+            )
+        }
+
+        return intValue
     }
 
-    fun parseAxisBoolean(response: String, expectedAxis: PiAxis): Boolean {
+    fun parseAxisBoolean(
+        response: String,
+        expectedAxis: PiAxis
+    ): Boolean {
         return parseAxisInt(response, expectedAxis) != 0
     }
 
-    /**
-     * 🚀 优化：多轴 Map 解析
-     * 完美支持单行多轴（X=1 Y=2）和 Ktor 批量拉取到的多行多轴响应（X=1\nY=2）
-     */
-    fun parseAxisDoubleMap(response: String, expectedAxes: List<PiAxis>): Map<PiAxis, Double> {
-        require(expectedAxes.isNotEmpty()) { "expectedAxes 不能为空" }
+    fun parseAxisDoubleMap(
+        response: String,
+        expectedAxes: List<PiAxis>
+    ): Map<PiAxis, Double> {
+        val axes = expectedAxes.distinct()
+        require(axes.isNotEmpty()) { "expectedAxes 不能为空" }
 
         val pairs = parseAxisValuePairs(response)
 
         if (pairs.isEmpty()) {
-            if (expectedAxes.size == 1) {
-                return mapOf(expectedAxes.first() to parsePlainDouble(response))
+            if (axes.size == 1) {
+                return linkedMapOf(axes.first() to parsePlainDouble(response))
             }
             throw PiGcsParseException(response, "无法解析多轴 PI GCS 响应")
         }
 
-        // 优化点：使用容量确定的 HashMap，减少扩容开销
         val rawMap = HashMap<String, Double>(pairs.size * 2)
         for (pair in pairs) {
             rawMap[pair.axis.uppercase(Locale.ROOT)] = pair.value
         }
 
-        val result = HashMap<PiAxis, Double>(expectedAxes.size * 2)
-        for (axis in expectedAxes) {
+        val result = LinkedHashMap<PiAxis, Double>(axes.size)
+        for (axis in axes) {
             val value = rawMap[axis.code.uppercase(Locale.ROOT)]
                 ?: throw PiGcsParseException(response, "PI GCS 响应中缺少轴 ${axis.code}")
             result[axis] = value
@@ -88,12 +106,59 @@ object GcsResponseParser {
         return result
     }
 
-    fun parseAxisIntMap(response: String, expectedAxes: List<PiAxis>): Map<PiAxis, Int> {
-        return parseAxisDoubleMap(response, expectedAxes).mapValues { it.value.toInt() }
+    fun parseAxisIntMap(
+        response: String,
+        expectedAxes: List<PiAxis>
+    ): Map<PiAxis, Int> {
+        val doubleValues = parseAxisDoubleMap(response, expectedAxes)
+        val result = LinkedHashMap<PiAxis, Int>(doubleValues.size)
+
+        for ((axis, value) in doubleValues) {
+            val intValue = value.toInt()
+            if (value != intValue.toDouble()) {
+                throw PiGcsParseException(
+                    response,
+                    "轴 ${axis.code} 的 PI GCS 响应不是整数: $value"
+                )
+            }
+            result[axis] = intValue
+        }
+
+        return result
     }
 
-    fun parseAxisBooleanMap(response: String, expectedAxes: List<PiAxis>): Map<PiAxis, Boolean> {
-        return parseAxisIntMap(response, expectedAxes).mapValues { it.value != 0 }
+    fun parseAxisBooleanMap(
+        response: String,
+        expectedAxes: List<PiAxis>
+    ): Map<PiAxis, Boolean> {
+        val intValues = parseAxisIntMap(response, expectedAxes)
+        val result = LinkedHashMap<PiAxis, Boolean>(intValues.size)
+        for ((axis, value) in intValues) {
+            result[axis] = value != 0
+        }
+        return result
+    }
+
+    /**
+     * Returns true after all expected axis identifiers have appeared in the
+     * accumulated response. It is intentionally non-throwing so it can be used
+     * as the completion predicate while response lines are still arriving.
+     */
+    fun containsAllAxes(
+        response: String,
+        expectedAxes: Collection<PiAxis>
+    ): Boolean {
+        val axes = expectedAxes.distinct()
+        if (axes.isEmpty()) return true
+
+        val found = parseAxisValuePairs(response)
+            .asSequence()
+            .map { it.axis.uppercase(Locale.ROOT) }
+            .toHashSet()
+
+        return axes.all { axis ->
+            axis.code.uppercase(Locale.ROOT) in found
+        }
     }
 
     fun parseAxes(response: String): List<PiAxis> {
@@ -116,23 +181,17 @@ object GcsResponseParser {
             }.getOrElse {
                 throw PiGcsParseException(response, "未知 PI GCS 轴名: $token")
             }
-        }
+        }.distinct()
     }
 
-    /**
-     * 🚀 优化：解析 axis-value 键值对
-     * 增强多行扫描效率，避免创建多余的 String 副本
-     */
     fun parseAxisValuePairs(response: String): List<AxisValue> {
         if (response.isBlank()) return emptyList()
 
-        // 使用 Sequence 转换为 List，避免正则查找过程中的多重中间集合拷贝
         return axisValueRegex
             .findAll(response)
             .map { match ->
                 val axis = match.groupValues[1]
                 val valueText = match.groupValues[2]
-
                 val value = valueText.toDoubleOrNull()
                     ?: throw PiGcsParseException(response, "无法解析 PI GCS 数值: $valueText")
 
@@ -155,9 +214,7 @@ object GcsResponseParser {
             ?: throw PiGcsParseException(response, "无法解析 PI GCS Int 数值")
     }
 }
-/**
- * PI GCS 返回中的轴值对。
- */
+
 data class AxisValue(
     val axis: String,
     val value: Double
