@@ -112,6 +112,9 @@ data class PiHexapodUnitConfig(
         commandRanges: Map<PiAxis, ClosedFloatingPointRange<Double>>
     ): Map<PiAxis, ClosedFloatingPointRange<Double>> {
         return commandRanges.mapValues { (axis, range) ->
+            require(range.start.isFinite() && range.endInclusive.isFinite() && range.start <= range.endInclusive) {
+                "Invalid PI travel range for ${axis.code}: $range"
+            }
             when {
                 axis.isLinear -> {
                     commandToLinearUm(range.start)..commandToLinearUm(range.endInclusive)
@@ -168,6 +171,7 @@ data class PiHexapodUnitConfig(
     fun linearToCommand(
         valueUm: Double
     ): Double {
+        require(valueUm.isFinite()) { "Non-finite PI axis value: $valueUm" }
         return when (linearCommandUnit) {
             LinearCommandUnit.Micrometer -> valueUm
             LinearCommandUnit.Millimeter -> valueUm / 1_000.0
@@ -180,6 +184,7 @@ data class PiHexapodUnitConfig(
     fun commandToLinearUm(
         value: Double
     ): Double {
+        require(value.isFinite()) { "Non-finite PI axis value: $value" }
         return when (linearCommandUnit) {
             LinearCommandUnit.Micrometer -> value
             LinearCommandUnit.Millimeter -> value * 1_000.0
@@ -192,6 +197,7 @@ data class PiHexapodUnitConfig(
     fun angularToCommand(
         valueDeg: Double
     ): Double {
+        require(valueDeg.isFinite()) { "Non-finite PI axis value: $valueDeg" }
         return when (angularCommandUnit) {
             AngularCommandUnit.Degree -> valueDeg
         }
@@ -203,6 +209,7 @@ data class PiHexapodUnitConfig(
     fun commandToAngularDeg(
         value: Double
     ): Double {
+        require(value.isFinite()) { "Non-finite PI axis value: $value" }
         return when (angularCommandUnit) {
             AngularCommandUnit.Degree -> value
         }
