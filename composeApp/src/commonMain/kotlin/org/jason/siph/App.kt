@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
@@ -14,6 +15,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,12 +45,18 @@ import org.jason.siph.ui.siphtools.CouplingToolScreen
 @androidx.compose.ui.tooling.preview.Preview
 fun App(
     physicalReadback: (suspend (CouplingToolUiState) -> CouplingToolUiState?)? = null,
-    invalidatePhysicalReadback: () -> Unit = {}
+    invalidatePhysicalReadback: () -> Unit = {},
+    physicalConnect: (suspend (String, Int) -> CouplingToolUiState)? = null,
+    physicalDisconnect: (suspend () -> Unit)? = null
 ) {
     SiPhTheme {
         var runtimeMode by remember { mutableStateOf(PiRuntimeMode.Demo) }
         var readbackVersion by remember { mutableStateOf(0L) }
         var reading by remember { mutableStateOf(false) }
+        var connecting by remember { mutableStateOf(false) }
+        var physicalConnected by remember { mutableStateOf(false) }
+        var physicalHost by remember { mutableStateOf("") }
+        var physicalPort by remember { mutableStateOf("50000") }
         val scope = rememberCoroutineScope()
         var state by remember {
             mutableStateOf(
@@ -75,7 +83,7 @@ fun App(
                             status = CouplingToolStatusState(message = "Demo mode: simulated motion only")
                         )
                     },
-                    enabled = runtimeMode != PiRuntimeMode.Demo
+                    enabled = runtimeMode != PiRuntimeMode.Demo && !physicalConnected && !connecting
                 ) { Text("Demo") }
                 OutlinedButton(
                     onClick = {
@@ -85,8 +93,90 @@ fun App(
                         runtimeMode = PiRuntimeMode.Physical
                         state = CouplingToolUiState().rejectUnwiredPhysicalAction()
                     },
-                    enabled = runtimeMode != PiRuntimeMode.Physical
+                    enabled = runtimeMode != PiRuntimeMode.Physical && !connecting
                 ) { Text("Physical (not connected)") }
+                if (runtimeMode == PiRuntimeMode.Physical) {
+                    OutlinedTextField(
+                        value = physicalHost,
+                        onValueChange = { physicalHost = it },
+                        label = { Text("PI TCP host") },
+                        singleLine = true,
+                        enabled = !physicalConnected && !connecting,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = physicalPort,
+                        onValueChange = { physicalPort = it },
+                        label = { Text("Port") },
+                        singleLine = true,
+                        enabled = !physicalConnected && !connecting,
+                        modifier = Modifier.weight(0.45f)
+                    )
+                    Button(
+                        enabled = !physicalConnected && !connecting && physicalConnect != null,
+                        onClick = {
+                            val connect = physicalConnect
+                            if (connect != null) {
+                                connecting = true
+                                ++readbackVersion
+                                invalidatePhysicalReadback()
+                                val host = physicalHost
+                                val port = physicalPort.toIntOrNull()
+                                scope.launch {
+                                    try {
+                                        require(port != null && port in 1..65535) {
+                                            "TCP port must be 1..65535"
+                                        }
+                                        state = connect(host, port)
+                                        physicalConnected = true
+                                    } catch (cancelled: CancellationException) {
+                                        throw cancelled
+                                    } catch (failure: Exception) {
+                                        state = state.rejectUnwiredPhysicalAction().copy(
+                                            status = state.status.copy(
+                                                isError = true,
+                                                message = "Physical connect failed: " +
+                                                    (failure.message ?: "Unknown error")
+                                            )
+                                        )
+                                    } finally {
+                                        connecting = false
+                                    }
+                                }
+                            }
+                        }
+                    ) { Text(if (connecting && !physicalConnected) "Connecting..." else "Connect") }
+                    OutlinedButton(
+                        enabled = physicalConnected && !connecting && physicalDisconnect != null,
+                        onClick = {
+                            val disconnect = physicalDisconnect
+                            if (disconnect != null) {
+                                connecting = true
+                                ++readbackVersion
+                                invalidatePhysicalReadback()
+                                scope.launch {
+                                    try {
+                                        disconnect()
+                                        physicalConnected = false
+                                        state = CouplingToolUiState().rejectUnwiredPhysicalAction()
+                                    } catch (cancelled: CancellationException) {
+                                        throw cancelled
+                                    } catch (failure: Exception) {
+                                        state = state.rejectUnwiredPhysicalAction().copy(
+                                            status = state.status.copy(
+                                                isError = true,
+                                                message = "Physical disconnect failed; session retained: " +
+                                                    (failure.message ?: "Unknown error")
+                                            )
+                                        )
+                                    } finally {
+                                        connecting = false
+                                    }
+                                }
+                            }
+                        }
+                    ) { Text("Disconnect") }
+                }
                 OutlinedButton(
                     enabled = runtimeMode == PiRuntimeMode.Physical &&
                         physicalReadback != null && !reading,
