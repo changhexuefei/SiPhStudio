@@ -118,6 +118,39 @@ class PiPhysicalConnectionLifecycleTest {
         Unit
     }
 
+    @Test
+    fun poseReadbackRequiresOwnedPhysicalConnection() = runBlocking {
+        val transport = object : GcsTransport {
+            override var isOpen = false
+                private set
+            private var command = ""
+            private var nextAxis = 0
+            private val axes = listOf("X", "Y", "Z", "U", "V", "W")
+            override suspend fun open() { isOpen = true }
+            override suspend fun writeLine(value: String) {
+                command = value
+                nextAxis = 0
+            }
+            override suspend fun readLine(): String = when {
+                command.startsWith("POS?") ->
+                    axes[nextAxis++].let { "$"+"it=0" }
+                command == "ERR?" -> "0"
+                else -> error("Unexpected physical query: $"+"command")
+            }
+            override fun close() { isOpen = false }
+        }
+        val commands = PiRuntimeMotionCommands(this)
+        val owner = PiPhysicalConnectionLifecycle(commands)
+        assertFailsWith<IllegalStateException> { owner.readPose() }
+        owner.connect(makePort(transport))
+        val pose = owner.readPose()
+        assertTrue(pose.xUm == 0.0 && pose.wDeg == 0.0)
+        owner.disconnect()
+        assertFailsWith<IllegalStateException> { owner.readPose() }
+        commands.close()
+        Unit
+    }
+
     private fun makePort(transport: GcsTransport): PiGcsHexapodPort =
         PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO)
 
