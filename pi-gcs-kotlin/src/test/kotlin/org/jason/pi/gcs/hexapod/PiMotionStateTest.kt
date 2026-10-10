@@ -269,6 +269,28 @@ class PiMotionStateTest {
     }
 
     @Test
+    fun disconnectDuringPendingRecoveryCannotReauthorizeMotion() = runBlocking {
+        val transport = SafetyTransport()
+        val port = PiGcsHexapodPort(
+            GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X)
+        )
+        port.connect()
+        port.stop()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        transport.recoveryReadStarted = entered
+        transport.pauseRecovery = release
+        val restoring = async { runCatching { port.recover(operatorConfirmedSafe = true) } }
+        entered.await()
+        port.disconnect()
+        release.complete(Unit)
+        assertEquals(true, restoring.await().isFailure)
+        assertEquals(PiMotionPhase.RecoveryRequired, port.motionState.value.phase)
+        assertFalse(port.motionState.value.canMove)
+        assertFalse(transport.isOpen)
+    }
+
+    @Test
     fun recoveryRejectsControllerErrorAndOutOfRangePosition() = runBlocking {
         val transport = SafetyTransport()
         val port = PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X))

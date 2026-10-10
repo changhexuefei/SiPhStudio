@@ -29,6 +29,7 @@ class PiGcsHexapodPort(
     private val stateLock = Any()
     @Volatile private var stopInProgress = false
     private var connectInProgress = false
+    private var recoveryInProgress = false
     private val _motionState = MutableStateFlow(PiMotionState())
     val motionState: StateFlow<PiMotionState> = _motionState.asStateFlow()
 
@@ -76,11 +77,15 @@ class PiGcsHexapodPort(
      * Caller must confirm physical clearance / emergency-stop reset separately.
      */
     suspend fun recover(operatorConfirmedSafe: Boolean) {
-        check(recoveryRequired) { "No fault to recover" }
         require(operatorConfirmedSafe) { "Explicit operator safety confirmation required" }
-        check(!stopInProgress) { "Stop is still in progress" }
-        val expectedEpoch = safetyEpoch.get()
-        _motionState.value = PiMotionState(PiMotionPhase.RecoveryRequired)
+        val expectedEpoch = synchronized(stateLock) {
+            check(recoveryRequired) { "No fault to recover" }
+            check(!stopInProgress && !recoveryInProgress && !connectInProgress) {
+                "Another controller lifecycle operation is in progress"
+            }
+            recoveryInProgress = true
+            safetyEpoch.get()
+        }
         try {
             if (!device.isOpen) device.connect()
             val positions = device.qPOS(axes)
@@ -116,6 +121,8 @@ class PiGcsHexapodPort(
             }
             if (ownsFailure) device.close()
             throw failure
+        } finally {
+            synchronized(stateLock) { recoveryInProgress = false }
         }
     }
 
@@ -234,7 +241,7 @@ class PiGcsHexapodPort(
     override fun close() {
         synchronized(stateLock) {
             safetyEpoch.incrementAndGet()
-            val unsafe = connectInProgress ||
+            val unsafe = connectInProgress || recoveryInProgress ||
                 _motionState.value.phase == PiMotionPhase.Moving ||
                 _motionState.value.phase == PiMotionPhase.Stopping
             if (unsafe) recoveryRequired = true
