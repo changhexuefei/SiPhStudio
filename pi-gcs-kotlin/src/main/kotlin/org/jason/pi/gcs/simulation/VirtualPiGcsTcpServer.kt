@@ -4,6 +4,7 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.SocketException
 import kotlin.concurrent.thread
+import java.util.concurrent.atomic.AtomicBoolean
 import org.jason.pi.gcs.hexapod.PiHexapodPose
 
 /**
@@ -16,8 +17,10 @@ import org.jason.pi.gcs.hexapod.PiHexapodPose
  */
 class VirtualPiGcsTcpServer(
     private val model: VirtualPiHexapodState = VirtualPiHexapodState(),
-    port: Int = 0
+    port: Int = 0,
+    private val fault: VirtualGcsFault = VirtualGcsFault.None
 ) : AutoCloseable {
+    private val faultTriggered = AtomicBoolean(false)
     private val listener = ServerSocket(port, 8, InetAddress.getLoopbackAddress())
     private val clients = mutableSetOf<java.net.Socket>()
     private val clientLock = Any()
@@ -37,9 +40,17 @@ class VirtualPiGcsTcpServer(
                         val writer = client.getOutputStream().bufferedWriter()
                         while (running) {
                             val command = reader.readLine() ?: break
-                            val response = respond(command.trim()) ?: break
+                            val readOnlyCommand = command.trim()
+                            val injected = if (readOnlyCommand in setOf("*IDN?", "POS? X Y Z U V W", "ERR?") && faultTriggered.compareAndSet(false, true)) fault else VirtualGcsFault.None
+                            if (injected == VirtualGcsFault.Disconnect) break
+                            val response = when (injected) {
+                                VirtualGcsFault.MalformedPosition -> if (readOnlyCommand == "POS? X Y Z U V W") "X=bad\\n" else respond(readOnlyCommand)
+                                VirtualGcsFault.TruncatedPosition -> if (readOnlyCommand == "POS? X Y Z U V W") "X=0\\nY=0\\n" else respond(readOnlyCommand)
+                                else -> respond(readOnlyCommand)
+                            } ?: break
                             writer.write(response)
                             writer.flush()
+                            if (injected == VirtualGcsFault.TruncatedPosition) break
                         }
                     }
                 } catch (_: Exception) {
@@ -75,3 +86,6 @@ class VirtualPiGcsTcpServer(
         acceptThread.join(2_000)
     }
 }
+
+/** One-shot deterministic failures for read-only local simulator tests. */
+enum class VirtualGcsFault { None, Disconnect, MalformedPosition, TruncatedPosition }
