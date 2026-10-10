@@ -26,8 +26,14 @@ class PiPhysicalConnectionLifecycle(
             commands.bind(port)
             activePort = port
         } catch (failure: Throwable) {
-            // Do not claim successful connection if UI binding was denied.
-            // Ownership of recovery/closing remains with the caller.
+            // The transport was opened but the command/UI layer rejected ownership.
+            // Fail closed: release the physical session rather than leak an
+            // untracked, connected controller. Preserve the original failure.
+            try {
+                port.close()
+            } catch (closeFailure: Throwable) {
+                failure.addSuppressed(closeFailure)
+            }
             throw failure
         }
     }
