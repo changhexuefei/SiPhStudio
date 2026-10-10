@@ -71,27 +71,32 @@ class GcsClient(
 
         return mutex.withLock {
             ensureOpen()
-            transport.writeLine(command)
-
-            val response = StringBuilder()
-
-            repeat(maxResponseLines) {
-                val line = transport.readLine().trim()
-                if (response.isNotEmpty()) {
-                    response.append('\n')
+            try {
+                transport.writeLine(command)
+    
+                val response = StringBuilder()
+    
+                repeat(maxResponseLines) {
+                    val line = transport.readLine().trim()
+                    if (response.isNotEmpty()) {
+                        response.append('\n')
+                    }
+                    response.append(line)
+    
+                    val current = response.toString()
+                    if (isResponseComplete(current)) {
+                        return@withLock current
+                    }
                 }
-                response.append(line)
-
-                val current = response.toString()
-                if (isResponseComplete(current)) {
-                    return@withLock current
-                }
+    
+                error(
+                    "Incomplete PI GCS response: command=$command, " +
+                        "maxResponseLines=$maxResponseLines, response=$response"
+                )
+            } catch (failure: Throwable) {
+                runCatching { transport.close() }
+                throw failure
             }
-
-            error(
-                "Incomplete PI GCS response: command=$command, " +
-                    "maxResponseLines=$maxResponseLines, response=$response"
-            )
         }
     }
 
@@ -100,19 +105,24 @@ class GcsClient(
 
         mutex.withLock {
             ensureOpen()
-            transport.writeLine(command)
-
-            if (checkErrorAfterCommand) {
-                transport.writeLine("ERR?")
-                val errorText = transport.readLine().trim()
-                val errorCode = GcsResponseParser.parseErrorCode(errorText)
-
-                if (errorCode != 0) {
-                    throw PiGcsCommandException(
-                        command = command,
-                        errorCode = errorCode
-                    )
+            try {
+                transport.writeLine(command)
+    
+                if (checkErrorAfterCommand) {
+                    transport.writeLine("ERR?")
+                    val errorText = transport.readLine().trim()
+                    val errorCode = GcsResponseParser.parseErrorCode(errorText)
+    
+                    if (errorCode != 0) {
+                        throw PiGcsCommandException(
+                            command = command,
+                            errorCode = errorCode
+                        )
+                    }
                 }
+            } catch (failure: Throwable) {
+                if (failure !is PiGcsCommandException) runCatching { transport.close() }
+                throw failure
             }
         }
     }
