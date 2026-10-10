@@ -12,6 +12,8 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.Surface
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,9 +41,15 @@ import org.jason.siph.ui.siphtools.CouplingToolScreen
 
 @Composable
 @androidx.compose.ui.tooling.preview.Preview
-fun App() {
+fun App(
+    physicalReadback: (suspend (CouplingToolUiState) -> CouplingToolUiState?)? = null,
+    invalidatePhysicalReadback: () -> Unit = {}
+) {
     SiPhTheme {
         var runtimeMode by remember { mutableStateOf(PiRuntimeMode.Demo) }
+        var readbackVersion by remember { mutableStateOf(0L) }
+        var reading by remember { mutableStateOf(false) }
+        val scope = rememberCoroutineScope()
         var state by remember {
             mutableStateOf(
                 CouplingToolUiState(
@@ -59,6 +67,9 @@ fun App() {
             Row {
                 Button(
                     onClick = {
+                        readbackVersion++
+                        invalidatePhysicalReadback()
+                        reading = false
                         runtimeMode = PiRuntimeMode.Demo
                         state = CouplingToolUiState(
                             status = CouplingToolStatusState(message = "Demo mode: simulated motion only")
@@ -68,11 +79,51 @@ fun App() {
                 ) { Text("Demo") }
                 OutlinedButton(
                     onClick = {
+                        readbackVersion++
+                        invalidatePhysicalReadback()
+                        reading = false
                         runtimeMode = PiRuntimeMode.Physical
                         state = CouplingToolUiState().rejectUnwiredPhysicalAction()
                     },
                     enabled = runtimeMode != PiRuntimeMode.Physical
                 ) { Text("Physical (not connected)") }
+                OutlinedButton(
+                    enabled = runtimeMode == PiRuntimeMode.Physical &&
+                        physicalReadback != null && !reading,
+                    onClick = {
+                        val refresh = physicalReadback
+                        if (refresh != null) {
+                            val ticket = ++readbackVersion
+                            reading = true
+                            val before = state
+                            scope.launch {
+                                try {
+                                    val updated = refresh(before)
+                                    if (ticket == readbackVersion &&
+                                        runtimeMode == PiRuntimeMode.Physical &&
+                                        updated != null
+                                    ) {
+                                        state = updated
+                                    }
+                                } catch (failure: Exception) {
+                                    if (ticket == readbackVersion &&
+                                        runtimeMode == PiRuntimeMode.Physical
+                                    ) {
+                                        state = state.rejectUnwiredPhysicalAction().copy(
+                                            status = state.status.copy(
+                                                isError = true,
+                                                message = "Physical readback unavailable: " +
+                                                    (failure.message ?: "Unknown error")
+                                            )
+                                        )
+                                    }
+                                } finally {
+                                    if (ticket == readbackVersion) reading = false
+                                }
+                            }
+                        }
+                    }
+                ) { Text(if (reading) "Reading..." else "Refresh physical readback") }
             }
             Surface(
                 modifier = Modifier.weight(1f),
