@@ -190,14 +190,22 @@ class PiGcsHexapodPort(
     }
 
     private suspend fun guardedMotion(block: suspend () -> Unit) {
-        ensureConnected()
-        _motionState.value = PiMotionState(PiMotionPhase.Moving)
+        val motionEpoch = synchronized(stateLock) {
+            ensureConnected()
+            check(_motionState.value.phase == PiMotionPhase.Ready) {
+                "PI motion cannot start unless the controller is Ready"
+            }
+            val epoch = safetyEpoch.get()
+            _motionState.value = PiMotionState(PiMotionPhase.Moving)
+            epoch
+        }
         try {
             block()
-            if (!recoveryRequired) {
+            synchronized(stateLock) {
+                check(!recoveryRequired && !stopInProgress && safetyEpoch.get() == motionEpoch) {
+                    "Motion was interrupted; recovery is required"
+                }
                 _motionState.value = PiMotionState(PiMotionPhase.Ready)
-            } else {
-                error("Motion was interrupted; recovery is required")
             }
         } catch (failure: Throwable) {
             safetyEpoch.incrementAndGet()
