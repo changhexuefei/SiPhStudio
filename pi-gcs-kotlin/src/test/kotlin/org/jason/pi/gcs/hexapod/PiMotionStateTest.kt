@@ -250,6 +250,7 @@ class PiMotionStateTest {
         assertEquals(PiMotionPhase.RecoveryRequired, port.motionState.value.phase)
         release.complete(Unit)
         assertEquals(true, connecting.await().isFailure)
+        assertFalse(transport.isOpen)
         assertFalse(port.motionState.value.canMove)
         assertFailsWith<IllegalStateException> { port.connect() }
     }
