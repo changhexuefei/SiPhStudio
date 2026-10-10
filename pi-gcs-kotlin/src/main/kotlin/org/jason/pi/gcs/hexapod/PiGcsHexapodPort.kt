@@ -1,6 +1,7 @@
 package org.jason.pi.gcs.hexapod
 
 import kotlinx.coroutines.NonCancellable
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,6 +25,7 @@ class PiGcsHexapodPort(
     }
 
     @Volatile private var recoveryRequired = false
+    private val safetyEpoch = AtomicLong(0L)
     private val _motionState = MutableStateFlow(PiMotionState())
     val motionState: StateFlow<PiMotionState> = _motionState.asStateFlow()
 
@@ -43,6 +45,7 @@ class PiGcsHexapodPort(
     suspend fun recover(operatorConfirmedSafe: Boolean) {
         check(recoveryRequired) { "No fault to recover" }
         require(operatorConfirmedSafe) { "Explicit operator safety confirmation required" }
+        val expectedEpoch = safetyEpoch.get()
         _motionState.value = PiMotionState(PiMotionPhase.RecoveryRequired)
         try {
             if (!device.isOpen) device.connect()
@@ -59,6 +62,9 @@ class PiGcsHexapodPort(
                 val max = maxima[axis] ?: return@all false
                 min.isFinite() && max.isFinite() && min <= max && pos in min..max
             }) { "Recovered position is outside validated controller travel range" }
+            check(safetyEpoch.compareAndSet(expectedEpoch, expectedEpoch + 1L)) {
+                "Recovery invalidated by a concurrent Stop or motion fault"
+            }
             recoveryRequired = false
             _motionState.value = PiMotionState(PiMotionPhase.Ready)
         } catch (failure: Throwable) {
@@ -133,6 +139,7 @@ class PiGcsHexapodPort(
     }
 
     override suspend fun stop() {
+        safetyEpoch.incrementAndGet()
         recoveryRequired = true
         _motionState.value = PiMotionState(PiMotionPhase.Stopping)
         try {
@@ -181,6 +188,7 @@ class PiGcsHexapodPort(
                 error("Motion was interrupted; recovery is required")
             }
         } catch (failure: Throwable) {
+            safetyEpoch.incrementAndGet()
             recoveryRequired = true
             if (_motionState.value.phase != PiMotionPhase.RecoveryRequired) {
                 _motionState.value = PiMotionState(PiMotionPhase.Fault, failure.message)

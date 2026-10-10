@@ -1,6 +1,9 @@
 package org.jason.pi.gcs.hexapod
 
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.yield
 import org.jason.pi.gcs.core.GcsClient
 import org.jason.pi.gcs.core.GcsDevice
 import org.jason.pi.gcs.transport.GcsTransport
@@ -52,6 +55,32 @@ class PiMotionStateTest {
     }
 
     @Test
+    fun stopDuringRecoveryKeepsFaultLatch() = runBlocking {
+        val transport = SafetyTransport()
+        val port = PiGcsHexapodPort(
+            GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X)
+        )
+        port.connect()
+        port.stop()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        transport.recoveryReadStarted = entered
+        transport.pauseRecovery = release
+        val recovery = async {
+            runCatching { port.recover(operatorConfirmedSafe = true) }
+        }
+        entered.await()
+        val stopping = async { runCatching { port.stop() } }
+        // stop() latches before waiting on the busy GCS transaction.
+        while (port.motionState.value.phase != PiMotionPhase.Stopping) yield()
+        release.complete(Unit)
+        assertEquals(true, recovery.await().isFailure)
+        stopping.await()
+        assertEquals(PiMotionPhase.RecoveryRequired, port.motionState.value.phase)
+        assertFalse(port.motionState.value.canMove)
+    }
+
+    @Test
     fun recoveryRejectsControllerErrorAndOutOfRangePosition() = runBlocking {
         val transport = SafetyTransport()
         val port = PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X))
@@ -78,6 +107,8 @@ private class SafetyTransport : GcsTransport {
     var failStop = false
     var controllerError = 0
     var maxX = 10.0
+    var pauseRecovery: CompletableDeferred<Unit>? = null
+    var recoveryReadStarted: CompletableDeferred<Unit>? = null
     private var last = ""
     override suspend fun open() { isOpen = true }
     override suspend fun writeLine(command: String) {
@@ -91,7 +122,11 @@ private class SafetyTransport : GcsTransport {
             "ERR?" -> controllerError.toString()
             "TMN? X" -> "X=-10"
             "TMX? X" -> "X=$maxX"
-            "POS? X" -> "X=0"
+            "POS? X" -> {
+                recoveryReadStarted?.complete(Unit)
+                pauseRecovery?.await()
+                "X=0"
+            }
             "ONT? X" -> if (onTarget) "X=1" else "X=0"
             else -> error("Unknown query: $last")
         }
