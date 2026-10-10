@@ -20,13 +20,14 @@ class PiRuntimeMotionCommands(scope: CoroutineScope) : AutoCloseable {
     val uiState: StateFlow<PositionerUiState> get() = uiBinding.state
     private var closed = false
     private var motionInFlight = false
+    private var stopInFlight = false
     private var activePort: PiGcsHexapodPort? = null
     private var gateway: PiMotionCommandGateway? = null
 
     fun bind(port: PiGcsHexapodPort?) {
         synchronized(lock) {
             check(!closed) { "PI command binding is closed" }
-            check(!motionInFlight) { "Cannot replace PI session while motion command is active" }
+            check(!motionInFlight && !stopInFlight) { "Cannot replace PI session during motion or Stop" }
             // First invalidate the old command route; then swap the UI projection.
             gateway = null
             activePort = null
@@ -41,7 +42,7 @@ class PiRuntimeMotionCommands(scope: CoroutineScope) : AutoCloseable {
     private suspend fun dispatchMotion(block: suspend (PiMotionCommandGateway) -> Unit) {
         val selected = synchronized(lock) {
             check(!closed && activePort != null) { "No active PI controller session" }
-            check(!motionInFlight) { "PI motion command already active" }
+            check(!motionInFlight && !stopInFlight) { "PI motion or Stop command already active" }
             check(activePort!!.motionState.value.phase == PiMotionPhase.Ready &&
                 uiBinding.state.value.motionAllowed) { "PI controller not verified Ready" }
             motionInFlight = true
@@ -66,15 +67,22 @@ class PiRuntimeMotionCommands(scope: CoroutineScope) : AutoCloseable {
     suspend fun stop() {
         val active = synchronized(lock) {
             check(!closed) { "PI command binding is closed" }
-            checkNotNull(gateway) { "No active PI controller session" }
+            check(!stopInFlight) { "PI Stop already in progress" }
+            val selected = checkNotNull(gateway) { "No active PI controller session" }
+            stopInFlight = true
+            selected
         }
-        active.stop()
+        try {
+            active.stop()
+        } finally {
+            synchronized(lock) { stopInFlight = false }
+        }
     }
 
     override fun close() {
         synchronized(lock) {
             if (closed) return
-            check(!motionInFlight) { "Cannot dispose PI command binding while motion is active" }
+            check(!motionInFlight && !stopInFlight) { "Cannot dispose PI command binding during motion or Stop" }
             closed = true
             gateway = null
             activePort = null
