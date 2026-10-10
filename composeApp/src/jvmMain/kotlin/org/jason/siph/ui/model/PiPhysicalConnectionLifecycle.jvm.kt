@@ -38,6 +38,14 @@ class PiPhysicalConnectionLifecycle(
         }
     }
 
+    /** Read-only ID query for the owned physical session; never substitutes demo IDN. */
+    suspend fun identify(): String = mutex.withLock {
+        val port = checkNotNull(activePort) { "No active PI physical controller" }
+        port.identify().also { idn ->
+            check(idn.isNotBlank()) { "PI controller returned an empty identification" }
+        }
+    }
+
     suspend fun disconnect() = mutex.withLock {
         val port = checkNotNull(activePort) { "No active PI physical controller" }
         // Refuse unsafe unbind before initiating a physical disconnect.

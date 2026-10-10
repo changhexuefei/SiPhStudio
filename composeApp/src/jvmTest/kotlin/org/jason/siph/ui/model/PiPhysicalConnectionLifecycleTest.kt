@@ -92,6 +92,32 @@ class PiPhysicalConnectionLifecycleTest {
         Unit
     }
 
+    @Test
+    fun readOnlyIdentityRequiresOwnedSessionAndPropagatesDeviceResponse() = runBlocking {
+        val transport = object : GcsTransport {
+            override var isOpen = false
+                private set
+            private var last = ""
+            override suspend fun open() { isOpen = true }
+            override suspend fun writeLine(command: String) { last = command }
+            override suspend fun readLine(): String = when (last) {
+                "*IDN?" -> "PI,HEXAPOD,SIMULATED,1.0"
+                "ERR?" -> "0"
+                else -> error("Unexpected GCS query: $last")
+            }
+            override fun close() { isOpen = false }
+        }
+        val commands = PiRuntimeMotionCommands(this)
+        val owner = PiPhysicalConnectionLifecycle(commands)
+        assertFailsWith<IllegalStateException> { owner.identify() }
+        owner.connect(makePort(transport))
+        assertTrue(owner.identify().contains("HEXAPOD"))
+        owner.disconnect()
+        assertFailsWith<IllegalStateException> { owner.identify() }
+        commands.close()
+        Unit
+    }
+
     private fun makePort(transport: GcsTransport): PiGcsHexapodPort =
         PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO)
 
