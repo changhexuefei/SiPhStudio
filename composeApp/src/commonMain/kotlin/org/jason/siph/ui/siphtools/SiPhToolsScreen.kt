@@ -185,7 +185,7 @@ private fun CouplingToolTopBar(
 
             Button(
                 onClick = { onAction(CouplingToolAction.StartCoupling) },
-                enabled = state.runState != CouplingToolRunState.Running,
+                enabled = state.runState != CouplingToolRunState.Running && state.positioner.couplingAllowed,
                 modifier = Modifier.heightIn(min = 40.dp)
             ) {
                 Text("Start Coupling")
