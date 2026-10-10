@@ -102,6 +102,28 @@ class PiMotionStateTest {
     }
 
     @Test
+    fun motionCompletionAfterStopDoesNotRestoreReady() = runBlocking {
+        val transport = SafetyTransport()
+        val port = PiGcsHexapodPort(
+            GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X)
+        )
+        port.connect()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        transport.onTargetReadStarted = entered
+        transport.pauseOnTarget = release
+        val moving = async { runCatching { port.waitOnTarget(9_000L) } }
+        entered.await()
+        val stopping = async { runCatching { port.stop() } }
+        while (port.motionState.value.phase != PiMotionPhase.Stopping) yield()
+        release.complete(Unit)
+        moving.await()
+        stopping.await()
+        assertEquals(PiMotionPhase.RecoveryRequired, port.motionState.value.phase)
+        assertFalse(port.motionState.value.canMove)
+    }
+
+    @Test
     fun recoveryRejectsControllerErrorAndOutOfRangePosition() = runBlocking {
         val transport = SafetyTransport()
         val port = PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X))
@@ -128,6 +150,8 @@ private class SafetyTransport : GcsTransport {
     var failStop = false
     var controllerError = 0
     var maxX = 10.0
+    var pauseOnTarget: CompletableDeferred<Unit>? = null
+    var onTargetReadStarted: CompletableDeferred<Unit>? = null
     var pauseRecovery: CompletableDeferred<Unit>? = null
     var recoveryReadStarted: CompletableDeferred<Unit>? = null
     private var last = ""
@@ -148,7 +172,11 @@ private class SafetyTransport : GcsTransport {
                 pauseRecovery?.await()
                 "X=0"
             }
-            "ONT? X" -> if (onTarget) "X=1" else "X=0"
+            "ONT? X" -> {
+                onTargetReadStarted?.complete(Unit)
+                pauseOnTarget?.await()
+                if (onTarget) "X=1" else "X=0"
+            }
             else -> error("Unknown query: $last")
         }
     }
