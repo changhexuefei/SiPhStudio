@@ -38,6 +38,18 @@ class PiPhysicalConnectionLifecycle(
         }
     }
 
+    /** Read-only device identity; never use demo text as a physical ID. */
+    suspend fun identify(): String = mutex.withLock {
+        val port = checkNotNull(activePort) { "No active PI physical controller" }
+        port.identify()
+    }
+
+    /** Read-only actual controller pose; no movement command is issued. */
+    suspend fun readPose(): org.jason.pi.gcs.hexapod.PiHexapodPose = mutex.withLock {
+        val port = checkNotNull(activePort) { "No active PI physical controller" }
+        port.currentPose()
+    }
+
     suspend fun disconnect() = mutex.withLock {
         val port = checkNotNull(activePort) { "No active PI physical controller" }
         // Refuse unsafe unbind before initiating a physical disconnect.
