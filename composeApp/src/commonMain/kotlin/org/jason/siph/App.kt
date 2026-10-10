@@ -1,6 +1,12 @@
 package org.jason.siph
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Surface
@@ -26,12 +32,15 @@ import org.jason.siph.ui.model.CouplingToolRunState
 import org.jason.siph.ui.model.CouplingToolStatusState
 import org.jason.siph.ui.model.CouplingToolUiState
 import org.jason.siph.ui.model.PositionerUiState
+import org.jason.siph.ui.model.PiRuntimeMode
+import org.jason.siph.ui.model.rejectUnwiredPhysicalAction
 import org.jason.siph.ui.siphtools.CouplingToolScreen
 
 @Composable
 @androidx.compose.ui.tooling.preview.Preview
 fun App() {
     SiPhTheme {
+        var runtimeMode by remember { mutableStateOf(PiRuntimeMode.Demo) }
         var state by remember {
             mutableStateOf(
                 CouplingToolUiState(
@@ -45,19 +54,40 @@ fun App() {
             )
         }
 
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.background
-        ) {
-            CouplingToolScreen(
-                state = state,
-                onAction = { action ->
-                    state = reduceCouplingToolAction(
-                        state = state,
-                        action = action
-                    )
-                }
-            )
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row {
+                Button(
+                    onClick = {
+                        runtimeMode = PiRuntimeMode.Demo
+                        state = CouplingToolUiState(
+                            status = CouplingToolStatusState(message = "Demo mode: simulated motion only")
+                        )
+                    },
+                    enabled = runtimeMode != PiRuntimeMode.Demo
+                ) { Text("Demo") }
+                OutlinedButton(
+                    onClick = {
+                        runtimeMode = PiRuntimeMode.Physical
+                        state = CouplingToolUiState().rejectUnwiredPhysicalAction()
+                    },
+                    enabled = runtimeMode != PiRuntimeMode.Physical
+                ) { Text("Physical (not connected)") }
+            }
+            Surface(
+                modifier = Modifier.weight(1f),
+                color = MaterialTheme.colorScheme.background
+            ) {
+                CouplingToolScreen(
+                    state = state,
+                    onAction = { action ->
+                        state = if (runtimeMode == PiRuntimeMode.Demo) {
+                            reduceCouplingToolAction(state, action)
+                        } else {
+                            state.rejectUnwiredPhysicalAction()
+                        }
+                    }
+                )
+            }
         }
     }
 }
