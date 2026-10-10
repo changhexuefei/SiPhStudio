@@ -55,4 +55,33 @@ class PiPhysicalReadbackProjectionTest {
         commands.close()
         Unit
     }
+    @Test
+    fun failedReadbackClearsStaleDisplayAndDeniesMotion() = runBlocking {
+        val commands = PiRuntimeMotionCommands(this)
+        val lifecycle = PiPhysicalConnectionLifecycle(commands)
+        val projection = PiPhysicalReadbackProjection(lifecycle, commands)
+        val stale = CouplingToolUiState(
+            positioner = PositionerUiState(
+                connected = true,
+                idn = "OLD DEVICE",
+                currentPose = org.jason.siph.domain.positioner.OpticalPose(
+                    10.0, 20.0, 30.0, 1.0, 2.0, 3.0
+                ),
+                linearStepUm = 2.5,
+                angleStepDeg = 0.02
+            )
+        )
+        val error = projection.refreshOrError(stale)
+        assertFalse(error.positioner.motionAllowed)
+        assertFalse(error.positioner.connected)
+        assertEquals(null, error.positioner.idn)
+        assertEquals(org.jason.siph.domain.positioner.OpticalPose.ZERO, error.positioner.currentPose)
+        assertEquals(2.5, error.positioner.linearStepUm)
+        assertEquals(0.02, error.positioner.angleStepDeg)
+        assertTrue(error.status.isError)
+        assertTrue(error.status.message?.contains("failed") == true)
+        commands.close()
+        Unit
+    }
+
 }
