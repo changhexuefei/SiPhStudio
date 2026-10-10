@@ -1,6 +1,9 @@
 package org.jason.pi.gcs.hexapod
 
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.jason.pi.gcs.core.GcsDevice
@@ -21,14 +24,39 @@ class PiGcsHexapodPort(
     }
 
     @Volatile private var recoveryRequired = false
+    private val _motionState = MutableStateFlow(PiMotionState())
+    val motionState: StateFlow<PiMotionState> = _motionState.asStateFlow()
 
     override suspend fun connect() {
         check(!recoveryRequired) { "PI motion recovery required; reconnect alone cannot unlock movement" }
         device.connect()
+        _motionState.value = PiMotionState(PiMotionPhase.Ready)
     }
 
     override suspend fun disconnect() {
         close()
+    }
+
+    /** Operator-controlled recovery: transport reopens for read-only checks only.
+     * Caller must confirm physical clearance / emergency-stop reset separately.
+     */
+    suspend fun recover(operatorConfirmedSafe: Boolean) {
+        check(recoveryRequired) { "No fault to recover" }
+        require(operatorConfirmedSafe) { "Explicit operator safety confirmation required" }
+        _motionState.value = PiMotionState(PiMotionPhase.RecoveryRequired)
+        try {
+            if (!device.isOpen) device.connect()
+            val positions = device.qPOS(axes)
+            check(axes.all { positions[it]?.isFinite() == true }) { "Invalid recovered axis positions" }
+            val onTarget = device.qONT(axes)
+            check(axes.all { onTarget[it] == true }) { "Motion not confirmed on target" }
+            recoveryRequired = false
+            _motionState.value = PiMotionState(PiMotionPhase.Ready)
+        } catch (failure: Throwable) {
+            device.close()
+            _motionState.value = PiMotionState(PiMotionPhase.RecoveryRequired, failure.message)
+            throw failure
+        }
     }
 
     override suspend fun identify(): String {
@@ -97,8 +125,12 @@ class PiGcsHexapodPort(
 
     override suspend fun stop() {
         recoveryRequired = true
-        if (device.isOpen) {
-            try { device.stopAll() } finally { device.close() }
+        _motionState.value = PiMotionState(PiMotionPhase.Stopping)
+        try {
+            withContext(NonCancellable) { withTimeout(2_000L) { if (device.isOpen) device.stopAll() } }
+        } finally {
+            device.close()
+            _motionState.value = PiMotionState(PiMotionPhase.RecoveryRequired, "Stop requested; physical stop unverified")
         }
     }
 
@@ -122,6 +154,7 @@ class PiGcsHexapodPort(
 
     override fun close() {
         device.close()
+        if (!recoveryRequired) _motionState.value = PiMotionState(PiMotionPhase.Disconnected)
     }
 
     private suspend fun waitForTarget(timeoutMs: Long = 10_000L) {
@@ -130,15 +163,19 @@ class PiGcsHexapodPort(
 
     private suspend fun guardedMotion(block: suspend () -> Unit) {
         ensureConnected()
+        _motionState.value = PiMotionState(PiMotionPhase.Moving)
         try {
             block()
+            if (!recoveryRequired) _motionState.value = PiMotionState(PiMotionPhase.Ready)
         } catch (failure: Throwable) {
             recoveryRequired = true
+            _motionState.value = PiMotionState(PiMotionPhase.Fault, failure.message)
             withContext(NonCancellable) {
                 try { withTimeout(2_000L) { if (device.isOpen) device.stopAll() } }
                 catch (_: Exception) { /* Lost communication cannot confirm physical stop. */ }
                 finally { device.close() }
             }
+            _motionState.value = PiMotionState(PiMotionPhase.RecoveryRequired, failure.message)
             throw failure
         }
     }
