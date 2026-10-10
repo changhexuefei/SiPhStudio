@@ -46,6 +46,12 @@ class PiPhysicalConnectionLifecycle(
         }
     }
 
+    /** Read-only actual pose from the owned physical PI session. */
+    suspend fun readPose(): org.jason.pi.gcs.hexapod.PiHexapodPose = mutex.withLock {
+        val port = checkNotNull(activePort) { "No active PI physical controller" }
+        port.currentPose()
+    }
+
     suspend fun disconnect() = mutex.withLock {
         val port = checkNotNull(activePort) { "No active PI physical controller" }
         // Refuse unsafe unbind before initiating a physical disconnect.
