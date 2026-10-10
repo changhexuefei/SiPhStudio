@@ -184,6 +184,21 @@ class PiMotionStateTest {
     }
 
     @Test
+    fun startupFailureLocksMotionAndClosesSession() = runBlocking {
+        val transport = SafetyTransport()
+        val port = PiGcsHexapodPort(
+            GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X)
+        )
+        port.connect()
+        transport.failStop = true
+        assertFailsWith<IllegalStateException> { port.startup(reference = false) }
+        assertEquals(PiMotionPhase.RecoveryRequired, port.motionState.value.phase)
+        assertFalse(port.motionState.value.canMove)
+        assertFalse(transport.isOpen)
+        assertFailsWith<IllegalStateException> { port.connect() }
+    }
+
+    @Test
     fun recoveryRejectsControllerErrorAndOutOfRangePosition() = runBlocking {
         val transport = SafetyTransport()
         val port = PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X))
