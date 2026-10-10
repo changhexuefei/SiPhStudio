@@ -58,6 +58,10 @@ class PiGcsHexapodPort(
                 }
             }
             if (ownsFailure) device.close()
+            else synchronized(stateLock) {
+                // Disconnect invalidated this connect; its late socket must not survive.
+                if (recoveryRequired && !stopInProgress) device.close()
+            }
             throw failure
         } finally {
             synchronized(stateLock) { connectInProgress = false }
