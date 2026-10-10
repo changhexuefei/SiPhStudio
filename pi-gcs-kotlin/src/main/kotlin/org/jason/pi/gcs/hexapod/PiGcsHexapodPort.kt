@@ -166,10 +166,16 @@ class PiGcsHexapodPort(
         _motionState.value = PiMotionState(PiMotionPhase.Moving)
         try {
             block()
-            if (!recoveryRequired) _motionState.value = PiMotionState(PiMotionPhase.Ready)
+            if (!recoveryRequired) {
+                _motionState.value = PiMotionState(PiMotionPhase.Ready)
+            } else {
+                error("Motion was interrupted; recovery is required")
+            }
         } catch (failure: Throwable) {
             recoveryRequired = true
-            _motionState.value = PiMotionState(PiMotionPhase.Fault, failure.message)
+            if (_motionState.value.phase != PiMotionPhase.RecoveryRequired) {
+                _motionState.value = PiMotionState(PiMotionPhase.Fault, failure.message)
+            }
             withContext(NonCancellable) {
                 try { withTimeout(2_000L) { if (device.isOpen) device.stopAll() } }
                 catch (_: Exception) { /* Lost communication cannot confirm physical stop. */ }
