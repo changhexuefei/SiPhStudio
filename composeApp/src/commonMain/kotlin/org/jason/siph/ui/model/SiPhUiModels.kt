@@ -55,8 +55,18 @@ data class PositionerUiState(
     val linearStepUm: Double = 1.0,
     val angleStepDeg: Double = 0.01,
     val isMoving: Boolean = false,
-    val errorMessage: String? = null
-)
+    val errorMessage: String? = null,
+    /** Null while legacy/simulated runtime has not supplied PI safety state. */
+    val piMotionPhase: String? = null
+) {
+    val motionAllowed: Boolean
+        get() = connected && !isMoving && errorMessage == null &&
+            (piMotionPhase == null || piMotionPhase == "Ready")
+
+    val recoveryLocked: Boolean
+        get() = piMotionPhase == "Fault" || piMotionPhase == "RecoveryRequired" ||
+            piMotionPhase == "Stopping"
+}
 
 enum class CouplingState(
     val text: String
