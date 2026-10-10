@@ -34,6 +34,7 @@ import org.jason.siph.ui.model.CouplingToolUiState
 import org.jason.siph.ui.model.PositionerUiState
 import org.jason.siph.ui.model.PiRuntimeMode
 import org.jason.siph.ui.model.rejectUnwiredPhysicalAction
+import org.jason.siph.ui.model.reduceUnwiredPhysicalAction
 import org.jason.siph.ui.siphtools.CouplingToolScreen
 
 @Composable
@@ -83,7 +84,7 @@ fun App() {
                         state = if (runtimeMode == PiRuntimeMode.Demo) {
                             reduceCouplingToolAction(state, action)
                         } else {
-                            state.rejectUnwiredPhysicalAction()
+                            state.reduceUnwiredPhysicalAction(action)
                         }
                     }
                 )
