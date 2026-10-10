@@ -83,13 +83,14 @@ class PiGcsHexapodPort(
     override suspend fun identify(): String = guardedRead { device.qIDN() }
 
     override suspend fun startup(reference: Boolean) {
-        ensureConnected()
-        PiTools.startup(
-            device = device,
-            axes = axes,
-            enableServo = true,
-            reference = reference
-        )
+        guardedMotion {
+            PiTools.startup(
+                device = device,
+                axes = axes,
+                enableServo = true,
+                reference = reference
+            )
+        }
     }
 
     override suspend fun moveTo(
