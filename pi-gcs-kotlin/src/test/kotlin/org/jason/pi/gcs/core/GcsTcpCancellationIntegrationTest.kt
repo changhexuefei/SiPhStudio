@@ -9,7 +9,9 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -52,7 +54,9 @@ class GcsTcpCancellationIntegrationTest {
             try {
                 first.connect()
                 val pending = async { first.query("*IDN?") }
-                assertTrue(firstRequestReceived.await(3, TimeUnit.SECONDS))
+                assertTrue(withContext(Dispatchers.IO) {
+                    firstRequestReceived.await(3, TimeUnit.SECONDS)
+                }, "Server must receive the pending IDN query")
                 pending.cancelAndJoin()
                 assertFalse(first.isOpen, "Cancelled read must retire the TCP socket")
                 assertTrue(runCatching { first.query("*IDN?") }.isFailure,
