@@ -2,7 +2,6 @@ package org.jason.siph.ui.model
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,18 +24,27 @@ class PiMotionUiStore(
     )
     val state: StateFlow<PositionerUiState> = _state.asStateFlow()
 
+    private val lifecycleLock = Any()
+    private var closed = false
+
     private val subscription: Job = scope.launch {
         port.motionState.collect { motion: PiMotionState ->
-            _state.value = _state.value.withControllerMotionState(motion)
+            synchronized(lifecycleLock) {
+                if (!closed) _state.value = _state.value.withControllerMotionState(motion)
+            }
         }
     }
 
     override fun close() {
-        subscription.cancel()
-        _state.value = _state.value.copy(
-            requiresVerifiedPiState = true,
-            piMotionPhase = PiUiMotionPhase.Disconnected.name,
-            connected = false
-        )
+        synchronized(lifecycleLock) {
+            if (closed) return
+            closed = true
+            subscription.cancel()
+            _state.value = _state.value.copy(
+                requiresVerifiedPiState = true,
+                piMotionPhase = PiUiMotionPhase.Disconnected.name,
+                connected = false
+            )
+        }
     }
 }
