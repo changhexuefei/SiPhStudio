@@ -68,6 +68,14 @@ class PiPhysicalConnectionLifecycle(
         PiPhysicalReadback(identity, port.currentPose())
     }
 
+    /** Window shutdown: close an owned controller if present, without inventing a session. */
+    suspend fun disconnectIfConnected() = mutex.withLock {
+        val port = activePort ?: return@withLock
+        commands.bind(null)
+        port.disconnect()
+        activePort = null
+    }
+
     suspend fun disconnect() = mutex.withLock {
         val port = checkNotNull(activePort) { "No active PI physical controller" }
         // Refuse unsafe unbind before initiating a physical disconnect.
