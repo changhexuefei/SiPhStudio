@@ -32,3 +32,8 @@ tasks.register<JavaExec>("runVirtualPiGcs") {
     mainClass.set("org.jason.pi.gcs.simulation.VirtualPiGcsLauncher")
     standardInput = System.`in`
 }
+
+tasks.test {
+    // Allow the E2E test to fork the actual production launcher on a separate JVM.
+    systemProperty("virtualPiLauncherClasspath", sourceSets.main.get().runtimeClasspath.asPath)
+}
