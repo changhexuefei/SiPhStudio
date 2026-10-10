@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import org.jason.pi.gcs.hexapod.PiGcsHexapodPort
+import org.jason.pi.gcs.hexapod.PiMotionPhase
+import org.jason.pi.gcs.hexapod.PiMotionState
 
 /**
  * JVM-side binding for the current PI controller session.
@@ -62,5 +64,5 @@ class PiRuntimeSessionBinding(private val scope: CoroutineScope) : AutoCloseable
 
     private fun disconnected(): PositionerUiState =
         PositionerUiState(requiresVerifiedPiState = true)
-            .withPiMotionPhase(PiUiMotionPhase.Disconnected)
+            .withControllerMotionState(PiMotionState(PiMotionPhase.Disconnected))
 }
