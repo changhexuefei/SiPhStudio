@@ -38,16 +38,31 @@ class PiMotionStateTest {
         port.recover(operatorConfirmedSafe = true)
         assertEquals(PiMotionPhase.Ready, port.motionState.value.phase)
     }
+    @Test
+    fun stopFailureStillLocksRecoveryAndClosesSession() = runBlocking {
+        val transport = SafetyTransport()
+        val port = PiGcsHexapodPort(GcsDevice(GcsClient(transport)), PiHexapodPose.ZERO, axes = listOf(PiAxis.X))
+        port.connect()
+        transport.failStop = true
+        assertFailsWith<IllegalStateException> { port.stop() }
+        assertEquals(PiMotionPhase.RecoveryRequired, port.motionState.value.phase)
+        assertFalse(port.motionState.value.canMove)
+        assertFalse(transport.isOpen)
+        assertFailsWith<IllegalStateException> { port.connect() }
+    }
+
 }
 
 private class SafetyTransport : GcsTransport {
     override var isOpen = false
         private set
     var onTarget = true
+    var failStop = false
     private var last = ""
     override suspend fun open() { isOpen = true }
     override suspend fun writeLine(command: String) {
         check(isOpen)
+        if (failStop && command == "STP") error("Simulated STP failure")
         last = command
     }
     override suspend fun readLine(): String {
