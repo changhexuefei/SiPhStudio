@@ -76,6 +76,10 @@ pi-gcs-kotlin            GCS 客户端、TCP 传输、六轴单位转换和运�
 
 推荐的下阶段验收：使用明确受控的设备及已验证的网络地址，记录 Connect → IDN → POS → Disconnect、读数超时、断线重试、窗口关闭失败的证据；完成后再评估真实运动控制 UI。
 
+### 真实 PI 六轴只读现场验收
+
+在实际连接控制器前，请使用 [Physical 只读现场验收记录模板](./docs/validation/pi-physical-readonly-acceptance.md)。模板包含受控的 Connect → IDN → POS → Disconnect 步骤、故障测试约束、证据字段及明确的 NOT RUN 初始状态。此模板并不表示现场已通过验收。
+
 ## 项目状态
 
 当前重点是 **桌面 Physical TCP 连接 + 六轴只读观测**，不是已验收的六轴自动寻光生产系统。有关问题和改进请使用仓库 [Issues](https://github.com/changhexuefei/SiPhStudio/issues) 与 [Pull Requests](https://github.com/changhexuefei/SiPhStudio/pulls)。
