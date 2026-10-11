@@ -40,3 +40,7 @@ The workflow uploads `pi-gcs-test-reports` with JUnit reports and `pi-gcs-kotlin
 | Long-duration hardware soak, positioning accuracy or calibration | **NOT VALIDATED** |
 
 Physical qualification must be planned and approved separately by the equipment owner, including a documented controller model, firmware revision, a motion-free read-only preflight, and a subsequent independent mechanically supervised safety procedure. No CI green check authorizes live motion.
+
+## Next-stage physical-readonly preparation
+
+See [PI_PHYSICAL_READONLY_PREFLIGHT.md](PI_PHYSICAL_READONLY_PREFLIGHT.md) for the equipment-owner approval record, read-only query boundaries and explicit NO GO rules. This documentation does not grant hardware access or authorize servo/motion commands. Physical controller connectivity remains **NOT TESTED**.
