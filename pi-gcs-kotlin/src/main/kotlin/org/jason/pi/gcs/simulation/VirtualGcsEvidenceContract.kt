@@ -27,7 +27,32 @@ object VirtualGcsEvidenceContract {
         if (events.any { it.command != null &&
                 it.command !in setOf("*IDN?", "ERR?", "POS? X Y Z U V W", "REJECTED") })
             errors += "UNSAFE_COMMAND_IN_TRACE"
-        return errors
+        // Validate each session as an ordered lifecycle, not merely by set membership.
+        val active = mutableSetOf<Long>()
+        val seen = mutableSetOf<Long>()
+        var closed = false
+        for (event in events) {
+            if (closed) errors += "EVENT_AFTER_SERVER_CLOSED"
+            when (event.type) {
+                "CONNECTED" -> {
+                    if (event.connection <= 0 || !seen.add(event.connection))
+                        errors += "DUPLICATE_CONNECTION"
+                    active.add(event.connection)
+                }
+                "QUERY" -> if (event.connection !in active) errors += "QUERY_OUTSIDE_SESSION"
+                "DISCONNECTED" -> if (!active.remove(event.connection))
+                    errors += "DISCONNECT_OUTSIDE_SESSION"
+                "SERVER_CLOSED" -> {
+                    if (event.connection != 0L || closed) errors += "INVALID_SERVER_CLOSE"
+                    if (active.isNotEmpty()) errors += "UNCLOSED_CONNECTION"
+                    closed = true
+                }
+                else -> errors += "UNKNOWN_EVENT_TYPE"
+            }
+        }
+        if (active.isNotEmpty()) errors += "UNCLOSED_CONNECTION"
+        if (seen.isEmpty()) errors += "NO_CONNECTIONS"
+        return errors.distinct()
     }
 
     /**
