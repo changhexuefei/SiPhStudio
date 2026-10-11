@@ -66,5 +66,6 @@ class VirtualGcsRecoverySoakTest {
             assertEquals(2, events.count { it.outcome == "REPLIED" }, "cycle $cycle")
             assertEquals("SERVER_CLOSED", events.last().type)
         }
+        assertTrue(VirtualGcsSoakSummary.aggregate(evidenceRoot, 20), "Aggregate 20-cycle evidence must PASS")
     }
 }
