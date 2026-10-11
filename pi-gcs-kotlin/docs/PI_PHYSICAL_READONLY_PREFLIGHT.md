@@ -39,6 +39,18 @@ If a separately authorized physical-readonly preflight is performed later, recor
 
 Physical connection PASS must **never** be represented as motion safety qualification. Motion procedures require a separately approved, supervised plan outside this preflight.
 
+## Repository evidence contract
+
+The repository now includes `PhysicalReadOnlyEvidenceContract` as a machine-readable validator/exporter for evidence produced by a separately authorized physical-readonly probe.
+
+It does **not** open a socket, execute GCS commands, or authorize hardware access. It only accepts observations for the reviewed read-only allowlist:
+
+- `*IDN?`
+- `ERR?`
+- `POS? X Y Z U V W`
+
+A PASS report must contain successful observations for all three commands, must retain `motionSafety=NOT_TESTED`, and must keep `motionAuthorization=false`. Any motion/write command in a report is rejected by the contract.
+
 ## Handoff checklist
 
 1. Obtain the exact PI product documentation and controller GCS command reference for the deployed firmware.
