@@ -33,6 +33,10 @@ class VirtualPiGcsTcpServer(
     val localPort: Int get() = listener.localPort
     val host: String get() = listener.inetAddress.hostAddress
 
+    /** Inspection only; never exposes hardware control. */
+    val activeClientCount: Int get() = synchronized(clientLock) { clients.size }
+    val liveWorkerCount: Int get() = synchronized(clientLock) { workerThreads.count { it.isAlive } }
+
     private val acceptThread = thread(name = "virtual-pi-gcs-accept", isDaemon = true) {
         while (running) {
             val socket = try { listener.accept() } catch (_: SocketException) { break }
