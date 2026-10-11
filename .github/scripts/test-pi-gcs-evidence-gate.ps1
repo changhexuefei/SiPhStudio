@@ -54,3 +54,7 @@ try {
 } finally {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+# A successful mutation harness must return success irrespective of the
+# expected nonzero exit code from the final isolated verifier invocation.
+exit 0
