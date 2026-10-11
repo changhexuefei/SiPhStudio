@@ -64,6 +64,13 @@ jobs:
             -RunId '${{ github.run_id }}' `
             -Revision '${{ github.sha }}' `
             -CycleCount 20
+      - name: Publish virtual-only acceptance summary
+        shell: pwsh
+        run: |
+          ./.github/scripts/write-pi-gcs-acceptance-summary.ps1 `
+            -Root 'pi-gcs-kotlin/build/ci/virtual-gcs-evidence/recovery-soak' `
+            -RunId '${{ github.run_id }}' `
+            -Revision '${{ github.sha }}'
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
