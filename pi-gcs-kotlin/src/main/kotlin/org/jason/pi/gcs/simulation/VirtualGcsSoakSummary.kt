@@ -60,12 +60,28 @@ object VirtualGcsSoakSummary {
         Files.createDirectories(root)
         val failures = mutableListOf<String>()
         var passed = 0
+        // Directory inventory is part of the contract: stale cycles and unknown
+        // files must not be silently accepted as a clean current CI run.
+        val expected = (1..cycleCount).map { "cycle-" + it.toString().padStart(2, '0') }.toSet()
+        Files.list(root).use { children ->
+            children.forEach { entry ->
+                val name = entry.fileName.toString()
+                if (name != "aggregate-summary.json" && name !in expected)
+                    failures += "$name:UNEXPECTED_ENTRY"
+            }
+        }
         for (cycle in 1..cycleCount) {
             val name = "cycle-" + cycle.toString().padStart(2, '0')
             val folder = root.resolve(name)
-            if (!Files.isRegularFile(folder.resolve("summary.json")) ||
+            if (!Files.isDirectory(folder) || !Files.isRegularFile(folder.resolve("summary.json")) ||
                 !Files.isRegularFile(folder.resolve("trace.jsonl"))) {
                 failures += "$name:MISSING_EVIDENCE"
+            } else if (Files.list(folder).use { entries ->
+                    entries.anyMatch { entry -> entry.fileName.toString() !in setOf("summary.json", "trace.jsonl", "provenance.json") }
+                }) {
+                failures += "$name:UNEXPECTED_FILE"
+            } else if (runId != null && !Files.isRegularFile(folder.resolve("provenance.json"))) {
+                failures += "$name:MISSING_MANIFEST"
             } else if (!validCycle(folder, cycle) ||
                 (runId != null && !VirtualGcsEvidenceProvenance.matches(folder, runId, revision!!))) {
                 failures += "$name:INVALID_EVIDENCE"
