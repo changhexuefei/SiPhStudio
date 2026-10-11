@@ -54,7 +54,8 @@ object VirtualGcsSoakSummary {
         false
     }
 
-    fun aggregate(root: Path, cycleCount: Int = 20): Boolean {
+    fun aggregate(root: Path, cycleCount: Int = 20, runId: String? = null, revision: String? = null): Boolean {
+        require((runId == null) == (revision == null))
         require(cycleCount in 1..1000)
         Files.createDirectories(root)
         val failures = mutableListOf<String>()
@@ -65,7 +66,8 @@ object VirtualGcsSoakSummary {
             if (!Files.isRegularFile(folder.resolve("summary.json")) ||
                 !Files.isRegularFile(folder.resolve("trace.jsonl"))) {
                 failures += "$name:MISSING_EVIDENCE"
-            } else if (!validCycle(folder, cycle)) {
+            } else if (!validCycle(folder, cycle) ||
+                (runId != null && !VirtualGcsEvidenceProvenance.matches(folder, runId, revision!!))) {
                 failures += "$name:INVALID_EVIDENCE"
             } else passed++
         }
@@ -73,6 +75,7 @@ object VirtualGcsSoakSummary {
             put("schemaVersion", 1)
             put("source", "VIRTUAL_ONLY")
             put("scenario", "recovery-soak")
+            if (runId != null) { put("runId", runId); put("revision", revision!!) }
             put("expectedCycles", cycleCount)
             put("passedCycles", passed)
             put("failedCycles", cycleCount - passed)

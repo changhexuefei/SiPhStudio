@@ -20,6 +20,8 @@ class VirtualGcsRecoverySoakTest {
     @Test
     fun twentyTimeoutRecoveryCyclesKeepCompleteIndependentEvidence() = runBlocking {
         val evidenceRoot = Path.of("build", "ci", "virtual-gcs-evidence", "recovery-soak")
+        val runId = System.getProperty("gcsEvidenceRunId") ?: "local-recovery-test"
+        val revision = System.getProperty("gcsEvidenceRevision") ?: "local-unverified"
         repeat(20) { cycle ->
             val journal = VirtualGcsDiagnosticEvidence()
             val server = VirtualPiGcsTcpServer(
@@ -55,6 +57,7 @@ class VirtualGcsRecoverySoakTest {
             assertTrue(VirtualGcsEvidenceContract.exportBundle(journal, bundleDir, "recovery-cycle-${cycle + 1}"))
             assertTrue(Files.exists(bundleDir.resolve("summary.json")))
             assertTrue(Files.exists(bundleDir.resolve("trace.jsonl")))
+            VirtualGcsEvidenceProvenance.write(bundleDir, runId, revision)
             val events = journal.snapshot()
             assertTrue(
                 VirtualGcsEvidenceContract.validateScenario(events, VirtualGcsFault.Timeout).isEmpty(),
@@ -66,6 +69,6 @@ class VirtualGcsRecoverySoakTest {
             assertEquals(2, events.count { it.outcome == "REPLIED" }, "cycle $cycle")
             assertEquals("SERVER_CLOSED", events.last().type)
         }
-        assertTrue(VirtualGcsSoakSummary.aggregate(evidenceRoot, 20), "Aggregate 20-cycle evidence must PASS")
+        assertTrue(VirtualGcsSoakSummary.aggregate(evidenceRoot, 20, runId, revision), "Aggregate 20-cycle evidence must PASS")
     }
 }
