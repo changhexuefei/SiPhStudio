@@ -5,6 +5,8 @@ on:
     paths:
       - 'pi-gcs-kotlin/**'
       - '.github/scripts/*pi-gcs-evidence*.ps1'
+      - '.github/scripts/*pi-gcs-acceptance*.ps1'
+      - '.github/scripts/write-pi-gcs-acceptance-summary.ps1'
       - 'gradle/**'
       - 'gradlew'
       - 'gradlew.bat'
@@ -16,6 +18,8 @@ on:
     paths:
       - 'pi-gcs-kotlin/**'
       - '.github/scripts/*pi-gcs-evidence*.ps1'
+      - '.github/scripts/*pi-gcs-acceptance*.ps1'
+      - '.github/scripts/write-pi-gcs-acceptance-summary.ps1'
       - 'gradle/**'
       - 'gradlew'
       - 'gradlew.bat'
@@ -64,6 +68,13 @@ jobs:
             -RunId '${{ github.run_id }}' `
             -Revision '${{ github.sha }}' `
             -CycleCount 20
+      - name: Contract-test virtual acceptance summary
+        shell: pwsh
+        run: |
+          ./.github/scripts/test-pi-gcs-acceptance-summary.ps1 `
+            -Root 'pi-gcs-kotlin/build/ci/virtual-gcs-evidence/recovery-soak' `
+            -RunId '${{ github.run_id }}' `
+            -Revision '${{ github.sha }}'
       - name: Publish virtual-only acceptance summary
         shell: pwsh
         run: |
