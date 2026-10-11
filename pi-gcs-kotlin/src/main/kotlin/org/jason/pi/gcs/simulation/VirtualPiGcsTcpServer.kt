@@ -49,12 +49,19 @@ class VirtualPiGcsTcpServer(
                             val readOnlyCommand = command.trim()
                             val eligible = when (fault) {
                                 VirtualGcsFault.MalformedPosition, VirtualGcsFault.TruncatedPosition -> readOnlyCommand == "POS? X Y Z U V W"
-                                VirtualGcsFault.Disconnect -> readOnlyCommand in setOf("*IDN?", "POS? X Y Z U V W", "ERR?")
+                                VirtualGcsFault.Disconnect, VirtualGcsFault.Timeout -> readOnlyCommand in setOf("*IDN?", "POS? X Y Z U V W", "ERR?")
                                 VirtualGcsFault.None -> false
                             }
                             val injected = if (eligible && faultTriggered.compareAndSet(false, true)) fault else VirtualGcsFault.None
                             if (injected == VirtualGcsFault.Disconnect) {
                                 diagnostics.record(connectionId, "QUERY", readOnlyCommand, "FAULT_DISCONNECT", injected.name)
+                                break
+                            }
+                            if (injected == VirtualGcsFault.Timeout) {
+                                diagnostics.record(connectionId, "QUERY", readOnlyCommand, "FAULT_TIMEOUT", injected.name)
+                                // No reply. Wait for the timed-out client to retire its socket.
+                                // A fresh session remains free to connect and query normally.
+                                reader.readLine()
                                 break
                             }
                             val response = when (injected) {
@@ -117,4 +124,4 @@ class VirtualPiGcsTcpServer(
 }
 
 /** One-shot deterministic failures for read-only local simulator tests. */
-enum class VirtualGcsFault { None, Disconnect, MalformedPosition, TruncatedPosition }
+enum class VirtualGcsFault { None, Disconnect, Timeout, MalformedPosition, TruncatedPosition }
