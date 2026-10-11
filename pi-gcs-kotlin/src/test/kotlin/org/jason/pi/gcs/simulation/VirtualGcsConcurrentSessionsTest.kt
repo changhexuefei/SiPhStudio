@@ -50,11 +50,10 @@ class VirtualGcsConcurrentSessionsTest {
     fun concurrentFaultInjectionOccursExactlyOnceAndOtherClientsReconnectNormally() = runBlocking {
         val evidence = VirtualGcsDiagnosticEvidence()
         val clientCount = 4
-        val outcomes: List<Boolean>
-        VirtualPiGcsTcpServer(
+        val outcomes = VirtualPiGcsTcpServer(
             fault = VirtualGcsFault.Disconnect, diagnostics = evidence
         ).use { server ->
-            outcomes = (1..clientCount).map {
+            (1..clientCount).map {
                 async(Dispatchers.IO) {
                     val device = GcsDevice(GcsClient(
                         KtorTcpGcsTransport(server.host, server.localPort),
