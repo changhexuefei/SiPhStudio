@@ -48,6 +48,9 @@ try {
         Invoke-Gate $caseRoot $false $mutation
     }
     Write-Host 'PASS: 4 independent mutation tests rejected corrupted virtual GCS evidence.'
+    # The last expected-negative child process exits 1. Clear its status so
+    # GitHub Actions treats the successful harness as success.
+    $global:LASTEXITCODE = 0
 } finally {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
