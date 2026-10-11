@@ -63,17 +63,20 @@ object VirtualGcsEvidenceContract {
     fun validateScenario(events: List<VirtualGcsEvent>, expectedFault: VirtualGcsFault): List<String> {
         val errors = validate(events).toMutableList()
         val faultQueries = events.filter { it.type == "QUERY" &&
-            (it.fault != null || it.outcome == "FAULT_REPLY" || it.outcome == "FAULT_DISCONNECT") }
+            (it.fault != null || it.outcome == "FAULT_REPLY" || it.outcome == "FAULT_DISCONNECT" || it.outcome == "FAULT_TIMEOUT") }
         if (expectedFault == VirtualGcsFault.None) {
             if (faultQueries.isNotEmpty()) errors += "UNEXPECTED_FAULT"
         } else {
             val expectedCommand = when (expectedFault) {
                 VirtualGcsFault.MalformedPosition, VirtualGcsFault.TruncatedPosition -> "POS? X Y Z U V W"
-                VirtualGcsFault.Disconnect -> "*IDN?"
+                VirtualGcsFault.Disconnect, VirtualGcsFault.Timeout -> "*IDN?"
                 VirtualGcsFault.None -> error("Unreachable")
             }
-            val expectedOutcome = if (expectedFault == VirtualGcsFault.Disconnect)
-                "FAULT_DISCONNECT" else "FAULT_REPLY"
+            val expectedOutcome = when (expectedFault) {
+                VirtualGcsFault.Disconnect -> "FAULT_DISCONNECT"
+                VirtualGcsFault.Timeout -> "FAULT_TIMEOUT"
+                else -> "FAULT_REPLY"
+            }
             if (faultQueries.size != 1) errors += "FAULT_EVENT_COUNT_MISMATCH"
             if (faultQueries.none { it.fault == expectedFault.name &&
                     it.command == expectedCommand && it.outcome == expectedOutcome })
