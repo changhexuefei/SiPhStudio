@@ -41,7 +41,8 @@ object PhysicalReadOnlyApprovalEvidence {
     }
 
     /** Checks structural consistency; no live hardware access or identity verification. */
-    fun validate(path: Path): List<String> = try {
+    fun validate(path: Path): List<String> {
+        return try {
         val root = json.readTree(Files.readString(path, StandardCharsets.UTF_8))
         val failures = mutableListOf<String>()
         if (root == null || !root.isObject || root.fieldNames().asSequence().toSet() != fields)
@@ -77,5 +78,6 @@ object PhysicalReadOnlyApprovalEvidence {
         failures
     } catch (_: Exception) {
         listOf("INVALID_JSON")
+        }
     }
 }
