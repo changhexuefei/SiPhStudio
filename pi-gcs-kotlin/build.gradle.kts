@@ -11,6 +11,7 @@ repositories {
 
 dependencies {
     testImplementation(kotlin("test"))
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.18.3")
     // 引用 toml 中定义的 ktor-network
     implementation(libs.ktor.network)
 
