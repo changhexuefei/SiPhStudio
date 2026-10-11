@@ -30,6 +30,33 @@ object VirtualGcsEvidenceContract {
         return errors
     }
 
+    /**
+     * Scenario gate: an injected fault may not be reported as PASS unless the
+     * journal proves the *expected* one-shot failure on the right read-only query.
+     * This is simulation evidence only, not a claim of physical equipment safety.
+     */
+    fun validateScenario(events: List<VirtualGcsEvent>, expectedFault: VirtualGcsFault): List<String> {
+        val errors = validate(events).toMutableList()
+        val faultQueries = events.filter { it.type == "QUERY" &&
+            (it.fault != null || it.outcome == "FAULT_REPLY" || it.outcome == "FAULT_DISCONNECT") }
+        if (expectedFault == VirtualGcsFault.None) {
+            if (faultQueries.isNotEmpty()) errors += "UNEXPECTED_FAULT"
+        } else {
+            val expectedCommand = when (expectedFault) {
+                VirtualGcsFault.MalformedPosition, VirtualGcsFault.TruncatedPosition -> "POS? X Y Z U V W"
+                VirtualGcsFault.Disconnect -> "*IDN?"
+                VirtualGcsFault.None -> error("Unreachable")
+            }
+            val expectedOutcome = if (expectedFault == VirtualGcsFault.Disconnect)
+                "FAULT_DISCONNECT" else "FAULT_REPLY"
+            if (faultQueries.size != 1) errors += "FAULT_EVENT_COUNT_MISMATCH"
+            if (faultQueries.none { it.fault == expectedFault.name &&
+                    it.command == expectedCommand && it.outcome == expectedOutcome })
+                errors += "EXPECTED_FAULT_NOT_OBSERVED"
+        }
+        return errors.distinct()
+    }
+
     fun exportBundle(evidence: VirtualGcsDiagnosticEvidence, directory: Path, scenario: String): Boolean {
         require(Regex("[A-Za-z0-9_-]{1,64}").matches(scenario)) { "Invalid scenario identifier" }
         Files.createDirectories(directory)
