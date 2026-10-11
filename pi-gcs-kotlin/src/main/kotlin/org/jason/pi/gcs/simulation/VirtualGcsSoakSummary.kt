@@ -77,7 +77,7 @@ object VirtualGcsSoakSummary {
                 !Files.isRegularFile(folder.resolve("trace.jsonl"))) {
                 failures += "$name:MISSING_EVIDENCE"
             } else if (Files.list(folder).use { entries ->
-                    entries.any { it.fileName.toString() !in setOf("summary.json", "trace.jsonl", "provenance.json") }
+                    entries.anyMatch { entry -> entry.fileName.toString() !in setOf("summary.json", "trace.jsonl", "provenance.json") }
                 }) {
                 failures += "$name:UNEXPECTED_FILE"
             } else if (runId != null && !Files.isRegularFile(folder.resolve("provenance.json"))) {
