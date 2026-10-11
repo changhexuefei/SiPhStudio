@@ -38,3 +38,8 @@ tasks.test {
     // Allow the E2E test to fork the actual production launcher on a separate JVM.
     systemProperty("virtualPiLauncherClasspath", sourceSets.main.get().runtimeClasspath.asPath)
 }
+
+tasks.test {
+    systemProperty("gcsEvidenceRunId", System.getenv("GITHUB_RUN_ID") ?: "local-recovery-test")
+    systemProperty("gcsEvidenceRevision", System.getenv("GITHUB_SHA") ?: "local-unverified")
+}
