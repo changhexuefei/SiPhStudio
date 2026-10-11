@@ -48,3 +48,7 @@ Physical connection PASS must **never** be represented as motion safety qualific
 5. Escalate any mismatch or unknown controller response; never infer motion readiness.
 
 Current repository status: virtual loopback acceptance is established; **real PI hardware has not been connected or tested by this PR**.
+
+## Offline approval-record gate
+
+`PhysicalReadOnlyPreflightGate.evaluate(record)` provides an entirely offline fail-closed check of record completeness, documented interlock/emergency-stop checks, exact candidate query allowlist and review readiness. `approvedForSeparateManualReview=true` **only** means that the supplied fields passed software checks: it does **not** authenticate statements, approve connecting to equipment, allow any GCS query to execute, or enable motion. `hardwareTested=false` and `motionAuthorization=false` are invariant. Physical procedures still require independently verified equipment-owner approval.
