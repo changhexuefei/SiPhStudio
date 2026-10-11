@@ -27,6 +27,7 @@ class VirtualPiGcsTcpServer(
     private val listener = ServerSocket(port, 8, InetAddress.getLoopbackAddress())
     private val clients = mutableSetOf<java.net.Socket>()
     private val clientLock = Any()
+    private val workerThreads = mutableListOf<Thread>()
     @Volatile private var running = true
 
     val localPort: Int get() = listener.localPort
@@ -38,7 +39,7 @@ class VirtualPiGcsTcpServer(
             val connectionId = connectionIds.incrementAndGet()
             synchronized(clientLock) { clients.add(socket) }
             diagnostics.record(connectionId, "CONNECTED")
-            thread(name = "virtual-pi-gcs-client", isDaemon = true) {
+            val worker = thread(start = false, name = "virtual-pi-gcs-client", isDaemon = true) {
                 try {
                     socket.use { client ->
                         val reader = client.getInputStream().bufferedReader()
@@ -78,6 +79,8 @@ class VirtualPiGcsTcpServer(
                     diagnostics.record(connectionId, "DISCONNECTED")
                 }
             }
+            synchronized(clientLock) { workerThreads.add(worker) }
+            worker.start()
         }
     }
 
@@ -103,6 +106,12 @@ class VirtualPiGcsTcpServer(
         listener.close()
         synchronized(clientLock) { clients.toList().forEach { it.close() } }
         acceptThread.join(2_000)
+        // Drain sockets accepted immediately before listener shutdown as well.
+        synchronized(clientLock) { clients.toList().forEach { it.close() } }
+        val workers = synchronized(clientLock) { workerThreads.toList() }
+        workers.forEach { it.join(2_000) }
+        check(workers.none { it.isAlive }) { "Virtual GCS client threads did not terminate" }
+        check(!acceptThread.isAlive) { "Virtual GCS accept thread did not terminate" }
         diagnostics.record(0, "SERVER_CLOSED")
     }
 }
