@@ -1,6 +1,8 @@
 package org.jason.pi.gcs.simulation
 
 import kotlinx.coroutines.runBlocking
+import java.nio.file.Path
+import java.nio.file.Files
 import org.jason.pi.gcs.core.GcsClient
 import org.jason.pi.gcs.core.GcsDevice
 import org.jason.pi.gcs.hexapod.PiAxis
@@ -17,11 +19,13 @@ import kotlin.test.assertTrue
 class VirtualGcsRecoverySoakTest {
     @Test
     fun twentyTimeoutRecoveryCyclesKeepCompleteIndependentEvidence() = runBlocking {
+        val evidenceRoot = Path.of("build", "ci", "virtual-gcs-evidence", "recovery-soak")
         repeat(20) { cycle ->
             val journal = VirtualGcsDiagnosticEvidence()
-            VirtualPiGcsTcpServer(
+            val server = VirtualPiGcsTcpServer(
                 fault = VirtualGcsFault.Timeout, diagnostics = journal
-            ).use { server ->
+            )
+            server.use { server ->
                 fun device() = GcsDevice(GcsClient(
                     KtorTcpGcsTransport(server.host, server.localPort),
                     transactionTimeoutMs = 350
@@ -45,6 +49,12 @@ class VirtualGcsRecoverySoakTest {
                     recovered.close()
                 }
             }
+            assertEquals(0, server.activeClientCount, "cycle $cycle leaked TCP sockets")
+            assertEquals(0, server.liveWorkerCount, "cycle $cycle leaked client threads")
+            val bundleDir = evidenceRoot.resolve("cycle-${(cycle + 1).toString().padStart(2, '0')}")
+            assertTrue(VirtualGcsEvidenceContract.exportBundle(journal, bundleDir, "recovery-cycle-${cycle + 1}"))
+            assertTrue(Files.exists(bundleDir.resolve("summary.json")))
+            assertTrue(Files.exists(bundleDir.resolve("trace.jsonl")))
             val events = journal.snapshot()
             assertTrue(
                 VirtualGcsEvidenceContract.validateScenario(events, VirtualGcsFault.Timeout).isEmpty(),
