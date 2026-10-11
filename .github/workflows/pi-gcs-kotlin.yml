@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'pi-gcs-kotlin/**'
+      - '.github/scripts/*pi-gcs-evidence*.ps1'
       - 'gradle/**'
       - 'gradlew'
       - 'gradlew.bat'
@@ -14,6 +15,7 @@ on:
     branches: [master]
     paths:
       - 'pi-gcs-kotlin/**'
+      - '.github/scripts/*pi-gcs-evidence*.ps1'
       - 'gradle/**'
       - 'gradlew'
       - 'gradlew.bat'
