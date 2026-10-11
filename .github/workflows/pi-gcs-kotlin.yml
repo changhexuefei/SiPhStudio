@@ -47,6 +47,13 @@ jobs:
       - name: Run PI GCS Kotlin tests
         shell: pwsh
         run: .\gradlew.bat :pi-gcs-kotlin:test --no-daemon --stacktrace
+      - name: Negative-test recovery evidence verifier
+        shell: pwsh
+        run: |
+          ./.github/scripts/test-pi-gcs-evidence-gate.ps1 `
+            -Root 'pi-gcs-kotlin/build/ci/virtual-gcs-evidence/recovery-soak' `
+            -RunId '${{ github.run_id }}' `
+            -Revision '${{ github.sha }}'
       - name: Verify recovery evidence before artifact upload
         shell: pwsh
         run: |
