@@ -1,0 +1,32 @@
+name: PI Official Emulator Evidence Contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/scripts/verify-pi-official-emulator-evidence.ps1"
+      - ".github/workflows/pi-official-emulator-evidence.yml"
+      - "docs/validation/pi-official-emulator-evidence.template.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate NOT_RUN template and ensure release gating fails closed
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $script = './.github/scripts/verify-pi-official-emulator-evidence.ps1'
+          $file = 'docs/validation/pi-official-emulator-evidence.template.json'
+          & $script -EvidencePath $file
+          $rejected = $false
+          try { & $script -EvidencePath $file -RequirePass } catch {
+            $rejected = $_.Exception.Message -match 'OFFICIAL_EMULATOR_ACCEPTANCE_NOT_PASSED'
+          }
+          if (-not $rejected) { throw 'NOT_RUN evidence incorrectly accepted for a stable release' }
+          Write-Output 'NEGATIVE_GATE_PASS: unsigned virtual CI is not official emulator acceptance'
