@@ -37,9 +37,11 @@ object PhysicalReadOnlyPublicationRecoveryReport {
         val lockPath = parent.resolve("$publishedName.publish.lock")
         val present = Files.exists(lockPath, LinkOption.NOFOLLOW_LINKS)
         val lockAudit = if (present) PhysicalReadOnlyPublicationLockAudit.read(lockPath) else null
-        val reasons = (assessment.reasons +
-            if (present) listOf("PUBLICATION_LOCK_PRESENT") else emptyList() +
-            if (staging.isNotEmpty()) listOf("ORPHANED_STAGING_DIRECTORY") else emptyList()).distinct()
+        val reasons = assessment.reasons.toMutableList()
+        if (present && "PUBLICATION_LOCK_PRESENT" !in reasons) reasons += "PUBLICATION_LOCK_PRESENT"
+        if (staging.isNotEmpty() && "ORPHANED_STAGING_DIRECTORY" !in reasons) {
+            reasons += "ORPHANED_STAGING_DIRECTORY"
+        }
         val decision = if (present || staging.isNotEmpty()) {
             PhysicalReadOnlyEvidenceRecovery.Decision.REQUIRE_OPERATOR
         } else assessment.decision
