@@ -34,7 +34,7 @@ object PhysicalReadOnlyEvidencePublisher {
         Files.createFile(lockPath) // atomic creation; FileAlreadyExistsException blocks competitors
         try {
             // Diagnostic metadata only; it does not prove ownership or permission.
-            val metadata = "version=1\\nrunId=${UUID.randomUUID()}\\npid=${ProcessHandle.current().pid()}\\ncreatedUtc=${Instant.now()}\\n"
+            val metadata = "version=1\nrunId=${UUID.randomUUID()}\npid=${ProcessHandle.current().pid()}\ncreatedUtc=${Instant.now()}\n"
             Files.writeString(lockPath, metadata, StandardCharsets.UTF_8, StandardOpenOption.WRITE)
         } catch (error: IOException) {
             try { Files.delete(lockPath) } catch (cleanup: IOException) { error.addSuppressed(cleanup) }
