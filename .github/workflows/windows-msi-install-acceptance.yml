@@ -1,0 +1,52 @@
+name: Windows MSI Installation Acceptance
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/windows-msi-install-acceptance.yml"
+      - ".github/scripts/test-siph-msi-install-uninstall.ps1"
+      - "docs/validation/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  released-msi-install-test:
+    name: Released beta MSI actual install and uninstall
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download immutable beta assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force release-input | Out-Null
+          gh release download v0.1.0-beta.1 --dir release-input --pattern '*.msi' --pattern 'release-readiness-evidence.txt' --clobber
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $msi = @(Get-ChildItem release-input -Filter '*.msi' -File)
+          if ($msi.Count -ne 1 -or -not (Test-Path release-input/release-readiness-evidence.txt)) {
+            throw 'Missing or ambiguous released MSI and evidence assets'
+          }
+      - name: Exercise actual install, installed launcher, and uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msi = @(Get-ChildItem release-input -Filter '*.msi' -File)[0]
+          & ./.github/scripts/test-siph-msi-install-uninstall.ps1 -MsiPath $msi.FullName -EvidencePath 'release-input/release-readiness-evidence.txt' -OutDir 'install-acceptance'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload install and uninstall evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: siph-v0.1.0-beta.1-msi-installed-acceptance
+          path: |
+            install-acceptance/summary.txt
+            install-acceptance/install.log
+            install-acceptance/uninstall.log
+          if-no-files-found: warn
+          retention-days: 30
