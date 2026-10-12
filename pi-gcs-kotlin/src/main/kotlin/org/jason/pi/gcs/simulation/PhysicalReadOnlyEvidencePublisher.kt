@@ -14,7 +14,35 @@ import java.nio.file.StandardCopyOption
  */
 object PhysicalReadOnlyEvidencePublisher {
     fun publish(destination: Path, record: PhysicalReadOnlyApprovalRecord?) =
-        publishWithPreMoveCheck(destination, record) {}
+        withPublicationLock(destination) {
+            publishWithPreMoveCheck(destination, record) {}
+        }
+
+    /**
+     * Cooperative cross-process exclusion using atomic CREATE_NEW in the destination
+     * parent. A surviving lock after a crash is intentionally NOT reclaimed.
+     * This is not a universal OS-enforced no-replace rename primitive.
+     */
+    internal fun <T> withPublicationLock(destination: Path, action: () -> T): T {
+        val target = destination.toAbsolutePath().normalize()
+        val parent = requireNotNull(target.parent) { "Missing parent directory" }
+        require(Files.isDirectory(parent, LinkOption.NOFOLLOW_LINKS)) { "Missing parent directory" }
+        val lockPath = parent.resolve(target.fileName.toString() + ".publish.lock")
+        Files.createFile(lockPath) // atomic creation; FileAlreadyExistsException blocks competitors
+        var failure: Throwable? = null
+        try {
+            return action()
+        } catch (error: Throwable) {
+            failure = error
+            throw error
+        } finally {
+            try {
+                Files.delete(lockPath)
+            } catch (cleanup: IOException) {
+                if (failure != null) failure.addSuppressed(cleanup) else throw cleanup
+            }
+        }
+    }
 
     /** Internal test seam, executed after staging validation and before promotion. */
     internal fun publishWithPreMoveCheck(
