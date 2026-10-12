@@ -6,7 +6,6 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class PhysicalReadOnlyRecoveryFailClosedExportTest {
-    private val audit = PhysicalReadOnlyRecoveryAuditRevalidation
     private val exporter = PhysicalReadOnlyRecoveryDiagnosticsExport
 
     private fun result(
@@ -20,39 +19,39 @@ class PhysicalReadOnlyRecoveryFailClosedExportTest {
 
     @Test fun rejectsBlockedStatusWithNonBlockedDecision() {
         assertFailsWith<IllegalArgumentException> {
-            exporter.export(result(audit.Status.INSPECTION_BLOCKED,
+            exporter.export(result(PhysicalReadOnlyRecoveryAuditRevalidation.Status.INSPECTION_BLOCKED,
                 PhysicalReadOnlyEvidenceRecovery.Decision.REQUIRE_OPERATOR))
         }
     }
 
     @Test fun rejectsMatchingStatusWithBlockedDecision() {
         assertFailsWith<IllegalArgumentException> {
-            exporter.export(result(audit.Status.MATCHES_CURRENT_SNAPSHOT,
+            exporter.export(result(PhysicalReadOnlyRecoveryAuditRevalidation.Status.MATCHES_CURRENT_SNAPSHOT,
                 PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK))
         }
     }
 
     @Test fun rejectsFailureCategoryWithMissingSampleIndex() {
         assertFailsWith<IllegalArgumentException> {
-            exporter.export(result(audit.Status.INSPECTION_BLOCKED,
+            exporter.export(result(PhysicalReadOnlyRecoveryAuditRevalidation.Status.INSPECTION_BLOCKED,
                 PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK,
-                listOf("SNAPSHOT_SAMPLE_FAILED"), audit.FailureCategory.IO_ERROR))
+                listOf("SNAPSHOT_SAMPLE_FAILED"), PhysicalReadOnlyRecoveryAuditRevalidation.FailureCategory.IO_ERROR))
         }
     }
 
     @Test fun rejectsSnapshotChangeWithSampleIndex() {
         assertFailsWith<IllegalArgumentException> {
-            exporter.export(result(audit.Status.INSPECTION_BLOCKED,
+            exporter.export(result(PhysicalReadOnlyRecoveryAuditRevalidation.Status.INSPECTION_BLOCKED,
                 PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK,
                 listOf("SNAPSHOT_CHANGED_DURING_INSPECTION"),
-                audit.FailureCategory.SNAPSHOT_CHANGED, 1))
+                PhysicalReadOnlyRecoveryAuditRevalidation.FailureCategory.SNAPSHOT_CHANGED, 1))
         }
     }
 
     @Test fun correctlyFormedFailureExportsUnchangedV1() {
-        val dto = exporter.export(result(audit.Status.INSPECTION_BLOCKED,
+        val dto = exporter.export(result(PhysicalReadOnlyRecoveryAuditRevalidation.Status.INSPECTION_BLOCKED,
             PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK,
-            listOf("SNAPSHOT_SAMPLE_FAILED"), audit.FailureCategory.IO_ERROR, 2))
+            listOf("SNAPSHOT_SAMPLE_FAILED"), PhysicalReadOnlyRecoveryAuditRevalidation.FailureCategory.IO_ERROR, 2))
         assertEquals(1, dto.schemaVersion)
         assertEquals("IO_ERROR", dto.failureCategory)
         assertEquals(2, dto.failedSample)
