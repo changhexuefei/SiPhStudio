@@ -63,8 +63,9 @@ object PhysicalReadOnlyApprovalEvidence {
             )
             if (metadata.any { (key, value) -> node.path(key).asText() != value })
                 errors += "RECORD_METADATA_MISMATCH"
-            if (node.path("approvedQueries").map { it.asText() } !=
-                (record?.explicitlyApprovedQueries?.sorted() ?: emptyList()))
+            val actualQueries: List<String> = node.path("approvedQueries").map { it.asText() }
+            val expectedQueries: List<String> = record?.explicitlyApprovedQueries?.sorted() ?: emptyList()
+            if (actualQueries != expectedQueries)
                 errors += "RECORD_QUERY_MISMATCH"
             errors
         } catch (_: Exception) {
