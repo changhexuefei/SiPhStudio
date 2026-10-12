@@ -21,6 +21,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -40,6 +42,8 @@ fun PiRecoveryDiagnosticsPanel(modifier: Modifier = Modifier) {
     var request by remember { mutableStateOf<InspectionRequest?>(null) }
     var serial by remember { mutableStateOf(0L) }
     var inspecting by remember { mutableStateOf(false) }
+    var copyNotice by remember { mutableStateOf<String?>(null) }
+    val clipboard = LocalClipboardManager.current
     val epochs = remember { PiRecoveryInspectionEpoch() }
     DisposableEffect(epochs) {
         onDispose { epochs.invalidate() }
@@ -82,9 +86,9 @@ fun PiRecoveryDiagnosticsPanel(modifier: Modifier = Modifier) {
     Column(modifier = modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Offline Recovery Diagnostics", style = MaterialTheme.typography.headlineSmall)
         Text("Read-only inspection. This screen never clears locks, approves recovery, or controls a PI device.")
-        OutlinedTextField(parent, { parent = it; epochs.invalidate(); request = null; result = null; failure = null; inspecting = false },
+        OutlinedTextField(parent, { parent = it; epochs.invalidate(); request = null; result = null; failure = null; copyNotice = null; inspecting = false },
             label = { Text("Evidence parent directory") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(publishedName, { publishedName = it; epochs.invalidate(); request = null; result = null; failure = null; inspecting = false },
+        OutlinedTextField(publishedName, { publishedName = it; epochs.invalidate(); request = null; result = null; failure = null; copyNotice = null; inspecting = false },
             label = { Text("Published directory name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
@@ -93,6 +97,7 @@ fun PiRecoveryDiagnosticsPanel(modifier: Modifier = Modifier) {
                     request = InspectionRequest(serial, parent, publishedName)
                     result = null
                     failure = null
+                    copyNotice = null
                 },
                 enabled = parent.isNotBlank() && publishedName.isNotBlank() && !inspecting
             ) { Text(if (inspecting) "Inspecting..." else "Inspect offline") }
@@ -112,6 +117,21 @@ fun PiRecoveryDiagnosticsPanel(modifier: Modifier = Modifier) {
             Text("Reading local evidence; cancellation never changes files or releases locks.")
         }
 
+        if (!inspecting && (result != null || failure != null)) {
+            OutlinedButton(onClick = {
+                try {
+                    val copied = result?.let(PiRecoveryDiagnosticCopy::from)
+                        ?: PiRecoveryDiagnosticCopy.failure(
+                            failure?.substringAfter("INSPECTION_BLOCKED: ", "INSPECTION_FAILED")
+                        )
+                    clipboard.setText(AnnotatedString(copied))
+                    copyNotice = "Diagnostic summary copied (no paths or raw exceptions)."
+                } catch (_: Exception) {
+                    copyNotice = "Clipboard unavailable; diagnostic data was not changed."
+                }
+            }) { Text("Copy sanitized summary") }
+        }
+        copyNotice?.let { Text(it) }
         failure?.let { message ->
             val code = message.substringAfter("INSPECTION_BLOCKED: ", "INSPECTION_FAILED")
             val view = PiRecoveryDiagnosticsPresentation.inputFailure(code)
