@@ -1,6 +1,9 @@
 package org.jason.siph.ui.diagnostics
 
 import java.nio.file.Path
+import java.io.IOException
+import java.nio.file.AccessDeniedException
+import java.nio.file.NoSuchFileException
 import org.jason.pi.gcs.simulation.PhysicalReadOnlyEvidenceRecovery
 import org.jason.pi.gcs.simulation.PhysicalReadOnlyPublicationRecoveryReport
 import org.jason.pi.gcs.simulation.PhysicalReadOnlyRecoveryAuditRevalidation
@@ -17,11 +20,11 @@ internal object PiRecoveryOfflineInspector {
     internal fun inspectSamples(
         collect: () -> PhysicalReadOnlyPublicationRecoveryReport.Report
     ): PhysicalReadOnlyRecoveryDiagnosticsExport.Dto {
-        val first = try { collect() } catch (_: Exception) {
-            return blocked("SNAPSHOT_SAMPLE_FAILED", "OTHER_ERROR", 1)
+        val first = try { collect() } catch (error: Exception) {
+            return blocked("SNAPSHOT_SAMPLE_FAILED", classify(error), 1)
         }
-        val second = try { collect() } catch (_: Exception) {
-            return blocked("SNAPSHOT_SAMPLE_FAILED", "OTHER_ERROR", 2)
+        val second = try { collect() } catch (error: Exception) {
+            return blocked("SNAPSHOT_SAMPLE_FAILED", classify(error), 2)
         }
         if (first != second) {
             return blocked("SNAPSHOT_CHANGED_DURING_INSPECTION", "SNAPSHOT_CHANGED", null)
@@ -36,6 +39,13 @@ internal object PiRecoveryOfflineInspector {
         return PhysicalReadOnlyRecoveryDiagnosticsExport.export(result).also {
             require(PhysicalReadOnlyRecoveryDiagnosticsExport.validate(it).isEmpty()) { "Invalid diagnostics" }
         }
+    }
+
+    private fun classify(error: Exception): String = when (error) {
+        is AccessDeniedException, is SecurityException -> "ACCESS_DENIED"
+        is NoSuchFileException -> "PATH_UNAVAILABLE"
+        is IOException -> "IO_ERROR"
+        else -> "OTHER_ERROR"
     }
 
     private fun blocked(reason: String, category: String, sample: Int?): PhysicalReadOnlyRecoveryDiagnosticsExport.Dto {
