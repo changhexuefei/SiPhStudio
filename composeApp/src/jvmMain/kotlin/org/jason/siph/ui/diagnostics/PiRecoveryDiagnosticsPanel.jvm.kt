@@ -10,12 +10,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.jason.pi.gcs.simulation.PhysicalReadOnlyEvidenceRecovery
 import org.jason.pi.gcs.simulation.PhysicalReadOnlyPublicationRecoveryReport
 import org.jason.pi.gcs.simulation.PhysicalReadOnlyRecoveryAuditRevalidation
@@ -31,45 +35,68 @@ fun PiRecoveryDiagnosticsPanel(modifier: Modifier = Modifier) {
     var publishedName by remember { mutableStateOf("") }
     var result by remember { mutableStateOf<PhysicalReadOnlyRecoveryDiagnosticsExport.Dto?>(null) }
     var failure by remember { mutableStateOf<String?>(null) }
+    var request by remember { mutableStateOf<InspectionRequest?>(null) }
+    var serial by remember { mutableStateOf(0L) }
+    var inspecting by remember { mutableStateOf(false) }
+
+    LaunchedEffect(request) {
+        val active = request ?: run { inspecting = false; return@LaunchedEffect }
+        inspecting = true
+        result = null
+        failure = null
+        try {
+            val outcome = withContext(Dispatchers.IO) {
+                val (validated, inputError) = PiRecoveryDiagnosticsInput.validate(
+                    active.parent, active.name
+                )
+                if (validated == null || inputError != null) {
+                    InspectionOutcome(null, "INSPECTION_BLOCKED: " + (inputError?.name ?: "INVALID_INPUT"))
+                } else {
+                    val report = PhysicalReadOnlyPublicationRecoveryReport.collect(
+                        validated.parent, validated.publishedName, null
+                    )
+                    val blocked = report.decision == PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK
+                    val inspection = PhysicalReadOnlyRecoveryAuditRevalidation.Result(
+                        status = if (blocked) {
+                            PhysicalReadOnlyRecoveryAuditRevalidation.Status.INSPECTION_BLOCKED
+                        } else PhysicalReadOnlyRecoveryAuditRevalidation.Status.CHANGED_OR_INVALID,
+                        currentDecision = report.decision,
+                        currentReasons = report.reasons
+                    )
+                    val dto = PhysicalReadOnlyRecoveryDiagnosticsExport.export(inspection)
+                    check(PhysicalReadOnlyRecoveryDiagnosticsExport.validate(dto).isEmpty()) {
+                        "Invalid diagnostics contract"
+                    }
+                    InspectionOutcome(dto, null)
+                }
+            }
+            result = outcome.dto
+            failure = outcome.error
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            failure = "INSPECTION_BLOCKED: Offline inspection failed."
+        } finally {
+            inspecting = false
+        }
+    }
 
     Column(modifier = modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Offline Recovery Diagnostics", style = MaterialTheme.typography.headlineSmall)
         Text("Read-only inspection. This screen never clears locks, approves recovery, or controls a PI device.")
-        OutlinedTextField(parent, { parent = it; result = null; failure = null },
+        OutlinedTextField(parent, { parent = it; request = null; result = null; failure = null },
             label = { Text("Evidence parent directory") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(publishedName, { publishedName = it; result = null; failure = null },
+        OutlinedTextField(publishedName, { publishedName = it; request = null; result = null; failure = null },
             label = { Text("Published directory name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        Button(onClick = {
-            result = null
-            failure = null
-            val (validated, inputError) = PiRecoveryDiagnosticsInput.validate(parent, publishedName)
-            if (inputError != null || validated == null) {
-                failure = "INSPECTION_BLOCKED: " + (inputError?.name ?: "INVALID_INPUT")
-            } else try {
-                // A missing approval record is deliberately not accepted as verified evidence.
-                val report = PhysicalReadOnlyPublicationRecoveryReport.collect(
-                    validated.parent, validated.publishedName, null
-                )
-                val blocked = report.decision == PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK
-                val inspection = PhysicalReadOnlyRecoveryAuditRevalidation.Result(
-                    status = if (blocked) {
-                        PhysicalReadOnlyRecoveryAuditRevalidation.Status.INSPECTION_BLOCKED
-                    } else {
-                        PhysicalReadOnlyRecoveryAuditRevalidation.Status.CHANGED_OR_INVALID
-                    },
-                    currentDecision = report.decision,
-                    currentReasons = report.reasons
-                )
-                val dto = PhysicalReadOnlyRecoveryDiagnosticsExport.export(inspection)
-                check(PhysicalReadOnlyRecoveryDiagnosticsExport.validate(dto).isEmpty()) {
-                    "Invalid diagnostics contract"
-                }
-                result = dto
-            } catch (_: Exception) {
-                // Do not put filesystem paths or raw exception text into UI diagnostics.
-                failure = "INSPECTION_BLOCKED: Offline inspection failed."
-            }
-        }, enabled = parent.isNotBlank() && publishedName.isNotBlank()) { Text("Inspect offline") }
+        Button(
+            onClick = {
+                serial++
+                request = InspectionRequest(serial, parent, publishedName)
+                result = null
+                failure = null
+            },
+            enabled = parent.isNotBlank() && publishedName.isNotBlank() && !inspecting
+        ) { Text(if (inspecting) "Inspecting..." else "Inspect offline") }
 
         if (failure != null) Text(failure!!, color = MaterialTheme.colorScheme.error)
         result?.let { dto ->
@@ -83,3 +110,9 @@ fun PiRecoveryDiagnosticsPanel(modifier: Modifier = Modifier) {
         }
     }
 }
+
+private data class InspectionRequest(val id: Long, val parent: String, val name: String)
+private data class InspectionOutcome(
+    val dto: PhysicalReadOnlyRecoveryDiagnosticsExport.Dto?,
+    val error: String?
+)
