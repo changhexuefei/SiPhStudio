@@ -20,7 +20,7 @@ internal object PiRecoveryDiagnosticsInput {
         // a different evidence bundle than the operator specified.
         if (nameText != nameText.trim() || nameText == "." || nameText == ".." ||
             nameText.length > 200 || nameText.contains('/') || nameText.contains('\\') ||
-            nameText.any { it.isISOControl() } || nameText.endsWith('.')) {
+            nameText.any { Character.isISOControl(it) } || nameText.endsWith('.')) {
             return null to Error.INVALID_NAME
         }
         val parent = try {
