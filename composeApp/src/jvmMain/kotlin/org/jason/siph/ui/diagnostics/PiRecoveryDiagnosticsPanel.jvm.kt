@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -116,8 +118,18 @@ fun PiRecoveryDiagnosticsPanel(modifier: Modifier = Modifier) {
         }
         result?.let { dto ->
             val view = PiRecoveryDiagnosticsPresentation.from(dto)
-            Text(view.headline, style = MaterialTheme.typography.titleMedium)
-            Text(view.guidance)
+            val tone = when (view.severity) {
+                PiRecoveryDiagnosticsPresentation.Severity.BLOCKED -> MaterialTheme.colorScheme.errorContainer
+                PiRecoveryDiagnosticsPresentation.Severity.OPERATOR_ACTION -> MaterialTheme.colorScheme.tertiaryContainer
+                PiRecoveryDiagnosticsPresentation.Severity.REVIEW_REQUIRED -> MaterialTheme.colorScheme.secondaryContainer
+                PiRecoveryDiagnosticsPresentation.Severity.INFORMATIONAL -> MaterialTheme.colorScheme.surfaceVariant
+            }
+            Surface(color = tone, shape = MaterialTheme.shapes.medium) {
+                Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                    Text(view.headline, style = MaterialTheme.typography.titleMedium)
+                    Text(view.guidance)
+                }
+            }
             Text(view.detail)
             Text("Schema: ${dto.schemaVersion}")
             Text("Audit status: ${dto.status}")
