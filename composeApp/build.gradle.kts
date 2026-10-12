@@ -150,7 +150,7 @@ compose.desktop {
             )
 
             packageName = "org.jason.siph"
-            packageVersion = "1.0.0"
+            packageVersion = "0.1.0"
         }
     }
 }
