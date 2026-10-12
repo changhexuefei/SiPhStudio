@@ -24,7 +24,25 @@ object PhysicalReadOnlyRecoveryAuditRevalidation {
         record: PhysicalReadOnlyApprovalRecord?,
         resolution: PhysicalReadOnlyRecoveryResolutionAudit.Resolution
     ): Result {
-        val current = PhysicalReadOnlyPublicationRecoveryReport.collect(parent, publishedName, record)
+        return checkWithCollector(resolution) {
+            PhysicalReadOnlyPublicationRecoveryReport.collect(parent, publishedName, record)
+        }
+    }
+
+    /** Two samples catch observable changes, but cannot eliminate filesystem TOCTOU. */
+    internal fun checkWithCollector(
+        resolution: PhysicalReadOnlyRecoveryResolutionAudit.Resolution,
+        collect: () -> PhysicalReadOnlyPublicationRecoveryReport.Report
+    ): Result {
+        val current = collect()
+        val confirm = collect()
+        if (current != confirm) {
+            return Result(
+                Status.INSPECTION_BLOCKED,
+                PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK,
+                listOf("SNAPSHOT_CHANGED_DURING_INSPECTION")
+            )
+        }
         if (current.decision == PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK) {
             return Result(Status.INSPECTION_BLOCKED, current.decision, current.reasons)
         }
