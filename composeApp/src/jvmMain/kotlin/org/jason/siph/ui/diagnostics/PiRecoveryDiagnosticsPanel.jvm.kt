@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.Surface
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -99,15 +101,31 @@ fun PiRecoveryDiagnosticsPanel(modifier: Modifier = Modifier) {
             label = { Text("Evidence parent directory") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(publishedName, { publishedName = it; epochs.invalidate(); request = null; result = null; failure = null; inspecting = false },
             label = { Text("Published directory name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        Button(
-            onClick = {
-                serial = epochs.begin()
-                request = InspectionRequest(serial, parent, publishedName)
-                result = null
-                failure = null
-            },
-            enabled = parent.isNotBlank() && publishedName.isNotBlank() && !inspecting
-        ) { Text(if (inspecting) "Inspecting..." else "Inspect offline") }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = {
+                    serial = epochs.begin()
+                    request = InspectionRequest(serial, parent, publishedName)
+                    result = null
+                    failure = null
+                },
+                enabled = parent.isNotBlank() && publishedName.isNotBlank() && !inspecting
+            ) { Text(if (inspecting) "Inspecting..." else "Inspect offline") }
+            OutlinedButton(
+                onClick = {
+                    epochs.invalidate()
+                    request = null
+                    inspecting = false
+                    result = null
+                    failure = "INSPECTION_BLOCKED: INSPECTION_CANCELLED"
+                },
+                enabled = inspecting
+            ) { Text("Cancel inspection") }
+        }
+        if (inspecting) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            Text("Reading local evidence; cancellation never changes files or releases locks.")
+        }
 
         failure?.let { message ->
             val code = message.substringAfter("INSPECTION_BLOCKED: ", "INSPECTION_FAILED")
