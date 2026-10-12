@@ -32,7 +32,7 @@ object PhysicalReadOnlyEvidenceIntegrity {
             put("hardwareTested", false)
             put("motionAuthorization", false)
         }
-        manifest.parent?.let(Files::createDirectories)
+        manifest.parent?.let { Files.createDirectories(it) }
         Files.writeString(manifest, json.writeValueAsString(root) + "\n", StandardCharsets.UTF_8)
     }
 
