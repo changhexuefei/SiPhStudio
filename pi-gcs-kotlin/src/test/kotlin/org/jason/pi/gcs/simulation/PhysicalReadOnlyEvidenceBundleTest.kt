@@ -88,4 +88,56 @@ class PhysicalReadOnlyEvidenceBundleTest {
         ))
         assertTrue("INVALID_BUNDLE_MANIFEST" in PhysicalReadOnlyEvidenceBundle.verify(dir, source))
     }
+    @Test
+    fun symlinkedEvidenceFileFailsClosedWhenSupported() = withBundle { dir, source ->
+        val evidence = dir.resolve("approval.json")
+        val target = Files.createTempFile("pi-offline-symlink-target", ".json")
+        try {
+            Files.copy(evidence, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            Files.delete(evidence)
+            val linked = try {
+                Files.createSymbolicLink(evidence, target)
+                true
+            } catch (_: UnsupportedOperationException) {
+                false
+            } catch (_: java.nio.file.FileSystemException) {
+                false // Windows without Developer Mode or symlink privileges
+            } catch (_: SecurityException) {
+                false
+            }
+            if (linked) {
+                assertTrue("MISSING_BUNDLE_FILE" in PhysicalReadOnlyEvidenceBundle.verify(dir, source))
+            }
+        } finally {
+            Files.deleteIfExists(target)
+        }
+    }
+
+    @Test
+    fun symlinkedDirectoryFailsClosedWhenSupported() {
+        val dir = Files.createTempDirectory("pi-offline-symlink-root")
+        val link = dir.resolve("bundle-link")
+        try {
+            val target = dir.resolve("real")
+            Files.createDirectory(target)
+            val linked = try {
+                Files.createSymbolicLink(link, target)
+                true
+            } catch (_: UnsupportedOperationException) {
+                false
+            } catch (_: java.nio.file.FileSystemException) {
+                false
+            } catch (_: SecurityException) {
+                false
+            }
+            if (linked) {
+                assertTrue("MISSING_BUNDLE_DIRECTORY" in PhysicalReadOnlyEvidenceBundle.verify(link, record()))
+            }
+        } finally {
+            Files.deleteIfExists(link)
+            Files.deleteIfExists(dir.resolve("real"))
+            Files.deleteIfExists(dir)
+        }
+    }
+
 }

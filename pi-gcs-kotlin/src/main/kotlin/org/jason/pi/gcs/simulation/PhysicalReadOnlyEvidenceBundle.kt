@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.LinkOption
 
 /**
  * Versioned, closed-inventory offline review bundle.
@@ -23,7 +24,7 @@ object PhysicalReadOnlyEvidenceBundle {
 
     /** Creation is fail-closed against an absent or inconsistent source record. */
     fun write(directory: Path, record: PhysicalReadOnlyApprovalRecord?) {
-        require(Files.isDirectory(directory)) { "Missing bundle directory" }
+        require(Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) { "Missing bundle directory or symbolic link" }
         require(Files.list(directory).use { it.findAny().isEmpty }) { "Bundle directory must be empty" }
         require(record != null) { "Missing approval record" }
         val evidence = directory.resolve(EVIDENCE)
@@ -49,7 +50,7 @@ object PhysicalReadOnlyEvidenceBundle {
 
     /** No commands or network calls. A successful result does not authorize physical testing. */
     fun verify(directory: Path, record: PhysicalReadOnlyApprovalRecord?): List<String> {
-        if (!Files.isDirectory(directory)) return listOf("MISSING_BUNDLE_DIRECTORY")
+        if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) return listOf("MISSING_BUNDLE_DIRECTORY")
         val names = try {
             Files.list(directory).use { stream ->
                 stream.map { it.fileName.toString() }.toList().toSet()
@@ -59,7 +60,7 @@ object PhysicalReadOnlyEvidenceBundle {
         }
         val failures = mutableListOf<String>()
         if (names != inventory) failures += "BUNDLE_INVENTORY_MISMATCH"
-        if (!inventory.all { Files.isRegularFile(directory.resolve(it)) }) {
+        if (!inventory.all { Files.isRegularFile(directory.resolve(it), LinkOption.NOFOLLOW_LINKS) }) {
             failures += "MISSING_BUNDLE_FILE"
             return failures.distinct()
         }
