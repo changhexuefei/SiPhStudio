@@ -107,8 +107,18 @@ fun PiRecoveryDiagnosticsPanel(modifier: Modifier = Modifier) {
             enabled = parent.isNotBlank() && publishedName.isNotBlank() && !inspecting
         ) { Text(if (inspecting) "Inspecting..." else "Inspect offline") }
 
-        if (failure != null) Text(failure!!, color = MaterialTheme.colorScheme.error)
+        failure?.let { message ->
+            val code = message.substringAfter("INSPECTION_BLOCKED: ", "INSPECTION_FAILED")
+            val view = PiRecoveryDiagnosticsPresentation.inputFailure(code)
+            Text(view.headline, color = MaterialTheme.colorScheme.error)
+            Text(view.guidance)
+            Text(view.detail)
+        }
         result?.let { dto ->
+            val view = PiRecoveryDiagnosticsPresentation.from(dto)
+            Text(view.headline, style = MaterialTheme.typography.titleMedium)
+            Text(view.guidance)
+            Text(view.detail)
             Text("Schema: ${dto.schemaVersion}")
             Text("Audit status: ${dto.status}")
             Text("Recovery decision: ${dto.decision}")
