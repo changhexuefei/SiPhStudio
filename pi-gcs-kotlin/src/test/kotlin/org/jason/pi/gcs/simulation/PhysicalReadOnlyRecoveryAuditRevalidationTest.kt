@@ -10,7 +10,7 @@ class PhysicalReadOnlyRecoveryAuditRevalidationTest {
     private fun withRoot(block: (Path) -> Unit) {
         val root = Files.createTempDirectory("pi-audit-recheck")
         try { block(root) } finally {
-            Files.walk(root).use { it.sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists) }
+            Files.walk(root).use { it.sorted(Comparator.reverseOrder()).forEach { path -> Files.deleteIfExists(path) } }
         }
     }
 
