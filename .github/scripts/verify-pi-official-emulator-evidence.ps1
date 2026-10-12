@@ -18,6 +18,20 @@ if (@($required | Where-Object { $_ -notin $found }).Count -ne 0) { throw 'OFFIC
 foreach ($key in $required) {
     if ($data.checks.$key -notin @('PASS','FAIL','NOT_RUN')) { throw 'OFFICIAL_EMULATOR_INVALID_STATUS' }
 }
+if ($RequirePass) {
+    if ($data.revision -notmatch '^[0-9a-f]{40}
+    throw 'OFFICIAL_EMULATOR_ACCEPTANCE_NOT_PASSED'
+}
+if ($data.physicalMotion -ne 'NOT_VALIDATED') { throw 'OFFICIAL_EMULATOR_MOTION_STATUS_INVALID' }
+Write-Output 'OFFICIAL_EMULATOR_EVIDENCE_SCHEMA_VALID'
+if ($RequirePass) { Write-Output 'OFFICIAL_EMULATOR_READ_ONLY_ACCEPTANCE_PASS' }
+) { throw 'OFFICIAL_EMULATOR_REVISION_UNVERIFIED' }
+    foreach ($key in $requiredMetadata) {
+        if ([string]$data.$key -match '^(PENDING|NOT_RUN|UNKNOWN|PLACEHOLDER)') {
+            throw 'OFFICIAL_EMULATOR_METADATA_PLACEHOLDER'
+        }
+    }
+}
 if ($RequirePass -and @($required | Where-Object { $data.checks.$_ -ne 'PASS' }).Count -ne 0) {
     throw 'OFFICIAL_EMULATOR_ACCEPTANCE_NOT_PASSED'
 }
