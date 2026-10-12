@@ -22,8 +22,10 @@ object PhysicalReadOnlyRecoveryDiagnosticsExport {
         require(result.failedSample == null || result.failedSample in 1..2) {
             "Invalid sample index"
         }
-        return Dto(1, result.status.name, result.currentDecision.name,
+        val dto = Dto(1, result.status.name, result.currentDecision.name,
             reasons, result.failureCategory.name, result.failedSample)
+        require(validate(dto).isEmpty()) { "Inconsistent recovery diagnostic contract" }
+        return dto
     }
 
     fun validate(dto: Dto): List<String> {
