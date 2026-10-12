@@ -59,4 +59,54 @@ class PhysicalReadOnlyEvidenceIntegrityTest {
             Files.deleteIfExists(dir)
         }
     }
+    @Test
+    fun combinedVerificationBindsEvidenceToSuppliedApprovalRecord() {
+        val dir = Files.createTempDirectory("pi-readonly-record-binding")
+        try {
+            val evidence = dir.resolve("approval.json")
+            val manifest = dir.resolve("integrity.json")
+            val record = completeRecord()
+            PhysicalReadOnlyApprovalEvidence.export(record, evidence)
+            PhysicalReadOnlyEvidenceIntegrity.writeManifest(evidence, manifest)
+
+            assertTrue(
+                PhysicalReadOnlyEvidenceIntegrity.verifyAgainstRecord(evidence, manifest, record).isEmpty()
+            )
+
+            val changedFirmware = record.copy(firmwareVersion = "DIFFERENT")
+            assertTrue(
+                PhysicalReadOnlyEvidenceIntegrity.verifyAgainstRecord(evidence, manifest, changedFirmware)
+                    .contains("RECORD_METADATA_MISMATCH")
+            )
+
+            Files.writeString(evidence, Files.readString(evidence) + " ")
+            assertTrue(
+                PhysicalReadOnlyEvidenceIntegrity.verifyAgainstRecord(evidence, manifest, record)
+                    .contains("EVIDENCE_SHA256_MISMATCH")
+            )
+        } finally {
+            Files.list(dir).use { paths -> paths.forEach { Files.deleteIfExists(it) } }
+            Files.deleteIfExists(dir)
+        }
+    }
+
+    private fun completeRecord() = PhysicalReadOnlyApprovalRecord(
+        equipmentOwner = "owner-ref",
+        authorizationReference = "auth-ref",
+        controllerModel = "C-887",
+        controllerSerialReference = "serial-ref",
+        firmwareVersion = "1.0",
+        gcsManualRevision = "manual-rev",
+        stageModel = "H-811",
+        axisMappingConfirmed = true,
+        endpointVerified = true,
+        safetyProcedureReference = "safety-ref",
+        interlocksVerified = true,
+        emergencyStopVerified = true,
+        operatorReference = "operator-ref",
+        witnessReference = "witness-ref",
+        approvalDate = "2026-10-12",
+        explicitlyApprovedQueries = PhysicalReadOnlyPreflightGate.candidateQueries
+    )
+
 }
