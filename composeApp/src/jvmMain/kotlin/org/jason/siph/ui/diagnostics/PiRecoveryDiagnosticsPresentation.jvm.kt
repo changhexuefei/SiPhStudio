@@ -54,8 +54,14 @@ internal object PiRecoveryDiagnosticsPresentation {
 
     fun inputFailure(code: String?): View {
         val safe = when (code) {
-            "PARENT_REQUIRED", "NAME_REQUIRED", "INVALID_NAME", "INVALID_PATH", "INVALID_PARENT" -> code
+            "PARENT_REQUIRED", "NAME_REQUIRED", "INVALID_NAME", "INVALID_PATH", "INVALID_PARENT",
+            "INSPECTION_CANCELLED" -> code
             else -> "INSPECTION_FAILED"
+        }
+        if (safe == "INSPECTION_CANCELLED") {
+            return View("Inspection cancelled",
+                "No new diagnostic result was accepted. Existing evidence was not changed.",
+                safe, Severity.INFORMATIONAL)
         }
         return View("Inspection blocked", "Correct the input or request operator review.", safe)
     }
