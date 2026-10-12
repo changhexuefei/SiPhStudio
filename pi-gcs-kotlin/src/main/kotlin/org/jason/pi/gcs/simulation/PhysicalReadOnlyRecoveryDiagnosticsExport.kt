@@ -46,6 +46,21 @@ object PhysicalReadOnlyRecoveryDiagnosticsExport {
         if (dto.status == "INSPECTION_BLOCKED" && dto.decision != "BLOCK") errors += "INCONSISTENT_STATUS"
         if (dto.failureCategory == "SNAPSHOT_CHANGED" &&
             "SNAPSHOT_CHANGED_DURING_INSPECTION" !in dto.reasonCodes) errors += "INCONSISTENT_FAILURE"
+        val sampleFailure = dto.failureCategory in setOf(
+            "ACCESS_DENIED", "PATH_UNAVAILABLE", "IO_ERROR", "OTHER_ERROR"
+        )
+        if (sampleFailure && (
+                dto.failedSample == null ||
+                    "SNAPSHOT_SAMPLE_FAILED" !in dto.reasonCodes ||
+                    dto.status != "INSPECTION_BLOCKED" || dto.decision != "BLOCK"
+            )) errors += "INCONSISTENT_SAMPLE_FAILURE"
+        if (dto.failedSample != null && !sampleFailure) errors += "INCONSISTENT_SAMPLE_INDEX"
+        if (dto.failureCategory == "SNAPSHOT_CHANGED" &&
+            (dto.failedSample != null || dto.status != "INSPECTION_BLOCKED" || dto.decision != "BLOCK")
+        ) errors += "INCONSISTENT_SNAPSHOT_CHANGE"
+        if (dto.failureCategory == "NONE" &&
+            dto.reasonCodes.any { it == "SNAPSHOT_SAMPLE_FAILED" || it == "SNAPSHOT_CHANGED_DURING_INSPECTION" }
+        ) errors += "MISSING_FAILURE_CATEGORY"
         return errors.distinct()
     }
 }
