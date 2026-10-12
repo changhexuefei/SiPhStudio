@@ -32,9 +32,15 @@ object PhysicalReadOnlyEvidenceRecovery {
         val staging = entries.filter { it.startsWith(".pi-readonly-staging-") }
         val target = parent.resolve(publishedName)
         val exists = Files.exists(target, LinkOption.NOFOLLOW_LINKS)
-        if (staging.isNotEmpty()) {
-            // Do not delete or guess which partially prepared staging directory to reuse.
-            return Assessment(Decision.REQUIRE_OPERATOR, listOf("ORPHANED_STAGING_DIRECTORY"))
+        val lockName = "$publishedName.publish.lock"
+        val lockPresent = entries.contains(lockName)
+        val recoveryReasons = mutableListOf<String>()
+        if (staging.isNotEmpty()) recoveryReasons += "ORPHANED_STAGING_DIRECTORY"
+        if (lockPresent) recoveryReasons += "PUBLICATION_LOCK_PRESENT"
+        if (recoveryReasons.isNotEmpty()) {
+            // A lock may belong to a live process or survive a crash. Never steal it,
+            // delete staging, or accept a seemingly complete bundle automatically.
+            return Assessment(Decision.REQUIRE_OPERATOR, recoveryReasons)
         }
         if (!exists) return Assessment(Decision.NO_BUNDLE, emptyList())
         if (!Files.isDirectory(target, LinkOption.NOFOLLOW_LINKS)) {
