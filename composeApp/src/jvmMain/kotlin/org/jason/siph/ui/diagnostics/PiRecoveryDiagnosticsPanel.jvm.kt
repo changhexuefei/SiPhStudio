@@ -2,7 +2,6 @@ package org.jason.siph.ui.diagnostics
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -21,7 +20,6 @@ import org.jason.pi.gcs.simulation.PhysicalReadOnlyEvidenceRecovery
 import org.jason.pi.gcs.simulation.PhysicalReadOnlyPublicationRecoveryReport
 import org.jason.pi.gcs.simulation.PhysicalReadOnlyRecoveryAuditRevalidation
 import org.jason.pi.gcs.simulation.PhysicalReadOnlyRecoveryDiagnosticsExport
-import java.nio.file.Path
 
 /**
  * JVM-only local filesystem inspection. The UI never owns or connects any PI device.
@@ -44,10 +42,13 @@ fun PiRecoveryDiagnosticsPanel(modifier: Modifier = Modifier) {
         Button(onClick = {
             result = null
             failure = null
-            try {
+            val (validated, inputError) = PiRecoveryDiagnosticsInput.validate(parent, publishedName)
+            if (inputError != null || validated == null) {
+                failure = "INSPECTION_BLOCKED: " + (inputError?.name ?: "INVALID_INPUT")
+            } else try {
                 // A missing approval record is deliberately not accepted as verified evidence.
                 val report = PhysicalReadOnlyPublicationRecoveryReport.collect(
-                    Path.of(parent), publishedName, null
+                    validated.parent, validated.publishedName, null
                 )
                 val blocked = report.decision == PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK
                 val inspection = PhysicalReadOnlyRecoveryAuditRevalidation.Result(
