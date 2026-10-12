@@ -11,6 +11,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +39,10 @@ fun PiRecoveryDiagnosticsPanel(modifier: Modifier = Modifier) {
     var request by remember { mutableStateOf<InspectionRequest?>(null) }
     var serial by remember { mutableStateOf(0L) }
     var inspecting by remember { mutableStateOf(false) }
+    val epochs = remember { PiRecoveryInspectionEpoch() }
+    DisposableEffect(epochs) {
+        onDispose { epochs.invalidate() }
+    }
 
     LaunchedEffect(request) {
         val active = request ?: run { inspecting = false; return@LaunchedEffect }
@@ -70,27 +75,31 @@ fun PiRecoveryDiagnosticsPanel(modifier: Modifier = Modifier) {
                     InspectionOutcome(dto, null)
                 }
             }
-            result = outcome.dto
-            failure = outcome.error
+            if (epochs.isCurrent(active.id)) {
+                result = outcome.dto
+                failure = outcome.error
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            failure = "INSPECTION_BLOCKED: Offline inspection failed."
+            if (epochs.isCurrent(active.id)) {
+                failure = "INSPECTION_BLOCKED: Offline inspection failed."
+            }
         } finally {
-            inspecting = false
+            if (epochs.complete(active.id)) inspecting = false
         }
     }
 
     Column(modifier = modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Offline Recovery Diagnostics", style = MaterialTheme.typography.headlineSmall)
         Text("Read-only inspection. This screen never clears locks, approves recovery, or controls a PI device.")
-        OutlinedTextField(parent, { parent = it; request = null; result = null; failure = null },
+        OutlinedTextField(parent, { parent = it; epochs.invalidate(); request = null; result = null; failure = null; inspecting = false },
             label = { Text("Evidence parent directory") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(publishedName, { publishedName = it; request = null; result = null; failure = null },
+        OutlinedTextField(publishedName, { publishedName = it; epochs.invalidate(); request = null; result = null; failure = null; inspecting = false },
             label = { Text("Published directory name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Button(
             onClick = {
-                serial++
+                serial = epochs.begin()
                 request = InspectionRequest(serial, parent, publishedName)
                 result = null
                 failure = null
