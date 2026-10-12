@@ -1,6 +1,10 @@
 package org.jason.siph
 
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import org.jason.siph.ui.diagnostics.PiRecoveryDiagnosticsPanel
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +33,7 @@ fun main() = application {
         PiPhysicalReadbackCoordinator { ui -> projection.refreshOrError(ui) }
     }
     val sessionOperations = remember { Mutex() }
+    var showRecoveryDiagnostics by remember { mutableStateOf(false) }
     var closing by remember { mutableStateOf(false) }
     var closeError by remember { mutableStateOf<String?>(null) }
 
@@ -59,7 +64,15 @@ fun main() = application {
     ) {
         // Recomposition does not own the transport: explicit close path above does.
         if (closeError != null) Text(closeError!!)
-        App(
+        Column {
+            Row {
+                OutlinedButton(onClick = { showRecoveryDiagnostics = !showRecoveryDiagnostics }) {
+                    Text(if (showRecoveryDiagnostics) "Back to SiPh Studio" else "Offline recovery diagnostics")
+                }
+            }
+            if (showRecoveryDiagnostics) {
+                PiRecoveryDiagnosticsPanel()
+            } else App(
             physicalReadback = { state -> readback.refresh(state) },
             invalidatePhysicalReadback = { readback.invalidate() },
             physicalConnect = { host, port ->
@@ -90,5 +103,6 @@ fun main() = application {
                 }
             }
         )
+        }
     }
 }
