@@ -1,7 +1,5 @@
 package org.jason.pi.gcs.simulation
 
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
@@ -12,7 +10,15 @@ import java.nio.file.StandardCopyOption
  * This does not claim crash-durable fsync semantics or establish equipment-owner approval.
  */
 object PhysicalReadOnlyEvidencePublisher {
-    fun publish(destination: Path, record: PhysicalReadOnlyApprovalRecord?) {
+    fun publish(destination: Path, record: PhysicalReadOnlyApprovalRecord?) =
+        publishWithPreMoveCheck(destination, record) {}
+
+    /** Internal test seam, executed after staging validation and before promotion. */
+    internal fun publishWithPreMoveCheck(
+        destination: Path,
+        record: PhysicalReadOnlyApprovalRecord?,
+        beforeMove: () -> Unit
+    ) {
         require(record != null) { "Missing approval record" }
         val target = destination.toAbsolutePath().normalize()
         val parent = requireNotNull(target.parent) { "Missing parent directory" }
@@ -26,6 +32,7 @@ object PhysicalReadOnlyEvidencePublisher {
             }
             // Do not fall back to non-atomic move: incomplete publication must not be exposed.
             // No REPLACE_EXISTING: a pre-existing final bundle must never be overwritten.
+            beforeMove()
             Files.move(staging, target, StandardCopyOption.ATOMIC_MOVE)
         } finally {
             if (Files.exists(staging, LinkOption.NOFOLLOW_LINKS)) {
