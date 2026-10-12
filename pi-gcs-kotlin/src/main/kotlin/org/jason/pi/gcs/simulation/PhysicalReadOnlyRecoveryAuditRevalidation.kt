@@ -48,68 +48,69 @@ object PhysicalReadOnlyRecoveryAuditRevalidation {
         PhysicalReadOnlyPublicationRecoveryReport.collect(parent, publishedName, record)
     }
 
+    /** The same two-sample collection and failure handling serve both consumers. */
+    private data class Sampled(
+        val report: PhysicalReadOnlyPublicationRecoveryReport.Report? = null,
+        val failure: Result? = null
+    )
+
+    private fun sample(
+        collect: () -> PhysicalReadOnlyPublicationRecoveryReport.Report
+    ): Sampled {
+        val first = try { collect() } catch (error: Exception) {
+            return Sampled(failure = samplingFailure(error, 1))
+        }
+        val second = try { collect() } catch (error: Exception) {
+            return Sampled(failure = samplingFailure(error, 2))
+        }
+        if (first != second) {
+            return Sampled(failure = Result(
+                Status.INSPECTION_BLOCKED,
+                PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK,
+                listOf("SNAPSHOT_CHANGED_DURING_INSPECTION"),
+                FailureCategory.SNAPSHOT_CHANGED
+            ))
+        }
+        return Sampled(report = second)
+    }
+
     /** Public sampling seam for JVM consumers and deterministic contract tests. */
     fun inspectWithCollector(
         collect: () -> PhysicalReadOnlyPublicationRecoveryReport.Report
     ): Result {
-        val current = try { collect() } catch (failure: Exception) {
-            return samplingFailure(failure, 1)
-        }
-        val confirm = try { collect() } catch (failure: Exception) {
-            return samplingFailure(failure, 2)
-        }
-        if (current != confirm) {
-            return Result(
-                Status.INSPECTION_BLOCKED,
-                PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK,
-                listOf("SNAPSHOT_CHANGED_DURING_INSPECTION"),
-                FailureCategory.SNAPSHOT_CHANGED
-            )
-        }
+        val sampled = sample(collect)
+        sampled.failure?.let { return it }
+        val report = requireNotNull(sampled.report)
         return Result(
-            if (confirm.decision == PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK) {
+            if (report.decision == PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK) {
                 Status.INSPECTION_BLOCKED
             } else {
                 Status.CHANGED_OR_INVALID
             },
-            confirm.decision,
-            confirm.reasons
+            report.decision,
+            report.reasons
         )
     }
 
-    /** Two samples catch observable changes, but cannot eliminate filesystem TOCTOU. */
+    /** Two samples detect observed changes, not all filesystem TOCTOU races. */
     internal fun checkWithCollector(
         resolution: PhysicalReadOnlyRecoveryResolutionAudit.Resolution,
         collect: () -> PhysicalReadOnlyPublicationRecoveryReport.Report
     ): Result {
-        val current = try {
-            collect()
-        } catch (failure: Exception) {
-            return samplingFailure(failure, 1)
+        val sampled = sample(collect)
+        sampled.failure?.let { return it }
+        val report = requireNotNull(sampled.report)
+        if (report.decision == PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK) {
+            return Result(Status.INSPECTION_BLOCKED, report.decision, report.reasons)
         }
-        val confirm = try {
-            collect()
-        } catch (failure: Exception) {
-            return samplingFailure(failure, 2)
-        }
-        if (current != confirm) {
-            return Result(
-                Status.INSPECTION_BLOCKED,
-                PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK,
-                listOf("SNAPSHOT_CHANGED_DURING_INSPECTION"),
-                FailureCategory.SNAPSHOT_CHANGED
-            )
-        }
-        if (current.decision == PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK) {
-            return Result(Status.INSPECTION_BLOCKED, current.decision, current.reasons)
-        }
-        val status = if (PhysicalReadOnlyRecoveryResolutionAudit.verify(resolution, current)) {
+        val status = if (PhysicalReadOnlyRecoveryResolutionAudit.verify(resolution, report)) {
             Status.MATCHES_CURRENT_SNAPSHOT
         } else {
             Status.CHANGED_OR_INVALID
         }
-        return Result(status, current.decision, current.reasons)
+        return Result(status, report.decision, report.reasons)
     }
+
     private fun samplingFailure(error: Exception, sample: Int): Result {
         val category = when (error) {
             is AccessDeniedException, is SecurityException -> FailureCategory.ACCESS_DENIED
