@@ -11,6 +11,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +40,9 @@ fun PiRecoveryDiagnosticsPanel(modifier: Modifier = Modifier) {
     var serial by remember { mutableStateOf(0L) }
     var inspecting by remember { mutableStateOf(false) }
     val epochs = remember { PiRecoveryInspectionEpoch() }
+    DisposableEffect(epochs) {
+        onDispose { epochs.invalidate() }
+    }
 
     LaunchedEffect(request) {
         val active = request ?: run { inspecting = false; return@LaunchedEffect }
