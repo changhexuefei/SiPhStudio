@@ -136,4 +136,35 @@ class PhysicalReadOnlyEvidencePublisherTest {
         assertFalse(Files.exists(staging))
     }
 
+    @Test
+    fun syncFailurePreventsPromotionAndRemovesStaging() = withDirectory { root ->
+        val target = root.resolve("published")
+        assertFailsWith<java.io.IOException> {
+            PhysicalReadOnlyEvidencePublisher.publishWithSyncCheck(
+                target, record(),
+                sync = { throw java.io.IOException("injected file sync failure") }
+            )
+        }
+        assertFalse(Files.exists(target))
+        Files.list(root).use { assertTrue(it.findAny().isEmpty) }
+    }
+
+    @Test
+    fun synchronizationPrecedesBeforeMoveCallback() = withDirectory { root ->
+        val target = root.resolve("published")
+        var synchronized = false
+        PhysicalReadOnlyEvidencePublisher.publishWithSyncCheck(
+            target, record(),
+            sync = { staging ->
+                PhysicalReadOnlyEvidencePublisher.syncBundleFiles(staging)
+                synchronized = true
+            },
+            beforeMove = {
+                assertTrue(synchronized)
+                assertFalse(Files.exists(target))
+            }
+        )
+        assertTrue(PhysicalReadOnlyEvidenceBundle.verify(target, record()).isEmpty())
+    }
+
 }
