@@ -24,18 +24,18 @@ class PhysicalReadOnlyRecoverySamplingParityTest {
     @Test fun stableEvidenceHasDifferentAuditStatusButIdenticalDecision() {
         val signed = api.checkWithCollector(resolution()) { report() }
         val unsigned = api.inspectWithCollector { report() }
-        assertEquals(api.Status.MATCHES_CURRENT_SNAPSHOT, signed.status)
-        assertEquals(api.Status.CHANGED_OR_INVALID, unsigned.status)
+        assertEquals(PhysicalReadOnlyRecoveryAuditRevalidation.Status.MATCHES_CURRENT_SNAPSHOT, signed.status)
+        assertEquals(PhysicalReadOnlyRecoveryAuditRevalidation.Status.CHANGED_OR_INVALID, unsigned.status)
         assertEquals(signed.currentDecision, unsigned.currentDecision)
         assertEquals(signed.currentReasons, unsigned.currentReasons)
-        assertFalse(unsigned.status == api.Status.MATCHES_CURRENT_SNAPSHOT)
+        assertFalse(unsigned.status == PhysicalReadOnlyRecoveryAuditRevalidation.Status.MATCHES_CURRENT_SNAPSHOT)
     }
 
     @Test fun stableBlockedEvidenceIsEquivalent() {
         val signed = api.checkWithCollector(resolution()) { report(PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK) }
         val unsigned = api.inspectWithCollector { report(PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK) }
         assertEquals(signed, unsigned)
-        assertEquals(api.Status.INSPECTION_BLOCKED, signed.status)
+        assertEquals(PhysicalReadOnlyRecoveryAuditRevalidation.Status.INSPECTION_BLOCKED, signed.status)
     }
 
     @Test fun snapshotDifferenceIsEquivalent() {
@@ -65,7 +65,7 @@ class PhysicalReadOnlyRecoverySamplingParityTest {
             val unsigned = api.inspectWithCollector(collector())
             assertEquals(signed, unsigned)
             assertEquals(failedAt, signed.failedSample)
-            assertEquals(api.Status.INSPECTION_BLOCKED, signed.status)
+            assertEquals(PhysicalReadOnlyRecoveryAuditRevalidation.Status.INSPECTION_BLOCKED, signed.status)
             assertEquals(PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK, signed.currentDecision)
             assertEquals(listOf("SNAPSHOT_SAMPLE_FAILED"), signed.currentReasons)
         }
@@ -75,7 +75,7 @@ class PhysicalReadOnlyRecoverySamplingParityTest {
         val invalid = resolution().copy(disposition = "APPROVE")
         val signed = api.checkWithCollector(invalid) { report() }
         val unsigned = api.inspectWithCollector { report() }
-        assertEquals(api.Status.CHANGED_OR_INVALID, signed.status)
-        assertEquals(api.Status.CHANGED_OR_INVALID, unsigned.status)
+        assertEquals(PhysicalReadOnlyRecoveryAuditRevalidation.Status.CHANGED_OR_INVALID, signed.status)
+        assertEquals(PhysicalReadOnlyRecoveryAuditRevalidation.Status.CHANGED_OR_INVALID, unsigned.status)
     }
 }
