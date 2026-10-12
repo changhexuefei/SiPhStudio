@@ -1,5 +1,6 @@
 package org.jason.pi.gcs.simulation
 
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
@@ -104,6 +105,35 @@ class PhysicalReadOnlyEvidencePublisherTest {
         assertFalse(Files.exists(next))
         assertTrue(PhysicalReadOnlyEvidenceBundle.verify(original, record()).isEmpty())
         Files.list(root).use { assertTrue(it.count() == 1L) }
+    }
+
+    @Test
+    fun cleanupContinuesAfterOneFileDeletionFailsAndReportsError() = withDirectory { root ->
+        val staging = root.resolve("stage")
+        Files.createDirectory(staging)
+        val blocked = staging.resolve("blocked")
+        val removable = staging.resolve("removable")
+        Files.writeString(blocked, "retain")
+        Files.writeString(removable, "delete")
+        val failure = assertFailsWith<IOException> {
+            PhysicalReadOnlyEvidencePublisher.cleanupStaging(staging) { entry ->
+                if (entry == blocked) throw IOException("injected delete failure")
+                Files.deleteIfExists(entry)
+            }
+        }
+        assertTrue(failure.message!!.contains("injected"))
+        assertFalse(Files.exists(removable))
+        assertTrue(Files.exists(blocked))
+    }
+
+    @Test
+    fun normalStagingCleanupIsIdempotent() = withDirectory { root ->
+        val staging = root.resolve("stage")
+        Files.createDirectory(staging)
+        Files.writeString(staging.resolve("approval.json"), "test")
+        PhysicalReadOnlyEvidencePublisher.cleanupStaging(staging)
+        PhysicalReadOnlyEvidencePublisher.cleanupStaging(staging)
+        assertFalse(Files.exists(staging))
     }
 
 }
