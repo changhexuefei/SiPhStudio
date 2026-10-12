@@ -1,0 +1,153 @@
+name: Release Readiness Gate
+
+on:
+  pull_request:
+    paths:
+      - "composeApp/**"
+      - "pi-gcs-kotlin/**"
+      - ".github/workflows/release-readiness.yml"
+      - "gradle/**"
+      - "settings.gradle.kts"
+      - "gradlew.bat"
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: "After all gates pass on master, create the v0.1.0-beta.1 prerelease"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-readiness-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows-release-gate:
+    runs-on: windows-latest
+    timeout-minutes: 65
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Check release metadata and safe mode
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $gradle = Get-Content composeApp/build.gradle.kts -Raw
+          if ($gradle -notmatch 'packageVersion\s*=\s*"0\.1\.0"') { throw 'MSI packageVersion must be 0.1.0' }
+          $readme = Get-Content README.md -Raw
+          if ($readme -notmatch 'Physical' -or $readme -notmatch '真实运动') { throw 'Physical motion limitations must remain documented' }
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ inputs.publish_release }}' -eq 'true' -and '${{ github.ref }}' -ne 'refs/heads/master') {
+            throw 'A prerelease can only be published from master'
+          }
+      - name: Run complete JVM regression suites
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\gradlew.bat :pi-gcs-kotlin:test :composeApp:jvmTest --no-daemon --stacktrace --console=plain --max-workers=2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build Windows MSI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\gradlew.bat :composeApp:packageMsi --no-daemon --stacktrace --console=plain --max-workers=2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Validate MSI, extract installed image and smoke launch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msi = @(Get-ChildItem 'composeApp/build/compose/binaries/main/msi' -Filter '*.msi' -Recurse -File)
+          if ($msi.Count -ne 1) { throw "Expected exactly one MSI, found $($msi.Count)" }
+          if ($msi[0].Name -notmatch '0\.1\.0') { throw 'MSI filename must contain version 0.1.0' }
+          $hash = (Get-FileHash -Path $msi[0].FullName -Algorithm SHA256).Hash
+          $image = Join-Path $env:RUNNER_TEMP 'siph-installed-image'
+          New-Item -Type Directory -Force -Path $image | Out-Null
+          $log = Join-Path $env:RUNNER_TEMP 'siph-msi-extract.log'
+          $args = @('/a', ('"' + $msi[0].FullName + '"'), '/qn', ('TARGETDIR="' + $image + '"'), '/L*v', ('"' + $log + '"'))
+          $installer = Start-Process -FilePath 'msiexec.exe' -ArgumentList $args -PassThru -Wait
+          if ($installer.ExitCode -ne 0) { Get-Content $log -Tail 100; throw "MSI administrative extraction failed: $($installer.ExitCode)" }
+          $apps = @(Get-ChildItem $image -Filter '*.exe' -Recurse -File | Where-Object { $_.Name -notmatch 'uninstall|setup' })
+          if ($apps.Count -lt 1) { throw 'No installed application launcher found in MSI image' }
+          $app = $apps | Where-Object { $_.Name -match 'siph' } | Select-Object -First 1
+          if ($null -eq $app) { $app = $apps | Select-Object -First 1 }
+          $process = Start-Process -FilePath $app.FullName -WorkingDirectory $app.DirectoryName -PassThru
+          try {
+            Start-Sleep -Seconds 6
+            $process.Refresh()
+            if ($process.HasExited) { throw "Packaged desktop launcher exited immediately: $($process.ExitCode)" }
+          } finally {
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
+          }
+          $relative = $msi[0].FullName.Substring((Get-Location).Path.Length + 1).Replace('\', '/')
+          @(
+            'release_tag=v0.1.0-beta.1'
+            "commit=${{ github.sha }}"
+            'jdk=21'
+            'os=windows-latest'
+            "msi_path=$relative"
+            "msi_sha256=$hash"
+            'jvm_tests=PASS'
+            'msi_build=PASS'
+            'msi_admin_extract=PASS'
+            'packaged_launcher_smoke=PASS'
+            'pi_official_emulator=NOT_RUN'
+            'physical_controller=NOT_RUN'
+            'physical_motion=NOT_VALIDATED'
+          ) | Set-Content -Encoding utf8 'release-readiness-evidence.txt'
+      - name: Upload release evidence and MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: siph-v0.1.0-beta.1-readiness
+          path: |
+            release-readiness-evidence.txt
+            composeApp/build/compose/binaries/main/msi/*.msi
+            composeApp/build/reports/tests/
+            pi-gcs-kotlin/build/reports/tests/
+          if-no-files-found: error
+          retention-days: 30
+  publish-prerelease:
+    needs: windows-release-gate
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_release == true && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: siph-v0.1.0-beta.1-readiness
+      - name: Refuse tag overwrite and publish immutable prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view v0.1.0-beta.1 >/dev/null 2>&1; then
+            echo "Release already exists; refusing to overwrite" >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code "https://github.com/$GH_REPO.git" refs/tags/v0.1.0-beta.1 >/dev/null; then
+            echo "Tag already exists; refusing to move" >&2
+            exit 1
+          fi
+          cat > release-notes.md <<'EOF'
+          SiPhStudio v0.1.0-beta.1 is a Windows desktop / PI GCS *read-only preview*.
+
+          - Demo and Physical controller readback modes are isolated.
+          - Physical Connect / *IDN? / POS? / Disconnect are read-only; real Move/Jog/Stop/motion is NOT enabled by this release.
+          - CI validates Windows JDK21 JVM tests, MSI packaging, administrative extraction, and packaged launcher startup.
+          - PI official emulator: NOT RUN. Real PI hardware acceptance: NOT RUN. Do not use as production motion-control software.
+          - Evidence and installer SHA-256 are in the attached readiness report.
+          EOF
+          MSI=$(find composeApp/build/compose/binaries/main/msi -type f -iname '*.msi' -print -quit)
+          test -n "$MSI"
+          gh release create v0.1.0-beta.1 "$MSI" release-readiness-evidence.txt --target "$COMMIT_SHA" --title 'SiPhStudio v0.1.0-beta.1 (read-only preview)' --notes-file release-notes.md --prerelease
