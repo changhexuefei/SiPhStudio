@@ -32,6 +32,17 @@ object PhysicalReadOnlyEvidencePublisher {
         record: PhysicalReadOnlyApprovalRecord?,
         sync: (Path) -> Unit,
         beforeMove: () -> Unit = {}
+    ) = publishWithMoveCheck(destination, record, sync, beforeMove) { staging, target ->
+        Files.move(staging, target, StandardCopyOption.ATOMIC_MOVE)
+    }
+
+    /** Injection seam for platform move failures. */
+    internal fun publishWithMoveCheck(
+        destination: Path,
+        record: PhysicalReadOnlyApprovalRecord?,
+        sync: (Path) -> Unit = ::syncBundleFiles,
+        beforeMove: () -> Unit = {},
+        move: (Path, Path) -> Unit
     ) {
         require(record != null) { "Missing approval record" }
         val target = destination.toAbsolutePath().normalize()
@@ -49,7 +60,12 @@ object PhysicalReadOnlyEvidencePublisher {
             // Do not fall back to non-atomic move: incomplete publication must not be exposed.
             // No REPLACE_EXISTING: a pre-existing final bundle must never be overwritten.
             beforeMove()
-            Files.move(staging, target, StandardCopyOption.ATOMIC_MOVE)
+            // Reject an occupied target after pre-move hooks. This narrows but
+            // cannot eliminate races without OS-level exclusive rename semantics.
+            if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
+                throw java.nio.file.FileAlreadyExistsException(target.toString())
+            }
+            move(staging, target)
         } catch (failure: Throwable) {
             primaryFailure = failure
             throw failure
