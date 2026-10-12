@@ -66,15 +66,20 @@ object PhysicalReadOnlyEvidencePublisher {
         }
     }
 
-    internal fun syncBundleFiles(staging: Path) {
+    internal fun syncBundleFiles(
+        staging: Path,
+        forceFile: (Path) -> Unit = { file ->
+            FileChannel.open(file, StandardOpenOption.WRITE).use { channel ->
+                channel.force(true)
+            }
+        }
+    ) {
         for (name in listOf("approval.json", "integrity.json", "bundle.json")) {
             val file = staging.resolve(name)
             if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
                 throw IOException("Cannot synchronize missing or linked evidence file: $name")
             }
-            FileChannel.open(file, StandardOpenOption.WRITE).use { channel ->
-                channel.force(true)
-            }
+            forceFile(file)
         }
     }
 
