@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "source": "PIHexapodEmulator",
+  "testMode": "READ_ONLY",
+  "revision": "v0.1.0-beta.1",
+  "emulatorVersion": "PENDING_VERIFICATION",
+  "controllerModel": "PENDING_VERIFICATION",
+  "gcsVersion": "PENDING_VERIFICATION",
+  "environment": "PENDING_SUPERVISED_WINDOWS_HOST",
+  "reviewer": "PENDING_REVIEW",
+  "evidenceReference": "PENDING_REFERENCE",
+  "checks": {
+    "connect": "NOT_RUN",
+    "idn": "NOT_RUN",
+    "posSixAxes": "NOT_RUN",
+    "linearUnits": "NOT_RUN",
+    "angularUnits": "NOT_RUN",
+    "refresh": "NOT_RUN",
+    "disconnect": "NOT_RUN",
+    "reconnect": "NOT_RUN",
+    "timeoutBehavior": "NOT_RUN"
+  },
+  "physicalMotion": "NOT_VALIDATED"
+}
