@@ -25,9 +25,6 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.jason.pi.gcs.simulation.PhysicalReadOnlyEvidenceRecovery
-import org.jason.pi.gcs.simulation.PhysicalReadOnlyPublicationRecoveryReport
-import org.jason.pi.gcs.simulation.PhysicalReadOnlyRecoveryAuditRevalidation
 import org.jason.pi.gcs.simulation.PhysicalReadOnlyRecoveryDiagnosticsExport
 
 /**
@@ -61,21 +58,9 @@ fun PiRecoveryDiagnosticsPanel(modifier: Modifier = Modifier) {
                 if (validated == null || inputError != null) {
                     InspectionOutcome(null, "INSPECTION_BLOCKED: " + (inputError?.name ?: "INVALID_INPUT"))
                 } else {
-                    val report = PhysicalReadOnlyPublicationRecoveryReport.collect(
-                        validated.parent, validated.publishedName, null
+                    val dto = PiRecoveryOfflineInspector.inspect(
+                        validated.parent, validated.publishedName
                     )
-                    val blocked = report.decision == PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK
-                    val inspection = PhysicalReadOnlyRecoveryAuditRevalidation.Result(
-                        status = if (blocked) {
-                            PhysicalReadOnlyRecoveryAuditRevalidation.Status.INSPECTION_BLOCKED
-                        } else PhysicalReadOnlyRecoveryAuditRevalidation.Status.CHANGED_OR_INVALID,
-                        currentDecision = report.decision,
-                        currentReasons = report.reasons
-                    )
-                    val dto = PhysicalReadOnlyRecoveryDiagnosticsExport.export(inspection)
-                    check(PhysicalReadOnlyRecoveryDiagnosticsExport.validate(dto).isEmpty()) {
-                        "Invalid diagnostics contract"
-                    }
                     InspectionOutcome(dto, null)
                 }
             }
