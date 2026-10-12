@@ -36,13 +36,12 @@ class PhysicalReadOnlyRecoverySnapshotConsistencyTest {
 
     @Test fun changingLockPresenceBetweenSamplesBlocksInspection() {
         val initial = report()
+        var counter = 0
         val result = PhysicalReadOnlyRecoveryAuditRevalidation.checkWithCollector(resolution(initial)) {
             if (counter++ == 0) initial else report(lockPresent = false)
         }
         assertEquals(PhysicalReadOnlyRecoveryAuditRevalidation.Status.INSPECTION_BLOCKED, result.status)
     }
-
-    private var counter = 0
 
     @Test fun stableSnapshotCanMatchButStillRequiresOperator() {
         val observed = report()
