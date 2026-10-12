@@ -79,4 +79,31 @@ class PhysicalReadOnlyEvidencePublisherTest {
         assertTrue(PhysicalReadOnlyEvidenceBundle.verify(target, source).isEmpty())
         assertTrue(Files.readString(target.resolve("approval.json")).contains("NO_GO"))
     }
+    @Test
+    fun injectedFailureLeavesNoPublishedBundleOrStaging() = withDirectory { root ->
+        val target = root.resolve("published")
+        assertFailsWith<IllegalStateException> {
+            PhysicalReadOnlyEvidencePublisher.publishWithPreMoveCheck(target, record()) {
+                throw IllegalStateException("injected pre-publish failure")
+            }
+        }
+        assertFalse(Files.exists(target))
+        Files.list(root).use { assertTrue(it.findAny().isEmpty) }
+    }
+
+    @Test
+    fun injectedFailurePreservesOtherPublishedBundles() = withDirectory { root ->
+        val original = root.resolve("original")
+        PhysicalReadOnlyEvidencePublisher.publish(original, record())
+        val next = root.resolve("next")
+        assertFailsWith<IllegalStateException> {
+            PhysicalReadOnlyEvidencePublisher.publishWithPreMoveCheck(next, record()) {
+                throw IllegalStateException("injected")
+            }
+        }
+        assertFalse(Files.exists(next))
+        assertTrue(PhysicalReadOnlyEvidenceBundle.verify(original, record()).isEmpty())
+        Files.list(root).use { assertTrue(it.count() == 1L) }
+    }
+
 }
