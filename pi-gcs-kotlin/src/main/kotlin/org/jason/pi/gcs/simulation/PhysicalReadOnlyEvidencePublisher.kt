@@ -1,6 +1,9 @@
 package org.jason.pi.gcs.simulation
 
 import java.io.IOException
+import java.nio.charset.StandardCharsets
+import java.util.UUID
+import java.time.Instant
 import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.StandardOpenOption
@@ -29,6 +32,14 @@ object PhysicalReadOnlyEvidencePublisher {
         require(Files.isDirectory(parent, LinkOption.NOFOLLOW_LINKS)) { "Missing parent directory" }
         val lockPath = parent.resolve(target.fileName.toString() + ".publish.lock")
         Files.createFile(lockPath) // atomic creation; FileAlreadyExistsException blocks competitors
+        try {
+            // Diagnostic metadata only; it does not prove ownership or permission.
+            val metadata = "version=1\\nrunId=${UUID.randomUUID()}\\npid=${ProcessHandle.current().pid()}\\ncreatedUtc=${Instant.now()}\\n"
+            Files.writeString(lockPath, metadata, StandardCharsets.UTF_8, StandardOpenOption.WRITE)
+        } catch (error: IOException) {
+            try { Files.delete(lockPath) } catch (cleanup: IOException) { error.addSuppressed(cleanup) }
+            throw error
+        }
         var failure: Throwable? = null
         try {
             return action()
