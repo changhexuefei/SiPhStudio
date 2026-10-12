@@ -40,6 +40,38 @@ object PhysicalReadOnlyApprovalEvidence {
         return verdict
     }
 
+    /**
+     * Check an exported decision against the actual supplied approval record.
+     * A standalone JSON file cannot establish that an approval is authentic.
+     */
+    fun validateAgainstRecord(path: Path, record: PhysicalReadOnlyApprovalRecord?): List<String> {
+        val errors = validate(path).toMutableList()
+        if (errors.isNotEmpty()) return errors
+        return try {
+            val node = json.readTree(Files.readString(path, StandardCharsets.UTF_8))
+            val verdict = PhysicalReadOnlyPreflightGate.evaluate(record)
+            val expectedResult = if (verdict.approvedForSeparateManualReview) "REVIEW_READY" else "NO_GO"
+            if (node.path("result").asText() != expectedResult ||
+                node.path("approvedForSeparateManualReview").asBoolean() != verdict.approvedForSeparateManualReview ||
+                node.path("reasons").map { it.asText() } != verdict.reasons)
+                errors += "RECORD_VERDICT_MISMATCH"
+            val metadata = mapOf(
+                "controllerModel" to (record?.controllerModel ?: ""),
+                "firmwareVersion" to (record?.firmwareVersion ?: ""),
+                "gcsManualRevision" to (record?.gcsManualRevision ?: ""),
+                "stageModel" to (record?.stageModel ?: "")
+            )
+            if (metadata.any { (key, value) -> node.path(key).asText() != value })
+                errors += "RECORD_METADATA_MISMATCH"
+            if (node.path("approvedQueries").map { it.asText() } !=
+                (record?.explicitlyApprovedQueries?.sorted() ?: emptyList()))
+                errors += "RECORD_QUERY_MISMATCH"
+            errors
+        } catch (_: Exception) {
+            listOf("INVALID_JSON")
+        }
+    }
+
     /** Checks structural consistency; no live hardware access or identity verification. */
     fun validate(path: Path): List<String> {
         return try {
