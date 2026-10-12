@@ -36,6 +36,47 @@ object PhysicalReadOnlyRecoveryAuditRevalidation {
         }
     }
 
+    /**
+     * Two-sample read-only inspection without a signed operator resolution.
+     * This API never reports MATCHES_CURRENT_SNAPSHOT or authorizes recovery.
+     */
+    fun inspectWithoutResolution(
+        parent: Path,
+        publishedName: String,
+        record: PhysicalReadOnlyApprovalRecord? = null
+    ): Result = inspectWithCollector {
+        PhysicalReadOnlyPublicationRecoveryReport.collect(parent, publishedName, record)
+    }
+
+    /** Public sampling seam for JVM consumers and deterministic contract tests. */
+    fun inspectWithCollector(
+        collect: () -> PhysicalReadOnlyPublicationRecoveryReport.Report
+    ): Result {
+        val current = try { collect() } catch (failure: Exception) {
+            return samplingFailure(failure, 1)
+        }
+        val confirm = try { collect() } catch (failure: Exception) {
+            return samplingFailure(failure, 2)
+        }
+        if (current != confirm) {
+            return Result(
+                Status.INSPECTION_BLOCKED,
+                PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK,
+                listOf("SNAPSHOT_CHANGED_DURING_INSPECTION"),
+                FailureCategory.SNAPSHOT_CHANGED
+            )
+        }
+        return Result(
+            if (confirm.decision == PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK) {
+                Status.INSPECTION_BLOCKED
+            } else {
+                Status.CHANGED_OR_INVALID
+            },
+            confirm.decision,
+            confirm.reasons
+        )
+    }
+
     /** Two samples catch observable changes, but cannot eliminate filesystem TOCTOU. */
     internal fun checkWithCollector(
         resolution: PhysicalReadOnlyRecoveryResolutionAudit.Resolution,
