@@ -34,8 +34,20 @@ object PhysicalReadOnlyRecoveryAuditRevalidation {
         resolution: PhysicalReadOnlyRecoveryResolutionAudit.Resolution,
         collect: () -> PhysicalReadOnlyPublicationRecoveryReport.Report
     ): Result {
-        val current = collect()
-        val confirm = collect()
+        val current = try {
+            collect()
+        } catch (_: Exception) {
+            return Result(Status.INSPECTION_BLOCKED,
+                PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK,
+                listOf("SNAPSHOT_SAMPLE_FAILED"))
+        }
+        val confirm = try {
+            collect()
+        } catch (_: Exception) {
+            return Result(Status.INSPECTION_BLOCKED,
+                PhysicalReadOnlyEvidenceRecovery.Decision.BLOCK,
+                listOf("SNAPSHOT_SAMPLE_FAILED"))
+        }
         if (current != confirm) {
             return Result(
                 Status.INSPECTION_BLOCKED,
