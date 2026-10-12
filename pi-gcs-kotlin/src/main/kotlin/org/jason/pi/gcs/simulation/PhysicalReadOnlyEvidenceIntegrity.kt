@@ -36,6 +36,21 @@ object PhysicalReadOnlyEvidenceIntegrity {
         Files.writeString(manifest, json.writeValueAsString(root) + "\n", StandardCharsets.UTF_8)
     }
 
+    /**
+     * Verify byte integrity first, then cross-check the evidence against the supplied
+     * offline approval record. This is still not authentication and grants no hardware access.
+     */
+    fun verifyAgainstRecord(
+        evidence: Path,
+        manifest: Path,
+        record: PhysicalReadOnlyApprovalRecord?
+    ): List<String> {
+        val errors = verify(evidence, manifest).toMutableList()
+        if (errors.isNotEmpty()) return errors
+        errors += PhysicalReadOnlyApprovalEvidence.validateAgainstRecord(evidence, record)
+        return errors.distinct()
+    }
+
     /** No hardware operation. Returns fail-closed errors for malformed or changed files. */
     fun verify(evidence: Path, manifest: Path): List<String> {
         if (!Files.isRegularFile(evidence) || !Files.isRegularFile(manifest))
