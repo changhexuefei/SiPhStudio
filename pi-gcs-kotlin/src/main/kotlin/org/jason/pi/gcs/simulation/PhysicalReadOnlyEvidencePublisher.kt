@@ -1,7 +1,9 @@
 package org.jason.pi.gcs.simulation
 
 import java.io.IOException
+import java.nio.channels.FileChannel
 import java.nio.file.Files
+import java.nio.file.StandardOpenOption
 import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -19,6 +21,17 @@ object PhysicalReadOnlyEvidencePublisher {
         destination: Path,
         record: PhysicalReadOnlyApprovalRecord?,
         beforeMove: () -> Unit
+    ) = publishWithSyncCheck(destination, record, ::syncBundleFiles, beforeMove)
+
+    /**
+     * Test seam for injected synchronization failures.
+     * All three staged files must be forced before the atomic rename.
+     */
+    internal fun publishWithSyncCheck(
+        destination: Path,
+        record: PhysicalReadOnlyApprovalRecord?,
+        sync: (Path) -> Unit,
+        beforeMove: () -> Unit = {}
     ) {
         require(record != null) { "Missing approval record" }
         val target = destination.toAbsolutePath().normalize()
@@ -32,6 +45,7 @@ object PhysicalReadOnlyEvidencePublisher {
             check(PhysicalReadOnlyEvidenceBundle.verify(staging, record).isEmpty()) {
                 "Staged evidence bundle verification failed"
             }
+            sync(staging)
             // Do not fall back to non-atomic move: incomplete publication must not be exposed.
             // No REPLACE_EXISTING: a pre-existing final bundle must never be overwritten.
             beforeMove()
@@ -48,6 +62,18 @@ object PhysicalReadOnlyEvidencePublisher {
                 } else {
                     throw cleanupFailure
                 }
+            }
+        }
+    }
+
+    internal fun syncBundleFiles(staging: Path) {
+        for (name in listOf("approval.json", "integrity.json", "bundle.json")) {
+            val file = staging.resolve(name)
+            if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
+                throw IOException("Cannot synchronize missing or linked evidence file: $name")
+            }
+            FileChannel.open(file, StandardOpenOption.WRITE).use { channel ->
+                channel.force(true)
             }
         }
     }
