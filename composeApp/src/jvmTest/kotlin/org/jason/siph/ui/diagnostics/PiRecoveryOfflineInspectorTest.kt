@@ -47,6 +47,6 @@ class PiRecoveryOfflineInspectorTest {
         }
         assertEquals(2, dto.failedSample)
         assertEquals("INSPECTION_BLOCKED", dto.status)
-        assertEquals("OTHER_ERROR", dto.failureCategory)
+        assertEquals("IO_ERROR", dto.failureCategory)
     }
 }
