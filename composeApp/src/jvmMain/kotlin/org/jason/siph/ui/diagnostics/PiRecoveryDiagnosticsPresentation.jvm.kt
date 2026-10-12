@@ -7,10 +7,13 @@ import org.jason.pi.gcs.simulation.PhysicalReadOnlyRecoveryDiagnosticsExport
  * Presentation is not authorization or permission to resume operations.
  */
 internal object PiRecoveryDiagnosticsPresentation {
+    enum class Severity { BLOCKED, OPERATOR_ACTION, REVIEW_REQUIRED, INFORMATIONAL }
+
     data class View(
         val headline: String,
         val guidance: String,
-        val detail: String
+        val detail: String,
+        val severity: Severity = Severity.BLOCKED
     )
 
     fun from(dto: PhysicalReadOnlyRecoveryDiagnosticsExport.Dto): View {
@@ -18,7 +21,7 @@ internal object PiRecoveryDiagnosticsPresentation {
         if (errors.isNotEmpty()) return View(
             "Inspection blocked",
             "Diagnostic data is invalid. Preserve evidence and request operator review.",
-            "INVALID_DIAGNOSTIC_CONTRACT"
+            "INVALID_DIAGNOSTIC_CONTRACT", Severity.BLOCKED
         )
         val guidance = when (dto.decision) {
             "BLOCK" -> "Do not resume. Preserve evidence and investigate the inspection failure."
@@ -40,7 +43,13 @@ internal object PiRecoveryDiagnosticsPresentation {
             if (dto.failureCategory != "NONE") add("Failure: ${dto.failureCategory}")
             dto.failedSample?.let { add("Sample: $it") }
         }.joinToString(" | ")
-        return View(headline, guidance, detail)
+        val severity = when (dto.decision) {
+            "BLOCK" -> Severity.BLOCKED
+            "REQUIRE_OPERATOR" -> Severity.OPERATOR_ACTION
+            "VALIDATE_FOR_MANUAL_REVIEW" -> Severity.REVIEW_REQUIRED
+            else -> Severity.INFORMATIONAL
+        }
+        return View(headline, guidance, detail, severity)
     }
 
     fun inputFailure(code: String?): View {
