@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - ".github/scripts/verify-pi-official-emulator-evidence.ps1"
+      - ".github/scripts/test-pi-official-emulator-negative-contract.ps1"
       - ".github/workflows/pi-official-emulator-evidence.yml"
       - "docs/validation/pi-official-emulator-evidence.template.json"
   workflow_dispatch:
@@ -30,3 +31,7 @@ jobs:
           }
           if (-not $rejected) { throw 'NOT_RUN evidence incorrectly accepted for a stable release' }
           Write-Output 'NEGATIVE_GATE_PASS: unsigned virtual CI is not official emulator acceptance'
+      - name: Exercise strict negative evidence matrix
+        shell: pwsh
+        run: |
+          & ./.github/scripts/test-pi-official-emulator-negative-contract.ps1 -Verifier './.github/scripts/verify-pi-official-emulator-evidence.ps1' -Template 'docs/validation/pi-official-emulator-evidence.template.json'
