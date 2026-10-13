@@ -1,0 +1,24 @@
+name: PI Emulator Connectivity Preflight Smoke
+
+on:
+  pull_request:
+    paths:
+      - "scripts/pi-emulator-connectivity-preflight.ps1"
+      - ".github/scripts/test-pi-connectivity-preflight.ps1"
+      - ".github/workflows/pi-connectivity-preflight-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  network-only-preflight:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify connection-only preflight contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./.github/scripts/test-pi-connectivity-preflight.ps1
