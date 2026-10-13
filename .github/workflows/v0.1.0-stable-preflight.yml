@@ -1,0 +1,63 @@
+name: v0.1.0 Stable Acceptance Preflight
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/v0.1.0-stable-preflight.yml'
+      - '.github/scripts/verify-pi-official-emulator-evidence.ps1'
+      - 'docs/validation/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stable-preflight-contract:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert beta release exists and matches frozen baseline
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $release = gh release view v0.1.0-beta.1 --json tagName,isPrerelease,targetCommitish,assets | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'BETA_RELEASE_MISSING' }
+          if ($release.tagName -ne 'v0.1.0-beta.1' -or -not $release.isPrerelease) { throw 'BETA_RELEASE_INVALID' }
+          if ($release.assets.name -notcontains 'release-readiness-evidence.txt') { throw 'BETA_EVIDENCE_MISSING' }
+          if (@($release.assets | Where-Object { $_.name -match '\.msi$' }).Count -ne 1) { throw 'BETA_MSI_MISSING' }
+      - name: Require official emulator template to remain NOT RUN
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $script = './.github/scripts/verify-pi-official-emulator-evidence.ps1'
+          $template = 'docs/validation/pi-official-emulator-evidence.template.json'
+          & $script -EvidencePath $template
+          $denied = $false
+          try { & $script -EvidencePath $template -RequirePass } catch {
+            $denied = $_.Exception.Message -match '^OFFICIAL_EMULATOR_'
+          }
+          if (-not $denied) { throw 'STOP_SHIP_GATE_ACCEPTED_UNVERIFIED_EMULATOR' }
+          Write-Output 'STABLE_RELEASE_BLOCKED_PENDING_OFFICIAL_EMULATOR_ACCEPTANCE'
+      - name: Write preliminary release status
+        shell: pwsh
+        run: |
+          @(
+            'release_target=v0.1.0'
+            'beta=v0.1.0-beta.1'
+            'windows_msi_installation=CI_PASS_PR_135'
+            'official_pi_emulator=NOT_RUN'
+            'physical_pi_controller=NOT_RUN'
+            'physical_motion=NOT_VALIDATED'
+            'stable_release=BLOCKED'
+          ) | Set-Content -Encoding utf8 stable-preflight-status.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: siph-v0.1.0-preflight-status
+          path: stable-preflight-status.txt
+          if-no-files-found: warn
+          retention-days: 30
